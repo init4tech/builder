@@ -1,0 +1,48 @@
+[package]
+name = "zenith-builder-example"
+version = "0.1.0"
+description = "Zenith Builder Example"
+
+edition = "2021"
+rust-version = "1.81"
+authors = ["init4"]
+license = "Apache-2.0 OR MIT"
+homepage = "https://github.com/init4tt/zenith"
+repository = "https://github.com/init4tt/zenith"
+
+[lib]
+name = "builder"
+
+[[bin]]
+name = "zenith-builder-example"
+path = "bin/builder.rs"
+
+[dependencies]
+zenith-types = { git = "https://github.com/init4tech/zenith-rs", branch = "main" }
+
+alloy-primitives = { version = "=0.8.8", features = ["serde", "tiny-keccak"] }
+alloy-sol-types = { version = "=0.8.8", features = ["json"] }
+alloy-rlp = { version = "0.3.4" }
+
+alloy = { version = "0.5.4", features = ["full", "json-rpc", "signer-aws"] }
+
+aws-config = "1.1.7"
+aws-sdk-kms = "1.15.0"
+
+hex = { package = "const-hex", version = "1", default-features = false, features = [
+    "alloc",
+] }
+serde = { version = "1.0.197", features = ["derive"] }
+tracing = "0.1.40"
+
+axum = "0.7.5"
+eyre = "0.6.12"
+openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.11.24", features = ["blocking", "json"] }
+ruint = "1.12.1"
+serde_json = "1.0"
+thiserror = "1.0.58"
+tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
+tracing-subscriber = "0.3.18"
+async-trait = "0.1.80"
+oauth2 = "4.4.2"
