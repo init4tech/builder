@@ -3,6 +3,8 @@ name: Docker ECR Push
 on:
   push:
     branches: [main]
+    tags:
+      - v**
   workflow_dispatch:
 
 
