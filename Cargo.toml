@@ -32,6 +32,9 @@ aws-sdk-kms = "1.15.0"
 hex = { package = "const-hex", version = "1", default-features = false, features = [
     "alloc",
 ] }
+
+signet-types = { git = "ssh://git@github.com/init4tech/signet-node.git" }
+
 serde = { version = "1.0.197", features = ["derive"] }
 tracing = "0.1.40"
 

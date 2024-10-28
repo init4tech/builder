@@ -3,6 +3,7 @@
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
 use builder::tasks::tx_poller::TxPoller;
+use builder::tasks::bundler::BundleFetcher;
 
 use tokio::select;
 
@@ -25,7 +26,8 @@ async fn main() -> eyre::Result<()> {
     let port = config.builder_port;
 
     let tx_poller = TxPoller::new(&config);
-    let builder = builder::tasks::block::BlockBuilder::new(&config);
+    let bundle_poller = BundleFetcher::new(&config.clone());
+    let builder = builder::tasks::block::BlockBuilder::new(&config.clone());
 
     let submit = builder::tasks::submit::SubmitTask {
         provider,
@@ -36,10 +38,10 @@ async fn main() -> eyre::Result<()> {
     };
 
     let (submit_channel, submit_jh) = submit.spawn();
-    let (build_channel, build_jh) = builder.spawn(submit_channel);
-    let tx_poller_jh = tx_poller.spawn(build_channel.clone());
+    let (tx_channel, bundle_channel, build_jh) = builder.spawn(submit_channel);
+    let tx_poller_jh = tx_poller.spawn(tx_channel.clone());
 
-    let server = serve_builder_with_span(build_channel, ([0, 0, 0, 0], port), span);
+    let server = serve_builder_with_span(tx_channel, ([0, 0, 0, 0], port), span);
 
     select! {
         _ = submit_jh => {

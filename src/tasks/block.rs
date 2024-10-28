@@ -7,6 +7,8 @@ use zenith_types::{encode_txns, Alloy2718Coder};
 
 use crate::config::BuilderConfig;
 
+use super::bundler::Bundle;
+
 #[derive(Debug, Default, Clone)]
 /// A block in progress.
 pub struct InProgressBlock {
@@ -57,6 +59,12 @@ impl InProgressBlock {
         self.transactions.push(tx.clone());
     }
 
+    /// Ingest a bundle into the in-progress block.
+    pub fn ingest_bundle(&mut self, bundle: Bundle) {
+        tracing::info!(bundle = %bundle.id, "ingesting bundle");
+        todo!()
+    }
+
     /// Encode the in-progress block
     fn encode_raw(&self) -> &Bytes {
         self.seal();
@@ -102,10 +110,11 @@ impl BlockBuilder {
     pub fn spawn(
         self,
         outbound: mpsc::UnboundedSender<InProgressBlock>,
-    ) -> (mpsc::UnboundedSender<TxEnvelope>, JoinHandle<()>) {
+    ) -> (mpsc::UnboundedSender<TxEnvelope>, mpsc::UnboundedSender<Bundle>, JoinHandle<()>) {
         let mut in_progress = InProgressBlock::default();
 
-        let (sender, mut inbound) = mpsc::unbounded_channel();
+        let (tx_sender, mut tx_inbound) = mpsc::unbounded_channel();
+        let (bundle_sender, mut bundle_inbound) = mpsc::unbounded_channel();
 
         let mut sleep = Box::pin(tokio::time::sleep(Duration::from_secs(
             self.incoming_transactions_buffer,
@@ -131,9 +140,18 @@ impl BlockBuilder {
                             // irrespective of whether we have any blocks to build.
                             sleep.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(self.incoming_transactions_buffer));
                         }
-                        item_res = inbound.recv() => {
-                            match item_res {
-                                Some(item) => in_progress.ingest_tx(&item),
+                        tx_resp = tx_inbound.recv() => {
+                            match tx_resp {
+                                Some(tx) => in_progress.ingest_tx(&tx),
+                                None => {
+                                    tracing::debug!("upstream task gone");
+                                    break
+                                }
+                            }
+                        }
+                        bundle_resp = bundle_inbound.recv() => {
+                            match bundle_resp {
+                                Some(bundle) => in_progress.ingest_bundle(bundle),
                                 None => {
                                     tracing::debug!("upstream task gone");
                                     break
@@ -146,6 +164,6 @@ impl BlockBuilder {
             .in_current_span(),
         );
 
-        (sender, handle)
+        (tx_sender, bundle_sender, handle)
     }
 }

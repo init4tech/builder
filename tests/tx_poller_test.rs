@@ -6,7 +6,7 @@ mod tests {
     use alloy_primitives::{bytes, Address, TxKind, U256};
     use builder::config::BuilderConfig;
     use builder::tasks::{block::BlockBuilder, tx_poller};
-    use eyre::Result;
+    use eyre::{Ok, Result};
 
     #[ignore = "integration test"]
     #[tokio::test]
@@ -21,7 +21,7 @@ mod tests {
         let mut poller = tx_poller::TxPoller::new(&config);
 
         // Fetch transactions the pool
-        let transactions = poller.check_tx_pool().await?;
+        let transactions = poller.check_tx_cache().await?;
 
         // Ensure at least one transaction exists
         assert!(!transactions.is_empty());
