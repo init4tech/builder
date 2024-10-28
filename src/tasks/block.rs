@@ -19,7 +19,11 @@ pub struct InProgressBlock {
 impl InProgressBlock {
     /// Create a new `InProgressBlock`
     pub fn new() -> Self {
-        Self { transactions: Vec::new(), raw_encoding: OnceLock::new(), hash: OnceLock::new() }
+        Self {
+            transactions: Vec::new(),
+            raw_encoding: OnceLock::new(),
+            hash: OnceLock::new(),
+        }
     }
 
     /// Get the number of transactions in the block.
@@ -40,8 +44,10 @@ impl InProgressBlock {
 
     /// Seal the block by encoding the transactions and calculating the contentshash.
     fn seal(&self) {
-        self.raw_encoding.get_or_init(|| encode_txns::<Alloy2718Coder>(&self.transactions).into());
-        self.hash.get_or_init(|| keccak256(self.raw_encoding.get().unwrap().as_ref()));
+        self.raw_encoding
+            .get_or_init(|| encode_txns::<Alloy2718Coder>(&self.transactions).into());
+        self.hash
+            .get_or_init(|| keccak256(self.raw_encoding.get().unwrap().as_ref()));
     }
 
     /// Ingest a transaction into the in-progress block. Fails

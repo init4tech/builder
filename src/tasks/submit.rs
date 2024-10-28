@@ -109,9 +109,18 @@ impl SubmitTask {
         s: FixedBytes<32>,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<TransactionRequest> {
-        let data = Zenith::submitBlockCall { header, v, r, s, _4: Default::default() }.abi_encode();
+        let data = Zenith::submitBlockCall {
+            header,
+            v,
+            r,
+            s,
+            _4: Default::default(),
+        }
+        .abi_encode();
         let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
-        Ok(TransactionRequest::default().with_blob_sidecar(sidecar).with_input(data))
+        Ok(TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_input(data))
     }
 
     async fn host_block_height(&self) -> eyre::Result<u64> {
@@ -191,7 +200,10 @@ impl SubmitTask {
                 sig = hex::encode(sig.as_bytes()),
                 "acquired signature from local signer"
             );
-            SignResponse { req: sig_request, sig }
+            SignResponse {
+                req: sig_request,
+                sig,
+            }
         } else {
             let resp: SignResponse = self.sup_quincey(&sig_request).await?;
             tracing::debug!(
