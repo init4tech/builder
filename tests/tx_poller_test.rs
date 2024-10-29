@@ -68,6 +68,7 @@ mod tests {
             host_chain_id: 17000,
             ru_chain_id: 17001,
             host_rpc_url: "http://rpc.holesky.signet.sh".into(),
+            tx_broadcast_urls: vec!["http://localhost:9000".into()],
             zenith_address: Address::default(),
             quincey_url: "http://localhost:8080".into(),
             builder_port: 8080,

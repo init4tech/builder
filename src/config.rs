@@ -14,6 +14,7 @@ use zenith_types::Zenith;
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
 const RU_CHAIN_ID: &str = "RU_CHAIN_ID";
 const HOST_RPC_URL: &str = "HOST_RPC_URL";
+const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URL";
 const ZENITH_ADDRESS: &str = "ZENITH_ADDRESS";
 const QUINCEY_URL: &str = "QUINCEY_URL";
 const BUILDER_PORT: &str = "BUILDER_PORT";
@@ -42,6 +43,8 @@ pub struct BuilderConfig {
     pub ru_chain_id: u64,
     /// URL for Host RPC node.
     pub host_rpc_url: Cow<'static, str>,
+    /// Additional RPC URLs to which to broadcast transactions.
+    pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.
     pub zenith_address: Address,
     /// URL for remote Quincey Sequencer server to sign blocks.
@@ -133,6 +136,12 @@ impl BuilderConfig {
             host_chain_id: load_u64(HOST_CHAIN_ID)?,
             ru_chain_id: load_u64(RU_CHAIN_ID)?,
             host_rpc_url: load_url(HOST_RPC_URL)?,
+            tx_broadcast_urls: env::var(TX_BROADCAST_URLS)
+                .unwrap_or_default()
+                .split(',')
+                .map(ToOwned::to_owned)
+                .map(Into::into)
+                .collect(),
             zenith_address: load_address(ZENITH_ADDRESS)?,
             quincey_url: load_url(QUINCEY_URL)?,
             builder_port: load_u16(BUILDER_PORT)?,
@@ -178,6 +187,20 @@ impl BuilderConfig {
             .on_builtin(&self.host_rpc_url)
             .await
             .map_err(Into::into)
+    }
+
+    pub async fn connect_additional_broadcast(
+        &self,
+    ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
+        let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
+        for url in self.tx_broadcast_urls.iter() {
+            let provider = ProviderBuilder::new()
+                .on_builtin(&url)
+                .await
+                .map_err(Into::<ConfigError>::into)?;
+            providers.push(provider);
+        }
+        Ok(providers)
     }
 
     pub fn connect_zenith(&self, provider: Provider) -> ZenithInstance {

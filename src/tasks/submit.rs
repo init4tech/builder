@@ -3,13 +3,13 @@ use crate::{
     signer::LocalOrAws,
     tasks::block::InProgressBlock,
 };
-use alloy::consensus::SimpleCoder;
 use alloy::network::{TransactionBuilder, TransactionBuilder4844};
 use alloy::providers::{Provider as _, WalletProvider};
 use alloy::rpc::types::eth::TransactionRequest;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use alloy::transports::TransportError;
+use alloy::{consensus::SimpleCoder, providers::SendableTx};
 use alloy_primitives::{FixedBytes, U256};
 use eyre::bail;
 use oauth2::{
@@ -17,8 +17,21 @@ use oauth2::{
     ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenResponse, TokenUrl,
 };
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, instrument, trace};
+use tracing::{debug, error, instrument, trace, warn};
 use zenith_types::{SignRequest, SignResponse, Zenith};
+
+macro_rules! spawn_provider_send {
+    ($provider:expr, $tx:expr) => {
+        let p = $provider.clone();
+        let t = $tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = p.send_tx_envelope(t).await {
+                warn!(%e, "error in transaction broadcast");
+            }
+        });
+
+    };
+}
 
 /// OAuth Audience Claim Name, required param by IdP for client credential grant
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
@@ -161,23 +174,40 @@ impl SubmitTask {
             bail!("bailing transaction submission")
         }
 
+        self.send_transaction(resp, tx).await?;
+
+        Ok(())
+    }
+
+    async fn send_transaction(
+        &self,
+        resp: &SignResponse,
+        tx: TransactionRequest,
+    ) -> Result<(), eyre::Error> {
         tracing::debug!(
             host_block_number = %resp.req.host_block_number,
             gas_limit = %resp.req.gas_limit,
             "sending transaction to network"
         );
 
-        let result = self.provider.send_transaction(tx).await?;
+        let SendableTx::Envelope(tx) = self.provider.fill(tx).await? else {
+            bail!("failed to fill transaction")
+        };
 
-        let tx_hash = result.tx_hash();
+        // Send the tx via the primary provider
+        spawn_provider_send!(&self.provider, &tx);
+
+        // Spawn send_tx futures for all additional broadcast providers
+        for provider in self.config.connect_additional_broadcast().await? {
+            spawn_provider_send!(&provider, &tx);
+        }
 
         tracing::info!(
-            %tx_hash,
+            tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
             gas_limit = %resp.req.gas_limit,
             "dispatched to network"
         );
-
         Ok(())
     }
 
