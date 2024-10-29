@@ -19,11 +19,7 @@ pub struct InProgressBlock {
 impl InProgressBlock {
     /// Create a new `InProgressBlock`
     pub fn new() -> Self {
-        Self {
-            transactions: Vec::new(),
-            raw_encoding: OnceLock::new(),
-            hash: OnceLock::new(),
-        }
+        Self { transactions: Vec::new(), raw_encoding: OnceLock::new(), hash: OnceLock::new() }
     }
 
     /// Get the number of transactions in the block.
@@ -44,10 +40,8 @@ impl InProgressBlock {
 
     /// Seal the block by encoding the transactions and calculating the contentshash.
     fn seal(&self) {
-        self.raw_encoding
-            .get_or_init(|| encode_txns::<Alloy2718Coder>(&self.transactions).into());
-        self.hash
-            .get_or_init(|| keccak256(self.raw_encoding.get().unwrap().as_ref()));
+        self.raw_encoding.get_or_init(|| encode_txns::<Alloy2718Coder>(&self.transactions).into());
+        self.hash.get_or_init(|| keccak256(self.raw_encoding.get().unwrap().as_ref()));
     }
 
     /// Ingest a transaction into the in-progress block. Fails
@@ -107,11 +101,12 @@ impl BlockBuilder {
 
         let (sender, mut inbound) = mpsc::unbounded_channel();
 
+        let mut sleep =
+            Box::pin(tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer)));
+
         let handle = tokio::spawn(
             async move {
                 loop {
-                    let sleep: tokio::time::Sleep = tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer));
-                    tokio::pin!(sleep);
 
                     select! {
                         biased;
@@ -124,6 +119,10 @@ impl BlockBuilder {
                                     break
                                 }
                             }
+
+                            // Reset the sleep timer, as we want to do so when (and only when) our sleep future has elapsed,
+                            // irrespective of whether we have any blocks to build.
+                            sleep.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(self.incoming_transactions_buffer));
                         }
                         item_res = inbound.recv() => {
                             match item_res {

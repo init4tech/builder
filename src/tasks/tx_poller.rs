@@ -32,11 +32,7 @@ pub struct TxPoller {
 impl TxPoller {
     /// returns a new TxPoller with the given config.
     pub fn new(config: &BuilderConfig) -> Self {
-        Self {
-            config: config.clone(),
-            client: Client::new(),
-            seen_txns: HashMap::new(),
-        }
+        Self { config: config.clone(), client: Client::new(), seen_txns: HashMap::new() }
     }
 
     /// polls the tx-pool for unique transactions and evicts expired transactions.
@@ -70,13 +66,15 @@ impl TxPoller {
         let expired_keys: Vec<TxHash> = self
             .seen_txns
             .iter()
-            .filter_map(|(key, &expiration)| {
-                if !expiration.elapsed().is_zero() {
-                    Some(*key)
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |(key, &expiration)| {
+                    if !expiration.elapsed().is_zero() {
+                        Some(*key)
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect();
 
         for key in expired_keys {
