@@ -14,7 +14,7 @@ use zenith_types::Zenith;
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
 const RU_CHAIN_ID: &str = "RU_CHAIN_ID";
 const HOST_RPC_URL: &str = "HOST_RPC_URL";
-const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URL";
+const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URLS";
 const ZENITH_ADDRESS: &str = "ZENITH_ADDRESS";
 const QUINCEY_URL: &str = "QUINCEY_URL";
 const BUILDER_PORT: &str = "BUILDER_PORT";
