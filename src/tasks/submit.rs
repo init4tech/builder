@@ -11,7 +11,6 @@ use alloy::rpc::types::eth::TransactionRequest;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use alloy::transports::TransportError;
-use alloy::{consensus::SimpleCoder, providers::SendableTx};
 use alloy_primitives::{FixedBytes, U256};
 use alloy_sol_types::SolError;
 use eyre::eyre;
@@ -121,7 +120,14 @@ impl SubmitTask {
         s: FixedBytes<32>,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<TransactionRequest> {
-        let data = Zenith::submitBlockCall { header, v, r, s, _4: Default::default() }.abi_encode();
+        let data = Zenith::submitBlockCall {
+            header,
+            v,
+            r,
+            s,
+            _4: Default::default(),
+        }
+        .abi_encode();
         let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
         Ok(TransactionRequest::default()
             .with_blob_sidecar(sidecar)
@@ -131,7 +137,9 @@ impl SubmitTask {
 
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let result = self.provider.get_block_number().await?;
-        let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
+        let next = result
+            .checked_add(1)
+            .ok_or_else(|| eyre!("next host block height overflow"))?;
         Ok(next)
     }
 
@@ -158,8 +166,11 @@ impl SubmitTask {
             .with_to(self.config.zenith_address)
             .with_gas_limit(1_000_000);
 
-        if let Err(TransportError::ErrorResp(e)) =
-            self.provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+        if let Err(TransportError::ErrorResp(e)) = self
+            .provider
+            .call(&tx)
+            .block(BlockNumberOrTag::Pending.into())
+            .await
         {
             error!(
                 code = e.code,
@@ -181,7 +192,7 @@ impl SubmitTask {
             "sending transaction to network"
         );
 
-        let result = match self.provider.send_transaction(tx).await {
+        let _ = match self.provider.send_transaction(tx).await {
             Ok(result) => result,
             Err(e) => {
                 error!(error = %e, "error sending transaction");
@@ -189,10 +200,7 @@ impl SubmitTask {
             }
         };
 
-        let tx_hash = result.tx_hash();
-
         tracing::info!(
-            tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
             gas_limit = %resp.req.gas_limit,
             "dispatched to network"
@@ -226,7 +234,10 @@ impl SubmitTask {
                 sig = hex::encode(sig.as_bytes()),
                 "acquired signature from local signer"
             );
-            SignResponse { req: sig_request, sig }
+            SignResponse {
+                req: sig_request,
+                sig,
+            }
         } else {
             let resp: SignResponse = match self.sup_quincey(&sig_request).await {
                 Ok(resp) => resp,
