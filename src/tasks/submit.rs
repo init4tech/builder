@@ -3,17 +3,20 @@ use crate::{
     signer::LocalOrAws,
     tasks::block::InProgressBlock,
 };
-use alloy::consensus::{constants::GWEI_TO_WEI, SimpleCoder};
-use alloy::eips::BlockNumberOrTag;
-use alloy::network::{TransactionBuilder, TransactionBuilder4844};
-use alloy::providers::{Provider as _, WalletProvider};
-use alloy::rpc::types::eth::TransactionRequest;
-use alloy::signers::Signer;
-use alloy::sol_types::SolCall;
-use alloy::transports::TransportError;
+use alloy::{
+    consensus::{constants::GWEI_TO_WEI, SimpleCoder},
+    eips::BlockNumberOrTag,
+    network::{TransactionBuilder, TransactionBuilder4844},
+    providers::SendableTx,
+    providers::{Provider as _, WalletProvider},
+    rpc::types::eth::TransactionRequest,
+    signers::Signer,
+    sol_types::SolCall,
+    transports::TransportError,
+};
 use alloy_primitives::{FixedBytes, U256};
 use alloy_sol_types::SolError;
-use eyre::eyre;
+use eyre::{bail, eyre};
 use oauth2::{
     basic::BasicClient, basic::BasicTokenType, reqwest::http_client, AuthUrl, ClientId,
     ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenResponse, TokenUrl,
@@ -24,6 +27,20 @@ use zenith_types::{
     SignRequest, SignResponse,
     Zenith::{self, IncorrectHostBlock},
 };
+
+macro_rules! spawn_provider_send {
+    ($provider:expr, $tx:expr) => {
+        {
+            let p = $provider.clone();
+            let t = $tx.clone();
+            tokio::spawn(async move {
+                p.send_tx_envelope(t).await.inspect_err(|e| {
+                    tracing::warn!(%e, "error in transaction broadcast")
+                })
+            })
+        }
+    };
+}
 
 /// OAuth Audience Claim Name, required param by IdP for client credential grant
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
@@ -186,21 +203,41 @@ impl SubmitTask {
             return Ok(ControlFlow::Skip);
         }
 
+        self.send_transaction(resp, tx).await
+    }
+
+    async fn send_transaction(
+        &self,
+        resp: &SignResponse,
+        tx: TransactionRequest,
+    ) -> Result<ControlFlow, eyre::Error> {
         tracing::debug!(
             host_block_number = %resp.req.host_block_number,
             gas_limit = %resp.req.gas_limit,
             "sending transaction to network"
         );
 
-        let _ = match self.provider.send_transaction(tx).await {
-            Ok(result) => result,
-            Err(e) => {
-                error!(error = %e, "error sending transaction");
-                return Ok(ControlFlow::Skip);
-            }
+        let SendableTx::Envelope(tx) = self.provider.fill(tx).await? else {
+            bail!("failed to fill transaction")
         };
 
+        // Send the tx via the primary provider
+        let fut = spawn_provider_send!(&self.provider, &tx);
+
+        // Spawn send_tx futures for all additional broadcast providers
+        for provider in self.config.connect_additional_broadcast().await? {
+            spawn_provider_send!(&provider, &tx);
+        }
+
+        // question mark unwraps join error, which would be an internal panic
+        // then if let checks for rpc error
+        if let Err(e) = fut.await? {
+            tracing::error!(error = %e, "Primary tx broadcast failed. Skipping transaction.");
+            return Ok(ControlFlow::Skip);
+        }
+
         tracing::info!(
+            tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
             gas_limit = %resp.req.gas_limit,
             "dispatched to network"
