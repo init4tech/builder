@@ -195,7 +195,7 @@ impl BuilderConfig {
         let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
         for url in self.tx_broadcast_urls.iter() {
             let provider = ProviderBuilder::new()
-                .on_builtin(&url)
+                .on_builtin(url)
                 .await
                 .map_err(Into::<ConfigError>::into)?;
             providers.push(provider);
