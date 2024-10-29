@@ -21,6 +21,8 @@ The following environment variables are exposed to configure the Builder:
 HOST_CHAIN_ID="17000" # Holesky Testnet
 RU_CHAIN_ID="17001"
 HOST_RPC_URL="http://host.url.here"
+# trailing slash is required
+TX_BROADCAST_URLS="http://tx.broadcast.url.here/,https://additional.url.here/"
 ZENITH_ADDRESS="ZENITH_ADDRESS_HERE"
 QUINCEY_URL="http://signer.url.here"
 BUILDER_PORT="8080"
