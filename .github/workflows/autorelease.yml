@@ -1,0 +1,39 @@
+name: Tag New Release
+on:
+    push:
+      branches:
+        - main
+      paths:
+        - 'Cargo.toml'
+  
+permissions:
+    contents: write
+    id-token: write
+
+jobs:
+    verify-new-release-needed:
+        name: Verify new release needed
+        runs-on: ubuntu-latest
+        environment: dev
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+            - name: Verify new release needed
+              run: |
+                echo "Checking if a new release is needed"
+                # get current version from cargo
+                CARGO_VER="v$(cargo metadata --format-version=1 --no-deps  | jq '.packages[] | select(.name == "signet-node") | .version' -r)"
+                echo "$CARGO_VER"
+                # get latest version from git tags
+                GIT_VER=$(git describe --tags --abbrev=0)
+                echo "$GIT_VER"
+                if [ "$CARGO_VER" == "$GIT_VER" ]; then
+                echo "# No new release needed" >> $GITHUB_STEP_SUMMARY
+                exit 0
+                else
+                    echo "New release needed"
+                    gh release create "$CARGO_VER" -t "$CARGO_VER" --generate-notes
+                    ## Add the release information to the github actions summary
+                    echo "# New Release Created" >> $GITHUB_STEP_SUMMARY
+                    echo "Tag: $CARGO_VER" >> $GITHUB_STEP_SUMMARY
+                fi
