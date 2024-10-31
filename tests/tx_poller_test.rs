@@ -63,7 +63,7 @@ mod tests {
     }
 
     // Sets up a block builder with test values
-    async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
+    pub async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
         let config = BuilderConfig {
             host_chain_id: 17000,
             ru_chain_id: 17001,

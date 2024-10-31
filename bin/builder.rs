@@ -2,8 +2,9 @@
 
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
+use builder::tasks::oauth::Authenticator;
 use builder::tasks::tx_poller::TxPoller;
-use builder::tasks::bundler::BundleFetcher;
+use builder::tasks::bundler::BundlePoller;
 
 use tokio::select;
 
@@ -12,8 +13,9 @@ async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt::try_init().unwrap();
     let span = tracing::info_span!("zenith-builder");
 
-    let config = BuilderConfig::load_from_env()?;
+    let config = BuilderConfig::load_from_env()?.clone();
     let provider = config.connect_provider().await?;
+    let authenticator = Authenticator::new(&config).await?;
 
     tracing::debug!(
         rpc_url = config.host_rpc_url.as_ref(),
@@ -24,17 +26,17 @@ async fn main() -> eyre::Result<()> {
     let zenith = config.connect_zenith(provider.clone());
 
     let port = config.builder_port;
-
     let tx_poller = TxPoller::new(&config);
-    let bundle_poller = BundleFetcher::new(&config.clone());
-    let builder = builder::tasks::block::BlockBuilder::new(&config.clone());
+    let bundle_poller = BundlePoller::new(&config, authenticator.clone()).await;
+    let builder = builder::tasks::block::BlockBuilder::new(&config);
 
     let submit = builder::tasks::submit::SubmitTask {
+        authenticator,
         provider,
         zenith,
         client: reqwest::Client::new(),
         sequencer_signer,
-        config,
+        config: config.clone(),
     };
 
     let (submit_channel, submit_jh) = submit.spawn();

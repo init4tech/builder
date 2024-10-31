@@ -42,6 +42,8 @@ macro_rules! spawn_provider_send {
     };
 }
 
+use super::oauth::Authenticator;
+
 /// OAuth Audience Claim Name, required param by IdP for client credential grant
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
 
@@ -55,18 +57,16 @@ pub enum ControlFlow {
 pub struct SubmitTask {
     /// Ethereum Provider
     pub provider: Provider,
-
-    /// Zenity
+    /// Zenith
     pub zenith: ZenithInstance,
-
     /// Reqwest
     pub client: reqwest::Client,
-
     /// Sequencer Signer
     pub sequencer_signer: Option<LocalOrAws>,
-
     /// Config
     pub config: crate::config::BuilderConfig,
+    /// Authenticator
+    pub authenticator: Authenticator,
 }
 
 impl SubmitTask {
@@ -96,6 +96,7 @@ impl SubmitTask {
         serde_json::from_slice(&body).map_err(Into::into)
     }
 
+    // TODO: deduplicate this by adding an Authenticator to the submit task
     async fn fetch_oauth_token(
         &self,
     ) -> eyre::Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>> {
@@ -114,6 +115,8 @@ impl SubmitTask {
         Ok(token_result)
     }
 
+    /// Constructs the signing request from the in-progress block passed to it and assigns the 
+    /// correct height, chain ID, gas limit, and rollup reward address.
     #[instrument(skip_all)]
     async fn construct_sig_request(&self, contents: &InProgressBlock) -> eyre::Result<SignRequest> {
         let ru_chain_id = U256::from(self.config.ru_chain_id);
@@ -129,6 +132,7 @@ impl SubmitTask {
         })
     }
 
+    /// Builds blob transaction from the provided header and signature values
     fn build_blob_tx(
         &self,
         header: Zenith::BlockHeader,
@@ -160,6 +164,7 @@ impl SubmitTask {
         Ok(next)
     }
 
+    /// Submits the EIP 4844 transaction to the network
     async fn submit_transaction(
         &self,
         resp: &SignResponse,
@@ -293,7 +298,7 @@ impl SubmitTask {
         self.submit_transaction(&signed, in_progress).await
     }
 
-    /// Spawn the task.
+    /// Spawns the in progress block building task
     pub fn spawn(self) -> (mpsc::UnboundedSender<InProgressBlock>, JoinHandle<()>) {
         let (sender, mut inbound) = mpsc::unbounded_channel();
         let handle = tokio::spawn(async move {
