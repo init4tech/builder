@@ -1,12 +1,15 @@
 mod tests {
-    
+
     use alloy_primitives::Address;
-    use builder::{config::BuilderConfig, tasks::{block::BlockBuilder, oauth::Authenticator}};
+    use builder::{
+        config::BuilderConfig,
+        tasks::{block::BlockBuilder, oauth::Authenticator},
+    };
     use eyre::Result;
-    
+
     #[tokio::test]
     async fn test_bundle_poller_roundtrip() -> Result<()> {
-        let (_, config)  = setup_test_builder().await.unwrap();
+        let (_, config) = setup_test_builder().await.unwrap();
         let auth = Authenticator::new(&config).await?;
         let mut bundle_poller = builder::tasks::bundler::BundlePoller::new(&config, auth).await;
 
@@ -16,7 +19,7 @@ mod tests {
         Ok(())
     }
 
-   // TODO: Deduplicate this with the same function in tx_poller_test.rs
+    // TODO: Deduplicate this with the same function in tx_poller_test.rs
     async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
         let config = BuilderConfig {
             host_chain_id: 17000,

@@ -110,7 +110,11 @@ impl BlockBuilder {
     pub fn spawn(
         self,
         outbound: mpsc::UnboundedSender<InProgressBlock>,
-    ) -> (mpsc::UnboundedSender<TxEnvelope>, mpsc::UnboundedSender<Bundle>, JoinHandle<()>) {
+    ) -> (
+        mpsc::UnboundedSender<TxEnvelope>,
+        mpsc::UnboundedSender<Bundle>,
+        JoinHandle<()>,
+    ) {
         let mut in_progress = InProgressBlock::default();
 
         let (tx_sender, mut tx_inbound) = mpsc::unbounded_channel();

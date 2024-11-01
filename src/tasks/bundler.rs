@@ -1,3 +1,4 @@
+//! Bundler service responsible for polling and submitting bundles to the in-progress block.
 use std::time::Duration;
 
 pub use crate::config::BuilderConfig;

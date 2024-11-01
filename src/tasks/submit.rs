@@ -115,7 +115,7 @@ impl SubmitTask {
         Ok(token_result)
     }
 
-    /// Constructs the signing request from the in-progress block passed to it and assigns the 
+    /// Constructs the signing request from the in-progress block passed to it and assigns the
     /// correct height, chain ID, gas limit, and rollup reward address.
     #[instrument(skip_all)]
     async fn construct_sig_request(&self, contents: &InProgressBlock) -> eyre::Result<SignRequest> {

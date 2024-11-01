@@ -2,9 +2,9 @@
 
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
+use builder::tasks::bundler::BundlePoller;
 use builder::tasks::oauth::Authenticator;
 use builder::tasks::tx_poller::TxPoller;
-use builder::tasks::bundler::BundlePoller;
 
 use tokio::select;
 

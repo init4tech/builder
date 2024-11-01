@@ -1,9 +1,15 @@
+//! OAuth service responsible for authenticating with the cache.
+use std::sync::Arc;
+
 use crate::config::BuilderConfig;
+use eyre::eyre;
 use oauth2::{
     basic::{BasicClient, BasicTokenType},
     reqwest::http_client,
     AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
 };
+use reqwest::Url;
+use tokio::task;
 
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
 
@@ -25,7 +31,7 @@ impl Authenticator {
 
     /// Requests a new authentication token and, if successful, sets it to as the token
     pub async fn authenticate(&mut self) -> eyre::Result<()> {
-        let token = self.fetch_oauth_token()?;
+        let token = self.fetch_oauth_token().await?;
         dbg!(&token);
         // self.set_token(token).await;
         Ok(())
@@ -55,11 +61,13 @@ impl Authenticator {
             .cloned()
     }
 
-    /// Fetches an oauth token and saves it to the Authenticator
-    /// Does not set a new token, it only requests a new one
-    pub fn fetch_oauth_token(
+    /// Fetches an oauth token
+    pub async fn fetch_oauth_token(
         &self,
     ) -> eyre::Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>> {
+        let config = self.config.clone();
+        dbg!(config.clone());
+
         let client = BasicClient::new(
             ClientId::new(self.config.oauth_client_id.clone()),
             Some(ClientSecret::new(self.config.oauth_client_secret.clone())),
@@ -67,10 +75,14 @@ impl Authenticator {
             Some(TokenUrl::new(self.config.oauth_token_url.clone())?),
         );
 
-        let token_result = client
-            .exchange_client_credentials()
-            .add_extra_param(OAUTH_AUDIENCE_CLAIM, self.config.oauth_audience.clone())
-            .request(http_client)?;
+        // Use spawn_blocking to handle the blocking client request.
+        let token_result = task::spawn_blocking(move || {
+            client
+                .exchange_client_credentials()
+                .add_extra_param(OAUTH_AUDIENCE_CLAIM, config.oauth_audience.clone())
+                .request(http_client)
+        })
+        .await??; // Handle errors from spawn_blocking and the OAuth request.
 
         Ok(token_result)
     }
@@ -83,11 +95,12 @@ mod tests {
     use alloy_primitives::Address;
     use eyre::Result;
 
+    #[ignore = "integration test"]
     #[tokio::test]
     async fn test_authenticator() -> Result<()> {
         let config = setup_test_builder()?.1;
         let auth = Authenticator::new(&config).await?;
-        let token = auth.fetch_oauth_token()?;
+        let token = auth.fetch_oauth_token().await?;
         dbg!(&token);
         // let token = auth.token().await?;
         // println!("{:?}", token);
