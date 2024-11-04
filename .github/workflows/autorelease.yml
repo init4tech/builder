@@ -19,6 +19,7 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4
               with: 
+                ref: "ref/heads/main"
                 fetch-tags: "true"
                 fetch-depth: "0"
             - name: Verify new release needed
