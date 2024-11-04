@@ -1,14 +1,10 @@
-//! OAuth service responsible for authenticating with the cache.
-use std::sync::Arc;
-
+//! Service responsible for authenticating with the cache with Oauth tokens.
 use crate::config::BuilderConfig;
-use eyre::eyre;
 use oauth2::{
     basic::{BasicClient, BasicTokenType},
     reqwest::http_client,
     AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
 };
-use reqwest::Url;
 use tokio::task;
 
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
@@ -127,8 +123,8 @@ mod tests {
             tx_pool_poll_interval: 5,
             oauth_client_id: "some_client_id".into(),
             oauth_client_secret: "some_client_secret".into(),
-            oauth_authenticate_url: "http://localhost:8080".into(),
-            oauth_token_url: "http://localhost:8080".into(),
+            oauth_authenticate_url: "http://localhost:9000".into(),
+            oauth_token_url: "http://localhost:9000".into(),
             oauth_audience: "https://transactions.holesky.signet.sh".into(),
             tx_broadcast_urls: vec!["http://localhost:9000".into()],
         };
