@@ -19,7 +19,6 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4
               with: 
-                ref: "ref/heads/main"
                 fetch-tags: "true"
                 fetch-depth: "0"
             - name: Verify new release needed
@@ -29,7 +28,7 @@ jobs:
                 CARGO_VER="v$(cargo metadata --format-version=1 --no-deps  | jq '.packages[] | select(.name == "zenith-builder-example") | .version' -r)"
                 echo "$CARGO_VER"
                 # get latest version from git tags
-                GIT_VER=$(git describe --tags --abbrev=0)
+                GIT_VER=$(git describe --tags $(git rev-list --tags --max-count=1))
                 echo "$GIT_VER"
                 if [ "$CARGO_VER" == "$GIT_VER" ]; then
                 echo "# No new release needed" >> $GITHUB_STEP_SUMMARY
