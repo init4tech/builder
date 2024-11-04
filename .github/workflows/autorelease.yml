@@ -20,6 +20,7 @@ jobs:
               uses: actions/checkout@v4
               with: 
                 fetch-tags: "true"
+                fetch-depth: "0"
             - name: Verify new release needed
               run: |
                 echo "Checking if a new release is needed"
