@@ -22,7 +22,7 @@ jobs:
               run: |
                 echo "Checking if a new release is needed"
                 # get current version from cargo
-                CARGO_VER="v$(cargo metadata --format-version=1 --no-deps  | jq '.packages[] | select(.name == "signet-node") | .version' -r)"
+                CARGO_VER="v$(cargo metadata --format-version=1 --no-deps  | jq '.packages[] | select(.name == "zenith-builder-example") | .version' -r)"
                 echo "$CARGO_VER"
                 # get latest version from git tags
                 GIT_VER=$(git describe --tags --abbrev=0)
