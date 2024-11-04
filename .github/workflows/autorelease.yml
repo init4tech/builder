@@ -18,6 +18,8 @@ jobs:
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
+              with: 
+                fetch-tags: "true"
             - name: Verify new release needed
               run: |
                 echo "Checking if a new release is needed"

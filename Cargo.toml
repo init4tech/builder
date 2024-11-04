@@ -47,4 +47,3 @@ tracing-subscriber = "0.3.18"
 
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
-
