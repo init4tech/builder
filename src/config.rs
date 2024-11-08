@@ -26,6 +26,7 @@ const BUILDER_REWARDS_ADDRESS: &str = "BUILDER_REWARDS_ADDRESS";
 const ROLLUP_BLOCK_GAS_LIMIT: &str = "ROLLUP_BLOCK_GAS_LIMIT";
 const TX_POOL_URL: &str = "TX_POOL_URL";
 const TX_POOL_POLL_INTERVAL: &str = "TX_POOL_POLL_INTERVAL";
+const AUTH_TOKEN_REFRESH_INTERVAL: &str = "AUTH_TOKEN_REFRESH_INTERVAL";
 const TX_POOL_CACHE_DURATION: &str = "TX_POOL_CACHE_DURATION";
 const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
@@ -82,6 +83,8 @@ pub struct BuilderConfig {
     pub oauth_token_url: String,
     /// OAuth audience for the builder.
     pub oauth_audience: String,
+    /// The oauth token refresh interval in seconds.
+    pub oauth_token_refresh_interval: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -159,6 +162,7 @@ impl BuilderConfig {
             oauth_authenticate_url: load_string(OAUTH_AUTHENTICATE_URL)?,
             oauth_token_url: load_string(OAUTH_TOKEN_URL)?,
             oauth_audience: load_string(OAUTH_AUDIENCE)?,
+            oauth_token_refresh_interval: load_u64(AUTH_TOKEN_REFRESH_INTERVAL)?,
         })
     }
 
