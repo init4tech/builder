@@ -10,7 +10,7 @@ mod tests {
     #[tokio::test]
     async fn test_bundle_poller_roundtrip() -> Result<()> {
         let (_, config) = setup_test_builder().await.unwrap();
-        let auth = Authenticator::new(&config).await?;
+        let auth = Authenticator::new(&config);
         let mut bundle_poller = builder::tasks::bundler::BundlePoller::new(&config, auth).await;
 
         let got = bundle_poller.check_bundle_cache().await?;

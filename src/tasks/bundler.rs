@@ -42,13 +42,8 @@ impl BundlePoller {
 
     /// Fetches bundles from the transaction cache and returns the (oldest? random?) bundle in the cache.
     pub async fn check_bundle_cache(&mut self) -> eyre::Result<Option<Bundle>> {
-        // Fetch a token from the authenticator if not currently authenticated
-        if !self.authenticator.is_authenticated().await {
-            self.authenticator.authenticate().await?;
-        }
-
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
-        let token = self.authenticator.token().await?;
+        let token = self.authenticator.fetch_oauth_token().await?;
 
         // Add the token to the request headers
         let result = reqwest::Client::new()

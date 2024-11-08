@@ -8,20 +8,22 @@ use oauth2::{
 
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
 
+type Token = StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
+
 /// Holds a reference to the current oauth token and the builder config
 #[derive(Debug, Clone)]
 pub struct Authenticator {
     pub config: BuilderConfig,
-    pub token: Option<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>>,
+    pub token: Option<Token>,
 }
 
 impl Authenticator {
     /// Creates a new Authenticator from the provided builder config.
-    pub async fn new(config: &BuilderConfig) -> eyre::Result<Self> {
-        Ok(Self {
+    pub fn new(config: &BuilderConfig) -> Self {
+        Self {
             config: config.clone(),
             token: None,
-        })
+        }
     }
 
     /// Requests a new authentication token and, if successful, sets it to as the token
@@ -33,7 +35,7 @@ impl Authenticator {
     }
 
     /// Returns true if there is Some token set
-    pub async fn is_authenticated(&self) -> bool {
+    pub fn is_authenticated(&self) -> bool {
         self.token.is_some()
     }
 
@@ -46,13 +48,8 @@ impl Authenticator {
     }
 
     /// Returns the currently set token
-    pub async fn token(
-        &self,
-    ) -> eyre::Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>> {
-        self.token
-            .as_ref()
-            .ok_or(eyre::eyre!("no token set"))
-            .cloned()
+    pub fn token(&self) -> Option<Token> {
+        self.token.clone()
     }
 
     /// Fetches an oauth token
@@ -90,10 +87,10 @@ mod tests {
         use oauth2::TokenResponse;
 
         let config = setup_test_builder()?.1;
-        let auth = Authenticator::new(&config).await?;
+        let auth = Authenticator::new(&config);
         let token = auth.fetch_oauth_token().await?;
         dbg!(&token);
-        let token = auth.token().await?;
+        let token = auth.token().unwrap();
         println!("{:?}", token);
         assert!(!token.access_token().secret().is_empty());
         Ok(())

@@ -15,7 +15,7 @@ async fn main() -> eyre::Result<()> {
 
     let config = BuilderConfig::load_from_env()?.clone();
     let provider = config.connect_provider().await?;
-    let authenticator = Authenticator::new(&config).await?;
+    let authenticator = Authenticator::new(&config);
 
     tracing::debug!(
         rpc_url = config.host_rpc_url.as_ref(),
