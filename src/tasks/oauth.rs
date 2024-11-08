@@ -53,7 +53,7 @@ impl Authenticator {
     }
 
     /// Requests a new authentication token and, if successful, sets it to as the token
-    pub async fn authenticate(&mut self) -> eyre::Result<()> {
+    pub async fn authenticate(&self) -> eyre::Result<()> {
         let token = self.fetch_oauth_token().await?;
         self.set_token(token).await;
         Ok(())
@@ -68,7 +68,7 @@ impl Authenticator {
 
     /// Sets the Authenticator's token to the provided value
     pub async fn set_token(
-        &mut self,
+        &self,
         token: StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
     ) {
         let mut lock = self.inner.write().await;
@@ -103,7 +103,7 @@ impl Authenticator {
     }
 
     /// Spawns a task that periodically fetches a new token every 300 seconds.
-    pub async fn spawn(mut self) -> JoinHandle<()> {
+    pub async fn spawn(self) -> JoinHandle<()> {
         let interval = self.config.oauth_token_refresh_interval;
 
         tokio::spawn(async move {
