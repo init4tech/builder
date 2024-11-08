@@ -85,8 +85,6 @@ impl Authenticator {
 }
 
 mod tests {
-    use super::*;
-
     use crate::{config::BuilderConfig, tasks::block::BlockBuilder};
     use alloy_primitives::Address;
     use eyre::Result;
@@ -94,16 +92,20 @@ mod tests {
     #[ignore = "integration test"]
     #[tokio::test]
     async fn test_authenticator() -> Result<()> {
+        use super::*;
+        use oauth2::TokenResponse;
+
         let config = setup_test_builder()?.1;
         let auth = Authenticator::new(&config).await?;
         let token = auth.fetch_oauth_token().await?;
         dbg!(&token);
-        // let token = auth.token().await?;
-        // println!("{:?}", token);
-        // assert!(token.access_token().secret().len() > 0);
+        let token = auth.token().await?;
+        println!("{:?}", token);
+        assert!(!token.access_token().secret().is_empty());
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
         let config = BuilderConfig {
             host_chain_id: 17000,

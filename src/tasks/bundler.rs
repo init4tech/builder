@@ -2,18 +2,13 @@
 use std::time::Duration;
 
 pub use crate::config::BuilderConfig;
-use alloy_sol_types::abi::token;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use serde_json::from_slice;
 use signet_types::SignetEthBundle;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::debug;
 
-use oauth2::{
-    basic::BasicClient, basic::BasicTokenType, reqwest::http_client, AuthUrl, ClientId,
-    ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenResponse, TokenUrl,
-};
+use oauth2::TokenResponse;
 
 use super::oauth::Authenticator;
 
