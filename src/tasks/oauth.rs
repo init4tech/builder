@@ -5,7 +5,6 @@ use oauth2::{
     reqwest::http_client,
     AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
 };
-use tokio::task;
 
 const OAUTH_AUDIENCE_CLAIM: &str = "audience";
 
@@ -71,14 +70,10 @@ impl Authenticator {
             Some(TokenUrl::new(self.config.oauth_token_url.clone())?),
         );
 
-        // Use spawn_blocking to handle the blocking client request.
-        let token_result = task::spawn_blocking(move || {
-            client
-                .exchange_client_credentials()
-                .add_extra_param(OAUTH_AUDIENCE_CLAIM, config.oauth_audience.clone())
-                .request(http_client)
-        })
-        .await??; // Handle errors from spawn_blocking and the OAuth request.
+        let token_result = client
+            .exchange_client_credentials()
+            .add_extra_param(OAUTH_AUDIENCE_CLAIM, config.oauth_audience.clone())
+            .request(http_client)?;
 
         Ok(token_result)
     }
