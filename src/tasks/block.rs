@@ -64,6 +64,7 @@ impl InProgressBlock {
     }
 
     /// Ingest a bundle into the in-progress block.
+    /// Ignores Signed Orders for now.
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
         tracing::info!(bundle = %bundle.id, "ingesting bundle");
 
