@@ -9,3 +9,8 @@ on:
 jobs:
   rust-base:
     uses: init4tech/actions/.github/workflows/rust-base.yml@main
+    with: 
+      requires-private-deps: true
+    secrets: 
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      
