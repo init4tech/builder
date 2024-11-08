@@ -1,5 +1,9 @@
-use alloy::consensus::{SidecarBuilder, SidecarCoder, TxEnvelope};
+use alloy::{
+    consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
+    eips::eip2718::Decodable2718,
+};
 use alloy_primitives::{keccak256, Bytes, B256};
+use alloy_rlp::Buf;
 use std::{sync::OnceLock, time::Duration};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
@@ -62,7 +66,21 @@ impl InProgressBlock {
     /// Ingest a bundle into the in-progress block.
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
         tracing::info!(bundle = %bundle.id, "ingesting bundle");
-        todo!()
+
+        let txs = bundle
+            .bundle
+            .bundle
+            .txs
+            .into_iter()
+            .map(|tx| TxEnvelope::decode_2718(&mut tx.chunk()))
+            .collect::<Result<Vec<_>, _>>();
+
+        if let Ok(txs) = txs {
+            self.unseal();
+            self.transactions.extend(txs);
+        } else {
+            tracing::error!("failed to decode bundle. dropping");
+        }
     }
 
     /// Encode the in-progress block
