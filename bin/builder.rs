@@ -42,6 +42,7 @@ async fn main() -> eyre::Result<()> {
     let (submit_channel, submit_jh) = submit.spawn();
     let (tx_channel, bundle_channel, build_jh) = builder.spawn(submit_channel);
     let tx_poller_jh = tx_poller.spawn(tx_channel.clone());
+    let bundle_poller_jh = bundle_poller.spawn(bundle_channel);
 
     let server = serve_builder_with_span(tx_channel, ([0, 0, 0, 0], port), span);
 
@@ -57,6 +58,9 @@ async fn main() -> eyre::Result<()> {
         }
         _ = tx_poller_jh => {
             tracing::info!("tx_poller finished");
+        }
+        _ = bundle_poller_jh => {
+            tracing::info!("bundle_poller finished");
         }
     }
 
