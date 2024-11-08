@@ -31,7 +31,7 @@ async fn main() -> eyre::Result<()> {
     let builder = builder::tasks::block::BlockBuilder::new(&config);
 
     let submit = builder::tasks::submit::SubmitTask {
-        authenticator,
+        authenticator: authenticator.clone(),
         provider,
         zenith,
         client: reqwest::Client::new(),
@@ -39,6 +39,7 @@ async fn main() -> eyre::Result<()> {
         config: config.clone(),
     };
 
+    let authenticator_jh = authenticator.spawn();
     let (submit_channel, submit_jh) = submit.spawn();
     let (tx_channel, bundle_channel, build_jh) = builder.spawn(submit_channel);
     let tx_poller_jh = tx_poller.spawn(tx_channel.clone());
@@ -61,6 +62,9 @@ async fn main() -> eyre::Result<()> {
         }
         _ = bundle_poller_jh => {
             tracing::info!("bundle_poller finished");
+        }
+        _ = authenticator_jh => {
+            tracing::info!("authenticator finished");
         }
     }
 
