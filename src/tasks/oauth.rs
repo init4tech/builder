@@ -28,18 +28,17 @@ impl Authenticator {
     pub async fn authenticate(&mut self) -> eyre::Result<()> {
         let token = self.fetch_oauth_token().await?;
         dbg!(&token);
-        // self.set_token(token).await;
+        self.set_token(token);
         Ok(())
     }
 
     /// Returns true if there is Some token set
     pub async fn is_authenticated(&self) -> bool {
-        // TODO: Consider checking if the token is still valid and fetching a new one if it's not
         self.token.is_some()
     }
 
     /// Sets the Authenticator's token to the provided value
-    pub async fn set_token(
+    pub fn set_token(
         &mut self,
         token: StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
     ) {

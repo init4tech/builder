@@ -17,10 +17,7 @@ use alloy::{
 use alloy_primitives::{FixedBytes, U256};
 use alloy_sol_types::SolError;
 use eyre::{bail, eyre};
-use oauth2::{
-    basic::BasicClient, basic::BasicTokenType, reqwest::http_client, AuthUrl, ClientId,
-    ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenResponse, TokenUrl,
-};
+use oauth2::TokenResponse;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
 use zenith_types::{
@@ -43,9 +40,6 @@ macro_rules! spawn_provider_send {
 }
 
 use super::oauth::Authenticator;
-
-/// OAuth Audience Claim Name, required param by IdP for client credential grant
-const OAUTH_AUDIENCE_CLAIM: &str = "audience";
 
 pub enum ControlFlow {
     Retry,
@@ -77,7 +71,7 @@ impl SubmitTask {
             "pinging quincey for signature"
         );
 
-        let token = self.fetch_oauth_token().await?;
+        let token = self.authenticator.fetch_oauth_token().await?;
 
         let resp: reqwest::Response = self
             .client
@@ -94,25 +88,6 @@ impl SubmitTask {
         trace!(body = %String::from_utf8_lossy(&body), "response body");
 
         serde_json::from_slice(&body).map_err(Into::into)
-    }
-
-    // TODO: deduplicate this by adding an Authenticator to the submit task
-    async fn fetch_oauth_token(
-        &self,
-    ) -> eyre::Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>> {
-        let client = BasicClient::new(
-            ClientId::new(self.config.oauth_client_id.clone()),
-            Some(ClientSecret::new(self.config.oauth_client_secret.clone())),
-            AuthUrl::new(self.config.oauth_authenticate_url.clone())?,
-            Some(TokenUrl::new(self.config.oauth_token_url.clone())?),
-        );
-
-        let token_result = client
-            .exchange_client_credentials()
-            .add_extra_param(OAUTH_AUDIENCE_CLAIM, self.config.oauth_audience.clone())
-            .request(http_client)?;
-
-        Ok(token_result)
     }
 
     /// Constructs the signing request from the in-progress block passed to it and assigns the
