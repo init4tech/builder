@@ -19,7 +19,6 @@ mod tests {
         Ok(())
     }
 
-    // TODO: Deduplicate this with the same function in tx_poller_test.rs
     async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
         let config = BuilderConfig {
             host_chain_id: 17000,
