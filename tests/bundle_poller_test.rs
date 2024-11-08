@@ -1,5 +1,4 @@
 mod tests {
-
     use alloy_primitives::Address;
     use builder::{
         config::BuilderConfig,
@@ -7,6 +6,7 @@ mod tests {
     };
     use eyre::Result;
 
+    #[ignore = "integration test"]
     #[tokio::test]
     async fn test_bundle_poller_roundtrip() -> Result<()> {
         let (_, config) = setup_test_builder().await.unwrap();
