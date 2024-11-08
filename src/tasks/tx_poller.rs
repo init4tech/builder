@@ -41,7 +41,7 @@ impl TxPoller {
 
     /// polls the tx-pool for unique transactions and evicts expired transactions.
     /// unique transactions that haven't been seen before are sent into the builder pipeline.
-    pub async fn check_tx_pool(&mut self) -> Result<Vec<TxEnvelope>, Error> {
+    pub async fn check_tx_cache(&mut self) -> Result<Vec<TxEnvelope>, Error> {
         let mut unique: Vec<TxEnvelope> = Vec::new();
 
         let url: Url = Url::parse(&self.config.tx_pool_url)?.join("transactions")?;
@@ -49,14 +49,14 @@ impl TxPoller {
         let response: TxPoolResponse = from_slice(result.text().await?.as_bytes())?;
 
         response.transactions.iter().for_each(|entry| {
-            self.check_cache(entry.clone(), &mut unique);
+            self.check_seen_txs(entry.clone(), &mut unique);
         });
 
         Ok(unique)
     }
 
     /// checks if the transaction has been seen before and if not, adds it to the unique transactions list.
-    fn check_cache(&mut self, tx: TxEnvelope, unique: &mut Vec<TxEnvelope>) {
+    fn check_seen_txs(&mut self, tx: TxEnvelope, unique: &mut Vec<TxEnvelope>) {
         self.seen_txns.entry(*tx.tx_hash()).or_insert_with(|| {
             // add to unique transactions
             unique.push(tx.clone());
@@ -89,7 +89,7 @@ impl TxPoller {
         let handle: JoinHandle<()> = tokio::spawn(async move {
             loop {
                 let channel = tx_channel.clone();
-                let txns = self.check_tx_pool().await;
+                let txns = self.check_tx_cache().await;
 
                 // send recently discovered transactions to the builder pipeline
                 match txns {
