@@ -6,7 +6,7 @@ mod tests {
     use alloy_primitives::{bytes, Address, TxKind, U256};
     use builder::config::BuilderConfig;
     use builder::tasks::{block::BlockBuilder, tx_poller};
-    use eyre::Result;
+    use eyre::{Ok, Result};
 
     #[ignore = "integration test"]
     #[tokio::test]
@@ -21,7 +21,7 @@ mod tests {
         let mut poller = tx_poller::TxPoller::new(&config);
 
         // Fetch transactions the pool
-        let transactions = poller.check_tx_pool().await?;
+        let transactions = poller.check_tx_cache().await?;
 
         // Ensure at least one transaction exists
         assert!(!transactions.is_empty());
@@ -63,7 +63,7 @@ mod tests {
     }
 
     // Sets up a block builder with test values
-    async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
+    pub async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
         let config = BuilderConfig {
             host_chain_id: 17000,
             ru_chain_id: 17001,
@@ -86,6 +86,7 @@ mod tests {
             oauth_authenticate_url: "http://localhost:8080".into(),
             oauth_token_url: "http://localhost:8080".into(),
             oauth_audience: "https://transactions.holesky.signet.sh".into(),
+            oauth_token_refresh_interval: 300, // 5 minutes
         };
         Ok((BlockBuilder::new(&config), config))
     }

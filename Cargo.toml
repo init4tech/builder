@@ -32,6 +32,9 @@ aws-sdk-kms = "1.15.0"
 hex = { package = "const-hex", version = "1", default-features = false, features = [
     "alloc",
 ] }
+
+signet-types = { git = "ssh://git@github.com/init4tech/signet-node.git" }
+
 serde = { version = "1.0.197", features = ["derive"] }
 tracing = "0.1.40"
 
@@ -41,7 +44,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.11.24", features = ["blocking", "json"] }
 ruint = "1.12.1"
 serde_json = "1.0"
-thiserror = "1.0.58"
+thiserror = "1.0.68"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.18"
 

@@ -105,7 +105,6 @@ pub async fn ingest_raw_handler(
 ) -> Result<Response, AppError> {
     let body = body.strip_prefix("0x").unwrap_or(&body);
     let buf = hex::decode(body).map_err(AppError::bad_req)?;
-
     let envelope = TxEnvelope::decode_2718(&mut buf.as_slice()).map_err(AppError::bad_req)?;
 
     ingest_handler(State(state), Json(envelope)).await

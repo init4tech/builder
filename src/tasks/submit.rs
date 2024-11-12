@@ -17,10 +17,7 @@ use alloy::{
 use alloy_primitives::{FixedBytes, U256};
 use alloy_sol_types::SolError;
 use eyre::{bail, eyre};
-use oauth2::{
-    basic::BasicClient, basic::BasicTokenType, reqwest::http_client, AuthUrl, ClientId,
-    ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenResponse, TokenUrl,
-};
+use oauth2::TokenResponse;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
 use zenith_types::{
@@ -42,8 +39,7 @@ macro_rules! spawn_provider_send {
     };
 }
 
-/// OAuth Audience Claim Name, required param by IdP for client credential grant
-const OAUTH_AUDIENCE_CLAIM: &str = "audience";
+use super::oauth::Authenticator;
 
 pub enum ControlFlow {
     Retry,
@@ -55,18 +51,16 @@ pub enum ControlFlow {
 pub struct SubmitTask {
     /// Ethereum Provider
     pub provider: Provider,
-
-    /// Zenity
+    /// Zenith
     pub zenith: ZenithInstance,
-
     /// Reqwest
     pub client: reqwest::Client,
-
     /// Sequencer Signer
     pub sequencer_signer: Option<LocalOrAws>,
-
     /// Config
     pub config: crate::config::BuilderConfig,
+    /// Authenticator
+    pub authenticator: Authenticator,
 }
 
 impl SubmitTask {
@@ -77,7 +71,7 @@ impl SubmitTask {
             "pinging quincey for signature"
         );
 
-        let token = self.fetch_oauth_token().await?;
+        let token = self.authenticator.fetch_oauth_token().await?;
 
         let resp: reqwest::Response = self
             .client
@@ -96,24 +90,8 @@ impl SubmitTask {
         serde_json::from_slice(&body).map_err(Into::into)
     }
 
-    async fn fetch_oauth_token(
-        &self,
-    ) -> eyre::Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>> {
-        let client = BasicClient::new(
-            ClientId::new(self.config.oauth_client_id.clone()),
-            Some(ClientSecret::new(self.config.oauth_client_secret.clone())),
-            AuthUrl::new(self.config.oauth_authenticate_url.clone())?,
-            Some(TokenUrl::new(self.config.oauth_token_url.clone())?),
-        );
-
-        let token_result = client
-            .exchange_client_credentials()
-            .add_extra_param(OAUTH_AUDIENCE_CLAIM, self.config.oauth_audience.clone())
-            .request(http_client)?;
-
-        Ok(token_result)
-    }
-
+    /// Constructs the signing request from the in-progress block passed to it and assigns the
+    /// correct height, chain ID, gas limit, and rollup reward address.
     #[instrument(skip_all)]
     async fn construct_sig_request(&self, contents: &InProgressBlock) -> eyre::Result<SignRequest> {
         let ru_chain_id = U256::from(self.config.ru_chain_id);
@@ -129,6 +107,7 @@ impl SubmitTask {
         })
     }
 
+    /// Builds blob transaction from the provided header and signature values
     fn build_blob_tx(
         &self,
         header: Zenith::BlockHeader,
@@ -160,6 +139,7 @@ impl SubmitTask {
         Ok(next)
     }
 
+    /// Submits the EIP 4844 transaction to the network
     async fn submit_transaction(
         &self,
         resp: &SignResponse,
@@ -293,7 +273,7 @@ impl SubmitTask {
         self.submit_transaction(&signed, in_progress).await
     }
 
-    /// Spawn the task.
+    /// Spawns the in progress block building task
     pub fn spawn(self) -> (mpsc::UnboundedSender<InProgressBlock>, JoinHandle<()>) {
         let (sender, mut inbound) = mpsc::unbounded_channel();
         let handle = tokio::spawn(async move {
