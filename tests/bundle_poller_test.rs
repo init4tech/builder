@@ -43,6 +43,7 @@ mod tests {
             oauth_token_url: "http://localhost:8080".into(),
             oauth_audience: "https://transactions.holesky.signet.sh".into(),
             tx_broadcast_urls: vec!["http://localhost:9000".into()],
+            oauth_token_refresh_interval: 300, // 5 minutes
         };
         Ok((BlockBuilder::new(&config), config))
     }
