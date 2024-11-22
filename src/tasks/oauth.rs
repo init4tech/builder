@@ -46,10 +46,7 @@ impl AuthenticatorInner {
 impl Authenticator {
     /// Creates a new Authenticator from the provided builder config.
     pub fn new(config: &BuilderConfig) -> Self {
-        Self {
-            config: config.clone(),
-            inner: Arc::new(RwLock::new(AuthenticatorInner::new())),
-        }
+        Self { config: config.clone(), inner: Arc::new(RwLock::new(AuthenticatorInner::new())) }
     }
 
     /// Requests a new authentication token and, if successful, sets it to as the token

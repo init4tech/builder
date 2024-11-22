@@ -17,10 +17,7 @@ async fn main() -> eyre::Result<()> {
     let provider = config.connect_provider().await?;
     let authenticator = Authenticator::new(&config);
 
-    tracing::debug!(
-        rpc_url = config.host_rpc_url.as_ref(),
-        "instantiated provider"
-    );
+    tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
 
     let sequencer_signer = config.connect_sequencer_signer().await?;
     let zenith = config.connect_zenith(provider.clone());
