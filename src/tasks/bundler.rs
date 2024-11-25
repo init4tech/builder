@@ -35,11 +35,7 @@ pub struct BundlePoller {
 impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config.
     pub async fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
-        Self {
-            config: config.clone(),
-            authenticator,
-            seen_uuids: HashMap::new(),
-        }
+        Self { config: config.clone(), authenticator, seen_uuids: HashMap::new() }
     }
 
     /// Fetches bundles from the transaction cache and returns the (oldest? random?) bundle in the cache.
@@ -81,13 +77,15 @@ impl BundlePoller {
         let expired_keys: Vec<String> = self
             .seen_uuids
             .iter()
-            .filter_map(|(key, expiry)| {
-                if expiry.elapsed().is_zero() {
-                    Some(key.clone())
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |(key, expiry)| {
+                    if expiry.elapsed().is_zero() {
+                        Some(key.clone())
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect();
 
         for key in expired_keys {

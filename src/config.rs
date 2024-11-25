@@ -167,9 +167,7 @@ impl BuilderConfig {
     }
 
     pub async fn connect_builder_signer(&self) -> Result<LocalOrAws, ConfigError> {
-        LocalOrAws::load(&self.builder_key, Some(self.host_chain_id))
-            .await
-            .map_err(Into::into)
+        LocalOrAws::load(&self.builder_key, Some(self.host_chain_id)).await.map_err(Into::into)
     }
 
     pub async fn connect_sequencer_signer(&self) -> Result<Option<LocalOrAws>, ConfigError> {
@@ -198,10 +196,8 @@ impl BuilderConfig {
     ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
         let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
         for url in self.tx_broadcast_urls.iter() {
-            let provider = ProviderBuilder::new()
-                .on_builtin(url)
-                .await
-                .map_err(Into::<ConfigError>::into)?;
+            let provider =
+                ProviderBuilder::new().on_builtin(url).await.map_err(Into::<ConfigError>::into)?;
             providers.push(provider);
         }
         Ok(providers)

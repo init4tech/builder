@@ -4,11 +4,11 @@ version = "0.1.1"
 description = "Zenith Builder Example"
 
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.82"
 authors = ["init4"]
 license = "Apache-2.0 OR MIT"
-homepage = "https://github.com/init4tt/zenith"
-repository = "https://github.com/init4tt/zenith"
+homepage = "https://github.com/init4tech/builder"
+repository = "https://github.com/init4tech/builder"
 
 [lib]
 name = "builder"
