@@ -5,14 +5,14 @@ mod tests {
     use alloy::signers::{local::PrivateKeySigner, SignerSync};
     use alloy_primitives::{bytes, Address, TxKind, U256};
     use builder::config::BuilderConfig;
-    use builder::tasks::{block::BlockBuilder, tx_poller};
+    use builder::tasks::tx_poller;
     use eyre::{Ok, Result};
 
     #[ignore = "integration test"]
     #[tokio::test]
     async fn test_tx_roundtrip() -> Result<()> {
         // Create a new test environment
-        let (_, config) = setup_test_builder().await?;
+        let config = setup_test_config().await?;
 
         // Post a transaction to the cache
         post_tx(&config).await?;
@@ -63,7 +63,7 @@ mod tests {
     }
 
     // Sets up a block builder with test values
-    pub async fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
+    pub async fn setup_test_config() -> Result<BuilderConfig> {
         let config = BuilderConfig {
             host_chain_id: 17000,
             ru_chain_id: 17001,
@@ -80,7 +80,6 @@ mod tests {
             rollup_block_gas_limit: 100_000,
             tx_pool_url: "http://localhost:9000/".into(),
             tx_pool_cache_duration: 5,
-            tx_pool_poll_interval: 5,
             oauth_client_id: "some_client_id".into(),
             oauth_client_secret: "some_client_secret".into(),
             oauth_authenticate_url: "http://localhost:8080".into(),
@@ -88,6 +87,6 @@ mod tests {
             oauth_audience: "https://transactions.holesky.signet.sh".into(),
             oauth_token_refresh_interval: 300, // 5 minutes
         };
-        Ok((BlockBuilder::new(&config), config))
+        Ok(config)
     }
 }

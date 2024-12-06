@@ -5,13 +5,14 @@ use alloy::{
 use alloy_primitives::{keccak256, Bytes, B256};
 use alloy_rlp::Buf;
 use std::{sync::OnceLock, time::Duration};
-use tokio::{select, sync::mpsc, task::JoinHandle};
+use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
 use zenith_types::{encode_txns, Alloy2718Coder};
 
+use super::bundler::{Bundle, BundlePoller};
+use super::oauth::Authenticator;
+use super::tx_poller::TxPoller;
 use crate::config::BuilderConfig;
-
-use super::bundler::Bundle;
 
 #[derive(Debug, Default, Clone)]
 /// A block in progress.
@@ -109,75 +110,78 @@ impl InProgressBlock {
 pub struct BlockBuilder {
     pub incoming_transactions_buffer: u64,
     pub config: BuilderConfig,
+    pub tx_poller: TxPoller,
+    pub bundle_poller: BundlePoller,
 }
 
 impl BlockBuilder {
     // create a new block builder with the given config.
-    pub fn new(config: &BuilderConfig) -> Self {
+    pub fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
         Self {
             config: config.clone(),
             incoming_transactions_buffer: config.incoming_transactions_buffer,
+            tx_poller: TxPoller::new(config),
+            bundle_poller: BundlePoller::new(config, authenticator),
         }
+    }
+
+    async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
+        let txns = self.tx_poller.check_tx_cache().await;
+        match txns {
+            Ok(txns) => {
+                for txn in txns.into_iter() {
+                    in_progress.ingest_tx(&txn);
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "error polling transactions");
+            }
+        }
+        self.tx_poller.evict();
+    }
+
+    async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
+        let bundles = self.bundle_poller.check_bundle_cache().await;
+        match bundles {
+            Ok(bundles) => {
+                for bundle in bundles {
+                    in_progress.ingest_bundle(bundle);
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "error polling bundles");
+            }
+        }
+        self.bundle_poller.evict();
     }
 
     /// Spawn the block builder task, returning the inbound channel to it, and
     /// a handle to the running task.
-    pub fn spawn(
-        self,
-        outbound: mpsc::UnboundedSender<InProgressBlock>,
-    ) -> (mpsc::UnboundedSender<TxEnvelope>, mpsc::UnboundedSender<Bundle>, JoinHandle<()>) {
-        let mut in_progress = InProgressBlock::default();
-
-        let (tx_sender, mut tx_inbound) = mpsc::unbounded_channel();
-        let (bundle_sender, mut bundle_inbound) = mpsc::unbounded_channel();
-
-        let mut sleep =
-            Box::pin(tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer)));
-
-        let handle = tokio::spawn(
+    pub fn spawn(mut self, outbound: mpsc::UnboundedSender<InProgressBlock>) -> JoinHandle<()> {
+        tokio::spawn(
             async move {
                 loop {
+                    // sleep the buffer time
+                    tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer))
+                        .await;
 
-                    select! {
-                        biased;
-                        _ = &mut sleep => {
-                            if !in_progress.is_empty() {
-                                tracing::debug!(txns = in_progress.len(), "sending block to submit task");
-                                let in_progress_block = std::mem::take(&mut in_progress);
-                                if outbound.send(in_progress_block).is_err() {
-                                    tracing::debug!("downstream task gone");
-                                    break
-                                }
-                            }
+                    // Build a block
+                    let mut in_progress = InProgressBlock::default();
+                    self.get_transactions(&mut in_progress).await;
+                    self.get_bundles(&mut in_progress).await;
 
-                            // Reset the sleep timer, as we want to do so when (and only when) our sleep future has elapsed,
-                            // irrespective of whether we have any blocks to build.
-                            sleep.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(self.incoming_transactions_buffer));
-                        }
-                        tx_resp = tx_inbound.recv() => {
-                            match tx_resp {
-                                Some(tx) => in_progress.ingest_tx(&tx),
-                                None => {
-                                    tracing::debug!("upstream task gone");
-                                    break
-                                }
-                            }
-                        }
-                        bundle_resp = bundle_inbound.recv() => {
-                            match bundle_resp {
-                                Some(bundle) => in_progress.ingest_bundle(bundle),
-                                None => {
-                                    tracing::debug!("upstream task gone");
-                                    break
-                                }
-                            }
+                    // submit the block if it has transactions
+                    if !in_progress.is_empty() {
+                        tracing::debug!(txns = in_progress.len(), "sending block to submit task");
+                        let in_progress_block = std::mem::take(&mut in_progress);
+                        if outbound.send(in_progress_block).is_err() {
+                            tracing::debug!("downstream task gone");
+                            break;
                         }
                     }
                 }
             }
             .in_current_span(),
-        );
-
-        (tx_sender, bundle_sender, handle)
+        )
     }
 }

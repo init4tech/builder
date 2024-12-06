@@ -8,8 +8,6 @@ use eyre::Error;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 
 pub use crate::config::BuilderConfig;
 
@@ -62,7 +60,7 @@ impl TxPoller {
     }
 
     /// removes entries from seen_txns that have lived past expiry
-    fn evict(&mut self) {
+    pub fn evict(&mut self) {
         let expired_keys: Vec<TxHash> = self
             .seen_txns
             .iter()
@@ -80,38 +78,5 @@ impl TxPoller {
         for key in expired_keys {
             self.seen_txns.remove(&key);
         }
-    }
-
-    /// spawns a task that polls the tx-pool for unique transactions and ingests them into the tx_channel.
-    pub fn spawn(mut self, tx_channel: mpsc::UnboundedSender<TxEnvelope>) -> JoinHandle<()> {
-        let handle: JoinHandle<()> = tokio::spawn(async move {
-            loop {
-                let channel = tx_channel.clone();
-                let txns = self.check_tx_cache().await;
-
-                // send recently discovered transactions to the builder pipeline
-                match txns {
-                    Ok(txns) => {
-                        for txn in txns.into_iter() {
-                            let result = channel.send(txn);
-                            if result.is_err() {
-                                tracing::debug!("tx_poller failed to send tx");
-                                continue;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Error polling transactions: {}", e);
-                    }
-                }
-
-                // evict expired txns once every loop
-                self.evict();
-
-                tokio::time::sleep(Duration::from_secs(self.config.tx_pool_poll_interval)).await;
-            }
-        });
-
-        handle
     }
 }
