@@ -134,7 +134,7 @@ impl BlockBuilder {
                 }
             }
             Err(e) => {
-                tracing::error!("error polling transactions: {:?}", e);
+                tracing::error!(error = %e, "error polling transactions");
             }
         }
         self.tx_poller.evict();
@@ -149,7 +149,7 @@ impl BlockBuilder {
                 }
             }
             Err(e) => {
-                tracing::error!("error polling bundles: {:?}", e);
+                tracing::error!(error = %e, "error polling bundles");
             }
         }
         self.bundle_poller.evict();
