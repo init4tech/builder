@@ -20,8 +20,9 @@ const QUINCEY_URL: &str = "QUINCEY_URL";
 const BUILDER_PORT: &str = "BUILDER_PORT";
 const SEQUENCER_KEY: &str = "SEQUENCER_KEY"; // empty (to use Quincey) OR AWS key ID (to use AWS signer) OR raw private key (to use local signer)
 const BUILDER_KEY: &str = "BUILDER_KEY"; // AWS key ID (to use AWS signer) OR raw private key (to use local signer)
-const INCOMING_TRANSACTIONS_BUFFER: &str = "INCOMING_TRANSACTIONS_BUFFER";
 const BLOCK_CONFIRMATION_BUFFER: &str = "BLOCK_CONFIRMATION_BUFFER";
+const CHAIN_OFFSET: &str = "CHAIN_OFFSET";
+const TARGET_SLOT_TIME: &str = "TARGET_SLOT_TIME";
 const BUILDER_REWARDS_ADDRESS: &str = "BUILDER_REWARDS_ADDRESS";
 const ROLLUP_BLOCK_GAS_LIMIT: &str = "ROLLUP_BLOCK_GAS_LIMIT";
 const TX_POOL_URL: &str = "TX_POOL_URL";
@@ -57,10 +58,12 @@ pub struct BuilderConfig {
     pub sequencer_key: Option<String>,
     /// Key to access Builder transaction submission wallet - AWS Key ID _OR_ local private key.
     pub builder_key: String,
-    /// Buffer in seconds that Builder will wait & accept incoming transactions before bundling them and submitting as a block.
-    pub incoming_transactions_buffer: u64,
     /// Buffer in seconds in which the `submitBlock` transaction must confirm on the Host chain.
     pub block_confirmation_buffer: u64,
+    /// The offset between Unix time and the chain's block times. For Holesky, this is 0; for Ethereum, 11.
+    pub chain_offset: u64,
+    /// The slot time at which the Builder should begin building a block. 0 to begin at the very start of the slot; 6 to begin in the middle; etc.
+    pub target_slot_time: u64,
     /// Address on Rollup to which Builder will receive user transaction fees.
     pub builder_rewards_address: Address,
     /// Gas limit for RU block.
@@ -147,8 +150,9 @@ impl BuilderConfig {
             builder_port: load_u16(BUILDER_PORT)?,
             sequencer_key: load_string_option(SEQUENCER_KEY),
             builder_key: load_string(BUILDER_KEY)?,
-            incoming_transactions_buffer: load_u64(INCOMING_TRANSACTIONS_BUFFER)?,
             block_confirmation_buffer: load_u64(BLOCK_CONFIRMATION_BUFFER)?,
+            chain_offset: load_u64(CHAIN_OFFSET)?,
+            target_slot_time: load_u64(TARGET_SLOT_TIME)?,
             builder_rewards_address: load_address(BUILDER_REWARDS_ADDRESS)?,
             rollup_block_gas_limit: load_u64(ROLLUP_BLOCK_GAS_LIMIT)?,
             tx_pool_url: load_url(TX_POOL_URL)?,
