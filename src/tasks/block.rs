@@ -5,7 +5,7 @@ use alloy::{
 use alloy_primitives::{keccak256, Bytes, B256};
 use alloy_rlp::Buf;
 use std::{sync::OnceLock, time::Duration};
-use tokio::{select, sync::mpsc, task::JoinHandle};
+use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
 use zenith_types::{encode_txns, Alloy2718Coder};
 
@@ -158,33 +158,25 @@ impl BlockBuilder {
     /// Spawn the block builder task, returning the inbound channel to it, and
     /// a handle to the running task.
     pub fn spawn(mut self, outbound: mpsc::UnboundedSender<InProgressBlock>) -> JoinHandle<()> {
-        let mut sleep =
-            Box::pin(tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer)));
-
         tokio::spawn(
             async move {
                 loop {
+                    // sleep the buffer time
+                    tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer))
+                        .await;
 
-                    select! {
-                        biased;
-                        _ = &mut sleep => {
-                            // Build a block
-                            let mut in_progress = InProgressBlock::default();
-                            self.get_transactions(&mut in_progress).await;
-                            self.get_bundles(&mut in_progress).await;
+                    // Build a block
+                    let mut in_progress = InProgressBlock::default();
+                    self.get_transactions(&mut in_progress).await;
+                    self.get_bundles(&mut in_progress).await;
 
-                            if !in_progress.is_empty() {
-                                tracing::debug!(txns = in_progress.len(), "sending block to submit task");
-                                let in_progress_block = std::mem::take(&mut in_progress);
-                                if outbound.send(in_progress_block).is_err() {
-                                    tracing::debug!("downstream task gone");
-                                    break
-                                }
-                            }
-
-                            // Reset the sleep timer, as we want to do so when (and only when) our sleep future has elapsed,
-                            // irrespective of whether we have any blocks to build.
-                            sleep.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(self.incoming_transactions_buffer));
+                    // submit the block if it has transactions
+                    if !in_progress.is_empty() {
+                        tracing::debug!(txns = in_progress.len(), "sending block to submit task");
+                        let in_progress_block = std::mem::take(&mut in_progress);
+                        if outbound.send(in_progress_block).is_err() {
+                            tracing::debug!("downstream task gone");
+                            break;
                         }
                     }
                 }
