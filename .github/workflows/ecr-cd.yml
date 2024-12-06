@@ -22,5 +22,4 @@ jobs:
       environment: dev
     secrets:
       aws-ecr-repository: ${{ secrets.AWS_ECR_REPOSITORY }}
-      aws-eks-cluster: ${{ secrets.AWS_EKS_CLUSTER }}
       aws-ecr-deployer-role-arn: ${{ secrets.AWS_ECR_DEPLOYER_ROLE_ARN }}
