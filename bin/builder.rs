@@ -42,7 +42,7 @@ async fn main() -> eyre::Result<()> {
     let tx_poller_jh = tx_poller.spawn(tx_channel.clone());
     let bundle_poller_jh = bundle_poller.spawn(bundle_channel);
 
-    let server = serve_builder_with_span(tx_channel, ([0, 0, 0, 0], port), span);
+    let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
 
     select! {
         _ = submit_jh => {
