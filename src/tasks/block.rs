@@ -4,6 +4,7 @@ use alloy::{
 };
 use alloy_primitives::{keccak256, Bytes, B256};
 use alloy_rlp::Buf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
@@ -13,6 +14,9 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::BuilderConfig;
+
+/// Ethereum's slot time in seconds.
+pub const ETHEREUM_SLOT_TIME: u64 = 12;
 
 #[derive(Debug, Default, Clone)]
 /// A block in progress.
@@ -108,7 +112,6 @@ impl InProgressBlock {
 
 /// BlockBuilder is a task that periodically builds a block then sends it for signing and submission.
 pub struct BlockBuilder {
-    pub incoming_transactions_buffer: u64,
     pub config: BuilderConfig,
     pub tx_poller: TxPoller,
     pub bundle_poller: BundlePoller,
@@ -119,7 +122,6 @@ impl BlockBuilder {
     pub fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
         Self {
             config: config.clone(),
-            incoming_transactions_buffer: config.incoming_transactions_buffer,
             tx_poller: TxPoller::new(config),
             bundle_poller: BundlePoller::new(config, authenticator),
         }
@@ -155,6 +157,18 @@ impl BlockBuilder {
         self.bundle_poller.evict();
     }
 
+    // calculate the duration in seconds until the beginning of the next block slot.
+    fn secs_to_next_slot(&mut self) -> u64 {
+        let curr_timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let current_slot_time = (curr_timestamp - self.config.chain_offset) % ETHEREUM_SLOT_TIME;
+        (ETHEREUM_SLOT_TIME - current_slot_time) % ETHEREUM_SLOT_TIME
+    }
+
+    // add a buffer to the beginning of the block slot.
+    fn secs_to_next_target(&mut self) -> u64 {
+        self.secs_to_next_slot() + self.config.target_slot_time
+    }
+
     /// Spawn the block builder task, returning the inbound channel to it, and
     /// a handle to the running task.
     pub fn spawn(mut self, outbound: mpsc::UnboundedSender<InProgressBlock>) -> JoinHandle<()> {
@@ -162,8 +176,8 @@ impl BlockBuilder {
             async move {
                 loop {
                     // sleep the buffer time
-                    tokio::time::sleep(Duration::from_secs(self.incoming_transactions_buffer))
-                        .await;
+                    tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
+                    tracing::trace!("beginning block build cycle");
 
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
@@ -178,6 +192,8 @@ impl BlockBuilder {
                             tracing::debug!("downstream task gone");
                             break;
                         }
+                    } else {
+                        tracing::debug!("no transactions, skipping block submission");
                     }
                 }
             }
