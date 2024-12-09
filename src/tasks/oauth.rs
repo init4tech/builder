@@ -123,7 +123,7 @@ impl Authenticator {
 }
 
 mod tests {
-    use crate::{config::BuilderConfig, tasks::block::BlockBuilder};
+    use crate::config::BuilderConfig;
     use alloy_primitives::Address;
     use eyre::Result;
 
@@ -133,7 +133,7 @@ mod tests {
         use super::*;
         use oauth2::TokenResponse;
 
-        let config = setup_test_builder()?.1;
+        let config = setup_test_config()?;
         let auth = Authenticator::new(&config);
         let token = auth.fetch_oauth_token().await?;
         dbg!(&token);
@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    pub fn setup_test_builder() -> Result<(BlockBuilder, BuilderConfig)> {
+    pub fn setup_test_config() -> Result<BuilderConfig> {
         let config = BuilderConfig {
             host_chain_id: 17000,
             ru_chain_id: 17001,
@@ -154,13 +154,13 @@ mod tests {
             builder_port: 8080,
             sequencer_key: None,
             builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
-            incoming_transactions_buffer: 1,
             block_confirmation_buffer: 1,
+            chain_offset: 0,
+            target_slot_time: 1,
             builder_rewards_address: Address::default(),
             rollup_block_gas_limit: 100_000,
             tx_pool_url: "http://localhost:9000/".into(),
             tx_pool_cache_duration: 5,
-            tx_pool_poll_interval: 5,
             oauth_client_id: "some_client_id".into(),
             oauth_client_secret: "some_client_secret".into(),
             oauth_authenticate_url: "http://localhost:9000".into(),
@@ -169,6 +169,6 @@ mod tests {
             tx_broadcast_urls: vec!["http://localhost:9000".into()],
             oauth_token_refresh_interval: 300, // 5 minutes
         };
-        Ok((BlockBuilder::new(&config), config))
+        Ok(config)
     }
 }

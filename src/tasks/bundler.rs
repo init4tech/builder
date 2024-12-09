@@ -6,8 +6,6 @@ use alloy_primitives::map::HashMap;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use signet_types::SignetEthBundle;
-use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::debug;
 
 use oauth2::TokenResponse;
 
@@ -34,7 +32,7 @@ pub struct BundlePoller {
 /// Implements a poller for the block builder to pull bundles from the tx cache.
 impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config.
-    pub async fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
+    pub fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
         Self { config: config.clone(), authenticator, seen_uuids: HashMap::new() }
     }
 
@@ -73,7 +71,7 @@ impl BundlePoller {
     }
 
     /// Evicts expired bundles from the cache.
-    fn evict(&mut self) {
+    pub fn evict(&mut self) {
         let expired_keys: Vec<String> = self
             .seen_uuids
             .iter()
@@ -91,35 +89,5 @@ impl BundlePoller {
         for key in expired_keys {
             self.seen_uuids.remove(&key);
         }
-    }
-
-    pub fn spawn(mut self, bundle_channel: mpsc::UnboundedSender<Bundle>) -> JoinHandle<()> {
-        let handle: JoinHandle<()> = tokio::spawn(async move {
-            loop {
-                let bundle_channel = bundle_channel.clone();
-                let bundles = self.check_bundle_cache().await;
-
-                match bundles {
-                    Ok(bundles) => {
-                        for bundle in bundles {
-                            let result = bundle_channel.send(bundle);
-                            if result.is_err() {
-                                tracing::debug!("bundle_channel failed to send bundle");
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        debug!(?err, "error fetching bundles from tx-pool");
-                    }
-                }
-
-                // evict expired bundles once every loop
-                self.evict();
-
-                tokio::time::sleep(Duration::from_secs(self.config.tx_pool_poll_interval)).await;
-            }
-        });
-
-        handle
     }
 }

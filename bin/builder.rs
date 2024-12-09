@@ -2,9 +2,9 @@
 
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
-use builder::tasks::bundler::BundlePoller;
+use builder::tasks::block::BlockBuilder;
 use builder::tasks::oauth::Authenticator;
-use builder::tasks::tx_poller::TxPoller;
+use builder::tasks::submit::SubmitTask;
 
 use tokio::select;
 
@@ -22,12 +22,8 @@ async fn main() -> eyre::Result<()> {
     let sequencer_signer = config.connect_sequencer_signer().await?;
     let zenith = config.connect_zenith(provider.clone());
 
-    let port = config.builder_port;
-    let tx_poller = TxPoller::new(&config);
-    let bundle_poller = BundlePoller::new(&config, authenticator.clone()).await;
-    let builder = builder::tasks::block::BlockBuilder::new(&config);
-
-    let submit = builder::tasks::submit::SubmitTask {
+    let builder = BlockBuilder::new(&config, authenticator.clone());
+    let submit = SubmitTask {
         authenticator: authenticator.clone(),
         provider,
         zenith,
@@ -38,11 +34,10 @@ async fn main() -> eyre::Result<()> {
 
     let authenticator_jh = authenticator.spawn();
     let (submit_channel, submit_jh) = submit.spawn();
-    let (tx_channel, bundle_channel, build_jh) = builder.spawn(submit_channel);
-    let tx_poller_jh = tx_poller.spawn(tx_channel.clone());
-    let bundle_poller_jh = bundle_poller.spawn(bundle_channel);
+    let build_jh = builder.spawn(submit_channel);
 
-    let server = serve_builder_with_span(tx_channel, ([0, 0, 0, 0], port), span);
+    let port = config.builder_port;
+    let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
 
     select! {
         _ = submit_jh => {
@@ -53,12 +48,6 @@ async fn main() -> eyre::Result<()> {
         }
         _ = server => {
             tracing::info!("server finished");
-        }
-        _ = tx_poller_jh => {
-            tracing::info!("tx_poller finished");
-        }
-        _ = bundle_poller_jh => {
-            tracing::info!("bundle_poller finished");
         }
         _ = authenticator_jh => {
             tracing::info!("authenticator finished");
