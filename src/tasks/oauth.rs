@@ -100,7 +100,7 @@ impl Authenticator {
     }
 
     /// Spawns a task that periodically fetches a new token every 300 seconds.
-    pub async fn spawn(self) -> JoinHandle<()> {
+    pub fn spawn(self) -> JoinHandle<()> {
         let interval = self.config.oauth_token_refresh_interval;
 
         let handle: JoinHandle<()> = tokio::spawn(async move {
