@@ -182,7 +182,9 @@ impl BlockBuilder {
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
                     self.get_transactions(&mut in_progress).await;
-                    self.get_bundles(&mut in_progress).await;
+
+                    // TODO: Implement bundle ingestion #later
+                    // self.get_bundles(&mut in_progress).await;
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {
