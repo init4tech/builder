@@ -144,7 +144,7 @@ impl BlockBuilder {
         self.tx_poller.evict();
     }
 
-    async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
+    async fn _get_bundles(&mut self, in_progress: &mut InProgressBlock) {
         tracing::info!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
         match bundles {
