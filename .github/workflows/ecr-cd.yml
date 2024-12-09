@@ -20,7 +20,8 @@ jobs:
     with:
       rust-binary-name: zenith-builder-example
       environment: dev
+      requires-private-deps: true
     secrets:
       aws-ecr-repository: ${{ secrets.AWS_ECR_REPOSITORY }}
-      aws-eks-cluster: ${{ secrets.AWS_EKS_CLUSTER }}
       aws-ecr-deployer-role-arn: ${{ secrets.AWS_ECR_DEPLOYER_ROLE_ARN }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
