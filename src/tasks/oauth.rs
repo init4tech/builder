@@ -103,13 +103,22 @@ impl Authenticator {
     pub async fn spawn(self) -> JoinHandle<()> {
         let interval = self.config.oauth_token_refresh_interval;
 
-        tokio::spawn(async move {
+        let handle: JoinHandle<()> = tokio::spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
                 tracing::info!("Refreshing oauth token");
-                self.authenticate().await.unwrap();
+                match self.authenticate().await {
+                    Ok(_) => {
+                        tracing::info!("Successfully refreshed oauth token");
+                    }
+                    Err(e) => {
+                        tracing::error!(%e, "Failed to refresh oauth token");
+                    }
+                };
+                let _sleep = tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
             }
-        })
+        });
+
+        handle
     }
 }
 
