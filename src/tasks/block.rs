@@ -128,9 +128,11 @@ impl BlockBuilder {
     }
 
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
+        tracing::info!("query transactions from cache");
         let txns = self.tx_poller.check_tx_cache().await;
         match txns {
             Ok(txns) => {
+                tracing::info!("got transactions response");
                 for txn in txns.into_iter() {
                     in_progress.ingest_tx(&txn);
                 }
@@ -143,9 +145,11 @@ impl BlockBuilder {
     }
 
     async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
+        tracing::info!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
         match bundles {
             Ok(bundles) => {
+                tracing::info!("got bundles response");
                 for bundle in bundles {
                     in_progress.ingest_bundle(bundle);
                 }
@@ -177,7 +181,7 @@ impl BlockBuilder {
                 loop {
                     // sleep the buffer time
                     tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
-                    tracing::trace!("beginning block build cycle");
+                    tracing::info!("beginning block build cycle");
 
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
@@ -188,14 +192,14 @@ impl BlockBuilder {
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {
-                        tracing::debug!(txns = in_progress.len(), "sending block to submit task");
+                        tracing::info!(txns = in_progress.len(), "sending block to submit task");
                         let in_progress_block = std::mem::take(&mut in_progress);
                         if outbound.send(in_progress_block).is_err() {
                             tracing::debug!("downstream task gone");
                             break;
                         }
                     } else {
-                        tracing::debug!("no transactions, skipping block submission");
+                        tracing::info!("no transactions, skipping block submission");
                     }
                 }
             }
