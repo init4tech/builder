@@ -1,3 +1,8 @@
+use super::bundler::{Bundle, BundlePoller};
+use super::oauth::Authenticator;
+use super::tx_poller::TxPoller;
+use crate::config::BuilderConfig;
+use alloy::providers::Provider;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
@@ -10,11 +15,6 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
 use zenith_types::{encode_txns, Alloy2718Coder};
 
-use super::bundler::{Bundle, BundlePoller};
-use super::oauth::Authenticator;
-use super::tx_poller::TxPoller;
-use crate::config::BuilderConfig;
-
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
 
@@ -22,7 +22,6 @@ pub const ETHEREUM_SLOT_TIME: u64 = 12;
 /// A block in progress.
 pub struct InProgressBlock {
     transactions: Vec<TxEnvelope>,
-
     raw_encoding: OnceLock<Bytes>,
     hash: OnceLock<B256>,
 }
@@ -60,6 +59,13 @@ impl InProgressBlock {
         tracing::info!(hash = %tx.tx_hash(), "ingesting tx");
         self.unseal();
         self.transactions.push(tx.clone());
+    }
+
+    /// Remove a transaction from the in-progress block.
+    pub fn remove_tx(&mut self, tx: &TxEnvelope) {
+        tracing::info!(hash = %tx.tx_hash(), "removing tx");
+        self.unseal();
+        self.transactions.retain(|t| t.tx_hash() != tx.tx_hash());
     }
 
     /// Ingest a bundle into the in-progress block.
@@ -113,15 +119,21 @@ impl InProgressBlock {
 /// BlockBuilder is a task that periodically builds a block then sends it for signing and submission.
 pub struct BlockBuilder {
     pub config: BuilderConfig,
+    pub ru_provider: crate::config::Provider,
     pub tx_poller: TxPoller,
     pub bundle_poller: BundlePoller,
 }
 
 impl BlockBuilder {
     // create a new block builder with the given config.
-    pub fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
+    pub fn new(
+        config: &BuilderConfig,
+        authenticator: Authenticator,
+        ru_provider: crate::config::Provider,
+    ) -> Self {
         Self {
             config: config.clone(),
+            ru_provider,
             tx_poller: TxPoller::new(config),
             bundle_poller: BundlePoller::new(config, authenticator),
         }
@@ -161,6 +173,25 @@ impl BlockBuilder {
         self.bundle_poller.evict();
     }
 
+    async fn filter_transactions(&mut self, in_progress: &mut InProgressBlock) {
+        // query the rollup node to see which transaction(s) have been included
+        let mut confirmed_transactions = Vec::new();
+        for transaction in in_progress.transactions.iter() {
+            let tx = self
+                .ru_provider
+                .get_transaction_by_hash(*transaction.tx_hash())
+                .await
+                .expect("failed to get receipt");
+            if tx.is_some() {
+                confirmed_transactions.push(transaction.clone());
+            }
+        }
+        // remove already-confirmed transactions
+        for transaction in confirmed_transactions {
+            in_progress.remove_tx(&transaction);
+        }
+    }
+
     // calculate the duration in seconds until the beginning of the next block slot.
     fn secs_to_next_slot(&mut self) -> u64 {
         let curr_timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -189,6 +220,9 @@ impl BlockBuilder {
 
                     // TODO: Implement bundle ingestion #later
                     // self.get_bundles(&mut in_progress).await;
+
+                    // Filter confirmed transactions from the block
+                    self.filter_transactions(&mut in_progress).await;
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {

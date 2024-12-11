@@ -14,6 +14,7 @@ use zenith_types::Zenith;
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
 const RU_CHAIN_ID: &str = "RU_CHAIN_ID";
 const HOST_RPC_URL: &str = "HOST_RPC_URL";
+const ROLLUP_RPC_URL: &str = "ROLLUP_RPC_URL";
 const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URLS";
 const ZENITH_ADDRESS: &str = "ZENITH_ADDRESS";
 const QUINCEY_URL: &str = "QUINCEY_URL";
@@ -44,6 +45,8 @@ pub struct BuilderConfig {
     pub ru_chain_id: u64,
     /// URL for Host RPC node.
     pub host_rpc_url: Cow<'static, str>,
+    /// URL for the Rollup RPC node.
+    pub ru_rpc_url: Cow<'static, str>,
     /// Additional RPC URLs to which to broadcast transactions.
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.
@@ -139,6 +142,7 @@ impl BuilderConfig {
             host_chain_id: load_u64(HOST_CHAIN_ID)?,
             ru_chain_id: load_u64(RU_CHAIN_ID)?,
             host_rpc_url: load_url(HOST_RPC_URL)?,
+            ru_rpc_url: load_url(ROLLUP_RPC_URL)?,
             tx_broadcast_urls: env::var(TX_BROADCAST_URLS)
                 .unwrap_or_default()
                 .split(',')
@@ -180,13 +184,27 @@ impl BuilderConfig {
         }
     }
 
-    /// Connect to the provider using the configuration.
-    pub async fn connect_provider(&self) -> Result<Provider, ConfigError> {
+    /// Connect to host rpc provider.
+    pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
         let builder_signer = self.connect_builder_signer().await?;
+        BuilderConfig::connect_provider(builder_signer, self.host_rpc_url.clone()).await
+    }
+
+    /// Connect to rollup rpc provider.
+    pub async fn connect_ru_provider(&self) -> Result<Provider, ConfigError> {
+        let builder_signer = self.connect_builder_signer().await?;
+        BuilderConfig::connect_provider(builder_signer, self.ru_rpc_url.clone()).await
+    }
+
+    /// Connect to an rpc provider.
+    async fn connect_provider(
+        signer: LocalOrAws,
+        rpc_url: Cow<'static, str>,
+    ) -> Result<Provider, ConfigError> {
         ProviderBuilder::new()
             .with_recommended_fillers()
-            .wallet(EthereumWallet::from(builder_signer))
-            .on_builtin(&self.host_rpc_url)
+            .wallet(EthereumWallet::from(signer))
+            .on_builtin(&rpc_url)
             .await
             .map_err(Into::into)
     }

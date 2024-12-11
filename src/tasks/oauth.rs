@@ -148,7 +148,8 @@ mod tests {
         let config = BuilderConfig {
             host_chain_id: 17000,
             ru_chain_id: 17001,
-            host_rpc_url: "http://rpc.holesky.signet.sh".into(),
+            host_rpc_url: "https://ethereum-holesky-rpc.publicnode.com".into(),
+            ru_rpc_url: "http://rpc.holesky.signet.sh".into(),
             zenith_address: Address::default(),
             quincey_url: "http://localhost:8080".into(),
             builder_port: 8080,
