@@ -186,6 +186,8 @@ impl BlockBuilder {
                 confirmed_transactions.push(transaction.clone());
             }
         }
+        tracing::info!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
+
         // remove already-confirmed transactions
         for transaction in confirmed_transactions {
             in_progress.remove_tx(&transaction);
