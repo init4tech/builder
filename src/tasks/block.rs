@@ -173,7 +173,7 @@ impl BlockBuilder {
         self.bundle_poller.evict();
     }
 
-    async fn filter_transactions(&mut self, in_progress: &mut InProgressBlock) {
+    async fn filter_transactions(&self, in_progress: &mut InProgressBlock) {
         // query the rollup node to see which transaction(s) have been included
         let mut confirmed_transactions = Vec::new();
         for transaction in in_progress.transactions.iter() {
@@ -195,14 +195,14 @@ impl BlockBuilder {
     }
 
     // calculate the duration in seconds until the beginning of the next block slot.
-    fn secs_to_next_slot(&mut self) -> u64 {
+    fn secs_to_next_slot(&self) -> u64 {
         let curr_timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let current_slot_time = (curr_timestamp - self.config.chain_offset) % ETHEREUM_SLOT_TIME;
         (ETHEREUM_SLOT_TIME - current_slot_time) % ETHEREUM_SLOT_TIME
     }
 
     // add a buffer to the beginning of the block slot.
-    fn secs_to_next_target(&mut self) -> u64 {
+    fn secs_to_next_target(&self) -> u64 {
         self.secs_to_next_slot() + self.config.target_slot_time
     }
 
