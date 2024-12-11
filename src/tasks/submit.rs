@@ -172,7 +172,6 @@ impl SubmitTask {
 
             return Ok(ControlFlow::Skip);
         }
-
         self.send_transaction(resp, tx).await
     }
 
@@ -254,6 +253,7 @@ impl SubmitTask {
                 sig = hex::encode(resp.sig.as_bytes()),
                 "acquired signature from quincey"
             );
+            counter!("builder.quincey_signature_acquired").increment(1);
             resp
         };
 
@@ -273,7 +273,7 @@ impl SubmitTask {
                             Ok(ControlFlow::Retry) => {
                                 retries += 1;
                                 if retries > 3 {
-                                    counter!("block_building_too_many_retries").increment(1);
+                                    counter!("builder.building_too_many_retries").increment(1);
                                     histogram!("builder.block_build_time")
                                         .record(building_start_time.elapsed().as_millis() as f64);
                                     tracing::error!(
@@ -287,14 +287,14 @@ impl SubmitTask {
                             Ok(ControlFlow::Skip) => {
                                 histogram!("builder.block_build_time")
                                     .record(building_start_time.elapsed().as_millis() as f64);
-                                counter!("block_building_skipped_blocks").increment(1);
+                                counter!("builder.skipped_blocks").increment(1);
                                 tracing::info!("skipping block");
                                 break;
                             }
                             Ok(ControlFlow::Done) => {
                                 histogram!("builder.block_build_time")
                                     .record(building_start_time.elapsed().as_millis() as f64);
-                                counter!("block_building_successful_blocks").increment(1);
+                                counter!("builder.submitted_successful_blocks").increment(1);
                                 tracing::info!("block landed successfully");
                                 break;
                             }
