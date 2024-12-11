@@ -17,7 +17,9 @@ use alloy::{
 use alloy_primitives::{FixedBytes, U256};
 use alloy_sol_types::SolError;
 use eyre::{bail, eyre};
+use metrics::{counter, histogram};
 use oauth2::TokenResponse;
+use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
 use zenith_types::{
@@ -264,12 +266,16 @@ impl SubmitTask {
         let handle = tokio::spawn(async move {
             loop {
                 if let Some(in_progress) = inbound.recv().await {
+                    let building_start_time = Instant::now();
                     let mut retries = 0;
                     loop {
                         match self.handle_inbound(&in_progress).await {
                             Ok(ControlFlow::Retry) => {
                                 retries += 1;
                                 if retries > 3 {
+                                    counter!("block_building_too_many_retries").increment(1);
+                                    histogram!("builder.block_build_time")
+                                        .record(building_start_time.elapsed().as_millis() as f64);
                                     tracing::error!(
                                         "error handling inbound block: too many retries"
                                     );
@@ -279,10 +285,16 @@ impl SubmitTask {
                                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                             }
                             Ok(ControlFlow::Skip) => {
+                                histogram!("builder.block_build_time")
+                                    .record(building_start_time.elapsed().as_millis() as f64);
+                                counter!("block_building_skipped_blocks").increment(1);
                                 tracing::info!("skipping block");
                                 break;
                             }
                             Ok(ControlFlow::Done) => {
+                                histogram!("builder.block_build_time")
+                                    .record(building_start_time.elapsed().as_millis() as f64);
+                                counter!("block_building_successful_blocks").increment(1);
                                 tracing::info!("block landed successfully");
                                 break;
                             }

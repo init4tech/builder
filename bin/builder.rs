@@ -5,6 +5,7 @@ use builder::service::serve_builder_with_span;
 use builder::tasks::block::BlockBuilder;
 use builder::tasks::oauth::Authenticator;
 use builder::tasks::submit::SubmitTask;
+use metrics_exporter_prometheus::PrometheusBuilder;
 
 use tokio::select;
 
@@ -16,6 +17,8 @@ async fn main() -> eyre::Result<()> {
     let config = BuilderConfig::load_from_env()?.clone();
     let provider = config.connect_provider().await?;
     let authenticator = Authenticator::new(&config);
+
+    let _ = PrometheusBuilder::new().install().expect("failed to install prometheus exporter");
 
     tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
 
