@@ -18,7 +18,7 @@ async fn main() -> eyre::Result<()> {
     let provider = config.connect_provider().await?;
     let authenticator = Authenticator::new(&config);
 
-    let _ = PrometheusBuilder::new().install().expect("failed to install prometheus exporter");
+    PrometheusBuilder::new().install().expect("failed to install prometheus exporter");
 
     tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
 
