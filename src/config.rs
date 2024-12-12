@@ -119,7 +119,7 @@ impl ConfigError {
     }
 }
 
-/// Provider type used by this transaction
+/// Provider type used to read & write.
 pub type Provider = FillProvider<
     JoinFill<
         JoinFill<
@@ -127,6 +127,17 @@ pub type Provider = FillProvider<
             JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
         >,
         WalletFiller<EthereumWallet>,
+    >,
+    RootProvider<BoxTransport>,
+    BoxTransport,
+    Ethereum,
+>;
+
+/// Provider type used to read-only.
+pub type WalletlessProvider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
     >,
     RootProvider<BoxTransport>,
     BoxTransport,
@@ -184,27 +195,22 @@ impl BuilderConfig {
         }
     }
 
-    /// Connect to host rpc provider.
-    pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
-        let builder_signer = self.connect_builder_signer().await?;
-        BuilderConfig::connect_provider(builder_signer, self.host_rpc_url.clone()).await
-    }
-
     /// Connect to rollup rpc provider.
-    pub async fn connect_ru_provider(&self) -> Result<Provider, ConfigError> {
-        let builder_signer = self.connect_builder_signer().await?;
-        BuilderConfig::connect_provider(builder_signer, self.ru_rpc_url.clone()).await
+    pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .on_builtin(&self.ru_rpc_url.clone())
+            .await
+            .map_err(Into::into)
     }
 
     /// Connect to an rpc provider.
-    async fn connect_provider(
-        signer: LocalOrAws,
-        rpc_url: Cow<'static, str>,
-    ) -> Result<Provider, ConfigError> {
+    pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
+        let builder_signer = self.connect_builder_signer().await?;
         ProviderBuilder::new()
             .with_recommended_fillers()
-            .wallet(EthereumWallet::from(signer))
-            .on_builtin(&rpc_url)
+            .wallet(EthereumWallet::from(builder_signer))
+            .on_builtin(&self.host_rpc_url.clone())
             .await
             .map_err(Into::into)
     }

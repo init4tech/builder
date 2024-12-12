@@ -1,8 +1,8 @@
 use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
-use crate::config::{BuilderConfig, Provider};
-use alloy::providers::Provider as _;
+use crate::config::{BuilderConfig, WalletlessProvider};
+use alloy::providers::Provider;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
@@ -119,7 +119,7 @@ impl InProgressBlock {
 /// BlockBuilder is a task that periodically builds a block then sends it for signing and submission.
 pub struct BlockBuilder {
     pub config: BuilderConfig,
-    pub ru_provider: Provider,
+    pub ru_provider: WalletlessProvider,
     pub tx_poller: TxPoller,
     pub bundle_poller: BundlePoller,
 }
@@ -129,7 +129,7 @@ impl BlockBuilder {
     pub fn new(
         config: &BuilderConfig,
         authenticator: Authenticator,
-        ru_provider: Provider,
+        ru_provider: WalletlessProvider,
     ) -> Self {
         Self {
             config: config.clone(),
