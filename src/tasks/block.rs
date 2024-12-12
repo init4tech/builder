@@ -56,14 +56,14 @@ impl InProgressBlock {
 
     /// Ingest a transaction into the in-progress block. Fails
     pub fn ingest_tx(&mut self, tx: &TxEnvelope) {
-        tracing::info!(hash = %tx.tx_hash(), "ingesting tx");
+        tracing::trace!(hash = %tx.tx_hash(), "ingesting tx");
         self.unseal();
         self.transactions.push(tx.clone());
     }
 
     /// Remove a transaction from the in-progress block.
     pub fn remove_tx(&mut self, tx: &TxEnvelope) {
-        tracing::info!(hash = %tx.tx_hash(), "removing tx");
+        tracing::trace!(hash = %tx.tx_hash(), "removing tx");
         self.unseal();
         self.transactions.retain(|t| t.tx_hash() != tx.tx_hash());
     }
@@ -71,7 +71,7 @@ impl InProgressBlock {
     /// Ingest a bundle into the in-progress block.
     /// Ignores Signed Orders for now.
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
-        tracing::info!(bundle = %bundle.id, "ingesting bundle");
+        tracing::trace!(bundle = %bundle.id, "ingesting bundle");
 
         let txs = bundle
             .bundle
@@ -140,11 +140,11 @@ impl BlockBuilder {
     }
 
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
-        tracing::info!("query transactions from cache");
+        tracing::trace!("query transactions from cache");
         let txns = self.tx_poller.check_tx_cache().await;
         match txns {
             Ok(txns) => {
-                tracing::info!("got transactions response");
+                tracing::trace!("got transactions response");
                 for txn in txns.into_iter() {
                     in_progress.ingest_tx(&txn);
                 }
@@ -157,11 +157,11 @@ impl BlockBuilder {
     }
 
     async fn _get_bundles(&mut self, in_progress: &mut InProgressBlock) {
-        tracing::info!("query bundles from cache");
+        tracing::trace!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
         match bundles {
             Ok(bundles) => {
-                tracing::info!("got bundles response");
+                tracing::trace!("got bundles response");
                 for bundle in bundles {
                     in_progress.ingest_bundle(bundle);
                 }
@@ -186,7 +186,7 @@ impl BlockBuilder {
                 confirmed_transactions.push(transaction.clone());
             }
         }
-        tracing::info!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
+        tracing::trace!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
 
         // remove already-confirmed transactions
         for transaction in confirmed_transactions {
@@ -228,14 +228,14 @@ impl BlockBuilder {
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {
-                        tracing::info!(txns = in_progress.len(), "sending block to submit task");
+                        tracing::debug!(txns = in_progress.len(), "sending block to submit task");
                         let in_progress_block = std::mem::take(&mut in_progress);
                         if outbound.send(in_progress_block).is_err() {
-                            tracing::debug!("downstream task gone");
+                            tracing::error!("downstream task gone");
                             break;
                         }
                     } else {
-                        tracing::info!("no transactions, skipping block submission");
+                        tracing::debug!("no transactions, skipping block submission");
                     }
                 }
             }
