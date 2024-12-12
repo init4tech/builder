@@ -11,6 +11,8 @@ use serde_json::from_slice;
 
 pub use crate::config::BuilderConfig;
 
+use metrics::counter;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxPoolResponse {
     transactions: Vec<TxEnvelope>,
@@ -54,6 +56,7 @@ impl TxPoller {
         self.seen_txns.entry(*tx.tx_hash()).or_insert_with(|| {
             // add to unique transactions
             unique.push(tx.clone());
+            counter!("builder.unique_txs").increment(1);
             // expiry is now + cache_duration
             time::Instant::now() + Duration::from_secs(self.config.tx_pool_cache_duration)
         });
@@ -77,6 +80,7 @@ impl TxPoller {
 
         for key in expired_keys {
             self.seen_txns.remove(&key);
+            counter!("builder.evicted_txs").increment(1);
         }
     }
 }
