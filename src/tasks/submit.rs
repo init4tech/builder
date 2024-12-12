@@ -52,7 +52,7 @@ pub enum ControlFlow {
 /// Submits sidecars in ethereum txns to mainnet ethereum
 pub struct SubmitTask {
     /// Ethereum Provider
-    pub provider: Provider,
+    pub host_provider: Provider,
     /// Zenith
     pub zenith: ZenithInstance,
     /// Reqwest
@@ -127,7 +127,7 @@ impl SubmitTask {
     }
 
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
-        let result = self.provider.get_block_number().await?;
+        let result = self.host_provider.get_block_number().await?;
         let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
         Ok(next)
     }
@@ -152,12 +152,12 @@ impl SubmitTask {
 
         let tx = self
             .build_blob_tx(header, v, r, s, in_progress)?
-            .with_from(self.provider.default_signer_address())
+            .with_from(self.host_provider.default_signer_address())
             .with_to(self.config.zenith_address)
             .with_gas_limit(1_000_000);
 
         if let Err(TransportError::ErrorResp(e)) =
-            self.provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+            self.host_provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
         {
             error!(
                 code = e.code,
@@ -186,16 +186,16 @@ impl SubmitTask {
             "sending transaction to network"
         );
 
-        let SendableTx::Envelope(tx) = self.provider.fill(tx).await? else {
+        let SendableTx::Envelope(tx) = self.host_provider.fill(tx).await? else {
             bail!("failed to fill transaction")
         };
 
-        // Send the tx via the primary provider
-        let fut = spawn_provider_send!(&self.provider, &tx);
+        // Send the tx via the primary host_provider
+        let fut = spawn_provider_send!(&self.host_provider, &tx);
 
-        // Spawn send_tx futures for all additional broadcast providers
-        for provider in self.config.connect_additional_broadcast().await? {
-            spawn_provider_send!(&provider, &tx);
+        // Spawn send_tx futures for all additional broadcast host_providers
+        for host_provider in self.config.connect_additional_broadcast().await? {
+            spawn_provider_send!(&host_provider, &tx);
         }
 
         // question mark unwraps join error, which would be an internal panic

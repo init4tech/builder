@@ -15,7 +15,8 @@ async fn main() -> eyre::Result<()> {
     let span = tracing::info_span!("zenith-builder");
 
     let config = BuilderConfig::load_from_env()?.clone();
-    let provider = config.connect_provider().await?;
+    let host_provider = config.connect_host_provider().await?;
+    let ru_provider = config.connect_ru_provider().await?;
     let authenticator = Authenticator::new(&config);
 
     PrometheusBuilder::new().install().expect("failed to install prometheus exporter");
@@ -23,12 +24,12 @@ async fn main() -> eyre::Result<()> {
     tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
 
     let sequencer_signer = config.connect_sequencer_signer().await?;
-    let zenith = config.connect_zenith(provider.clone());
+    let zenith = config.connect_zenith(host_provider.clone());
 
-    let builder = BlockBuilder::new(&config, authenticator.clone());
+    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider);
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
-        provider,
+        host_provider,
         zenith,
         client: reqwest::Client::new(),
         sequencer_signer,

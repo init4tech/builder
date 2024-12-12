@@ -14,6 +14,7 @@ use zenith_types::Zenith;
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
 const RU_CHAIN_ID: &str = "RU_CHAIN_ID";
 const HOST_RPC_URL: &str = "HOST_RPC_URL";
+const ROLLUP_RPC_URL: &str = "ROLLUP_RPC_URL";
 const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URLS";
 const ZENITH_ADDRESS: &str = "ZENITH_ADDRESS";
 const QUINCEY_URL: &str = "QUINCEY_URL";
@@ -44,6 +45,8 @@ pub struct BuilderConfig {
     pub ru_chain_id: u64,
     /// URL for Host RPC node.
     pub host_rpc_url: Cow<'static, str>,
+    /// URL for the Rollup RPC node.
+    pub ru_rpc_url: Cow<'static, str>,
     /// Additional RPC URLs to which to broadcast transactions.
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.
@@ -116,7 +119,7 @@ impl ConfigError {
     }
 }
 
-/// Provider type used by this transaction
+/// Provider type used to read & write.
 pub type Provider = FillProvider<
     JoinFill<
         JoinFill<
@@ -124,6 +127,17 @@ pub type Provider = FillProvider<
             JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
         >,
         WalletFiller<EthereumWallet>,
+    >,
+    RootProvider<BoxTransport>,
+    BoxTransport,
+    Ethereum,
+>;
+
+/// Provider type used to read-only.
+pub type WalletlessProvider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
     >,
     RootProvider<BoxTransport>,
     BoxTransport,
@@ -139,6 +153,7 @@ impl BuilderConfig {
             host_chain_id: load_u64(HOST_CHAIN_ID)?,
             ru_chain_id: load_u64(RU_CHAIN_ID)?,
             host_rpc_url: load_url(HOST_RPC_URL)?,
+            ru_rpc_url: load_url(ROLLUP_RPC_URL)?,
             tx_broadcast_urls: env::var(TX_BROADCAST_URLS)
                 .unwrap_or_default()
                 .split(',')
@@ -180,8 +195,17 @@ impl BuilderConfig {
         }
     }
 
-    /// Connect to the provider using the configuration.
-    pub async fn connect_provider(&self) -> Result<Provider, ConfigError> {
+    /// Connect to the Rollup rpc provider.
+    pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .on_builtin(&self.ru_rpc_url)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Connect to the Host rpc provider.
+    pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
         let builder_signer = self.connect_builder_signer().await?;
         ProviderBuilder::new()
             .with_recommended_fillers()
