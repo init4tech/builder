@@ -7,8 +7,8 @@ use alloy::{
     consensus::{constants::GWEI_TO_WEI, SimpleCoder},
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
+    providers::Provider as _,
     providers::SendableTx,
-    providers::{Provider as _, WalletProvider},
     rpc::types::eth::TransactionRequest,
     signers::Signer,
     sol_types::SolCall,
@@ -23,6 +23,7 @@ use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
 use zenith_types::{
+    bundle_helper::{submitCall, BlockHeader, FillPermit2},
     SignRequest, SignResponse,
     Zenith::{self, IncorrectHostBlock},
 };
@@ -142,7 +143,10 @@ impl SubmitTask {
         let r: FixedBytes<32> = resp.sig.r().into();
         let s: FixedBytes<32> = resp.sig.s().into();
 
-        let header = Zenith::BlockHeader {
+        // TODO: Build fills
+        let fills: Vec<FillPermit2> = vec![];
+
+        let header = BlockHeader {
             hostBlockNumber: resp.req.host_block_number,
             rollupChainId: U256::from(self.config.ru_chain_id),
             gasLimit: resp.req.gas_limit,
@@ -150,11 +154,22 @@ impl SubmitTask {
             blockDataHash: in_progress.contents_hash(),
         };
 
-        let tx = self
-            .build_blob_tx(header, v, r, s, in_progress)?
-            .with_from(self.provider.default_signer_address())
-            .with_to(self.config.zenith_address)
-            .with_gas_limit(1_000_000);
+        let submit_call = submitCall { fills, header, v, r, s }.abi_encode();
+
+        let tx = TransactionRequest::default()
+            .with_input(submit_call)
+            .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128);
+
+        if let Err(TransportError::ErrorResp(e)) =
+            self.provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+        {
+            error!(
+                code = e.code,
+                message = %e.message,
+                data = ?e.data,
+                "error in transaction submission"
+            );
+        }
 
         if let Err(TransportError::ErrorResp(e)) =
             self.provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
