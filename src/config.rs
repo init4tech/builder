@@ -199,7 +199,7 @@ impl BuilderConfig {
     pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
         ProviderBuilder::new()
             .with_recommended_fillers()
-            .on_builtin(&self.ru_rpc_url.clone())
+            .on_builtin(&self.ru_rpc_url)
             .await
             .map_err(Into::into)
     }
@@ -210,7 +210,7 @@ impl BuilderConfig {
         ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(EthereumWallet::from(builder_signer))
-            .on_builtin(&self.host_rpc_url.clone())
+            .on_builtin(&self.host_rpc_url)
             .await
             .map_err(Into::into)
     }
