@@ -195,7 +195,7 @@ impl BuilderConfig {
         }
     }
 
-    /// Connect to rollup rpc provider.
+    /// Connect to the Rollup rpc provider.
     pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
         ProviderBuilder::new()
             .with_recommended_fillers()
@@ -204,7 +204,7 @@ impl BuilderConfig {
             .map_err(Into::into)
     }
 
-    /// Connect to an rpc provider.
+    /// Connect to the Host rpc provider.
     pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
         let builder_signer = self.connect_builder_signer().await?;
         ProviderBuilder::new()
