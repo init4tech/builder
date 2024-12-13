@@ -153,7 +153,6 @@ impl BlockBuilder {
                 tracing::error!(error = %e, "error polling transactions");
             }
         }
-        self.tx_poller.evict();
     }
 
     async fn _get_bundles(&mut self, in_progress: &mut InProgressBlock) {
