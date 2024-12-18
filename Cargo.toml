@@ -18,7 +18,7 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-zenith-types = { git = "https://github.com/init4tech/zenith-rs", branch = "main" }
+zenith-types = { git = "https://github.com/init4tech/zenith-rs", tag = "v0.10.1" }
 
 alloy-primitives = { version = "=0.8.8", features = ["serde", "tiny-keccak"] }
 alloy-sol-types = { version = "=0.8.8", features = ["json"] }
