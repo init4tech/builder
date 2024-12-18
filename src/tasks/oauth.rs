@@ -10,8 +10,6 @@ use oauth2::{
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
-const OAUTH_AUDIENCE_CLAIM: &str = "audience";
-
 type Token = StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
 
 /// A self-refreshing, periodically fetching authenticator for the block builder.
@@ -91,10 +89,7 @@ impl Authenticator {
             Some(TokenUrl::new(config.oauth_token_url.clone())?),
         );
 
-        let token_result = client
-            .exchange_client_credentials()
-            .add_extra_param(OAUTH_AUDIENCE_CLAIM, config.oauth_audience.clone())
-            .request(http_client)?;
+        let token_result = client.exchange_client_credentials().request(http_client)?;
 
         Ok(token_result)
     }
@@ -166,7 +161,6 @@ mod tests {
             oauth_client_secret: "some_client_secret".into(),
             oauth_authenticate_url: "http://localhost:9000".into(),
             oauth_token_url: "http://localhost:9000".into(),
-            oauth_audience: "https://transactions.holesky.signet.sh".into(),
             tx_broadcast_urls: vec!["http://localhost:9000".into()],
             oauth_token_refresh_interval: 300, // 5 minutes
         };

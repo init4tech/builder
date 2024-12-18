@@ -33,7 +33,6 @@ const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
-const OAUTH_AUDIENCE: &str = "OAUTH_AUDIENCE";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
@@ -84,8 +83,6 @@ pub struct BuilderConfig {
     pub oauth_authenticate_url: String,
     /// OAuth token URL for the builder to get an OAuth2 access token
     pub oauth_token_url: String,
-    /// OAuth audience for the builder.
-    pub oauth_audience: String,
     /// The oauth token refresh interval in seconds.
     pub oauth_token_refresh_interval: u64,
 }
@@ -176,7 +173,6 @@ impl BuilderConfig {
             oauth_client_secret: load_string(OAUTH_CLIENT_SECRET)?,
             oauth_authenticate_url: load_string(OAUTH_AUTHENTICATE_URL)?,
             oauth_token_url: load_string(OAUTH_TOKEN_URL)?,
-            oauth_audience: load_string(OAUTH_AUDIENCE)?,
             oauth_token_refresh_interval: load_u64(AUTH_TOKEN_REFRESH_INTERVAL)?,
         })
     }
