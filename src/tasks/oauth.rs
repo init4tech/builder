@@ -89,9 +89,7 @@ impl Authenticator {
             Some(TokenUrl::new(config.oauth_token_url.clone())?),
         );
 
-        let token_result = client
-            .exchange_client_credentials()
-            .request(http_client)?;
+        let token_result = client.exchange_client_credentials().request(http_client)?;
 
         Ok(token_result)
     }
