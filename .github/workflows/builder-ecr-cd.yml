@@ -1,4 +1,4 @@
-name: Docker ECR Push
+name: Docker ECR Push - Builder
 
 on:
   push:

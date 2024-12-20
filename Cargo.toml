@@ -18,7 +18,7 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [[bin]]
-name = "integration-test"
+name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
