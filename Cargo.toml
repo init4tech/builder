@@ -17,6 +17,10 @@ name = "builder"
 name = "zenith-builder-example"
 path = "bin/builder.rs"
 
+[[bin]]
+name = "integration-test"
+path = "bin/submit_transaction.rs"
+
 [dependencies]
 zenith-types = { git = "https://github.com/init4tech/zenith-rs", branch = "main" }
 

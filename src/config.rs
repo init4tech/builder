@@ -232,7 +232,7 @@ impl BuilderConfig {
     }
 }
 
-fn load_string(key: &str) -> Result<String, ConfigError> {
+pub fn load_string(key: &str) -> Result<String, ConfigError> {
     env::var(key).map_err(|_| ConfigError::missing(key))
 }
 
@@ -240,7 +240,7 @@ fn load_string_option(key: &str) -> Option<String> {
     load_string(key).ok()
 }
 
-fn load_u64(key: &str) -> Result<u64, ConfigError> {
+pub fn load_u64(key: &str) -> Result<u64, ConfigError> {
     let val = load_string(key)?;
     val.parse::<u64>().map_err(Into::into)
 }
@@ -250,11 +250,11 @@ fn load_u16(key: &str) -> Result<u16, ConfigError> {
     val.parse::<u16>().map_err(Into::into)
 }
 
-fn load_url(key: &str) -> Result<Cow<'static, str>, ConfigError> {
+pub fn load_url(key: &str) -> Result<Cow<'static, str>, ConfigError> {
     load_string(key).map_err(Into::into).map(Into::into)
 }
 
-fn load_address(key: &str) -> Result<Address, ConfigError> {
+pub fn load_address(key: &str) -> Result<Address, ConfigError> {
     let address = load_string(key)?;
     Address::from_str(&address).map_err(Into::into)
 }
