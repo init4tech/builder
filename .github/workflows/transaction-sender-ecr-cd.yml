@@ -21,7 +21,7 @@ jobs:
       rust-binary-name: transaction-sender
       environment: dev
       requires-private-deps: true
-      dockerfile-path: transaction-sender.Dockerfile
+      dockerfile-path: transaction-submitter.Dockerfile
     secrets:
       aws-ecr-repository: ${{ secrets.AWS_ECR_REPOSITORY }}
       aws-ecr-deployer-role-arn: ${{ secrets.AWS_ECR_DEPLOYER_ROLE_ARN }}
