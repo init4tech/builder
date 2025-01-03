@@ -140,8 +140,7 @@ pub type WalletlessProvider = FillProvider<
     BoxTransport,
     Ethereum,
 >;
-
-pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider>;
+pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.

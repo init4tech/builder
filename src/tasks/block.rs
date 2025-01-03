@@ -1,18 +1,25 @@
+use alloy::eips::eip2718::Eip2718Error;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{sync::OnceLock, time::Duration};
+use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::Instrument;
+
 use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
+
 use crate::config::{BuilderConfig, WalletlessProvider};
+
 use alloy::providers::Provider;
+use alloy::rpc::types::mev::EthSendBundle;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
 };
 use alloy_primitives::{keccak256, Bytes, B256};
 use alloy_rlp::Buf;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{sync::OnceLock, time::Duration};
-use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::Instrument;
+
+use zenith_types::BundleHelper::FillPermit2;
 use zenith_types::{encode_txns, Alloy2718Coder};
 
 /// Ethereum's slot time in seconds.
@@ -29,7 +36,11 @@ pub struct InProgressBlock {
 impl InProgressBlock {
     /// Create a new `InProgressBlock`
     pub fn new() -> Self {
-        Self { transactions: Vec::new(), raw_encoding: OnceLock::new(), hash: OnceLock::new() }
+        Self {
+            transactions: Vec::new(),
+            raw_encoding: OnceLock::new(),
+            hash: OnceLock::new(),
+        }
     }
 
     /// Get the number of transactions in the block.
@@ -73,15 +84,28 @@ impl InProgressBlock {
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
         tracing::trace!(bundle = %bundle.id, "ingesting bundle");
 
-        let txs = bundle
-            .bundle
-            .bundle
-            .txs
-            .into_iter()
-            .map(|tx| TxEnvelope::decode_2718(&mut tx.chunk()))
-            .collect::<Result<Vec<_>, _>>();
+        // If host fills exists, then it's a Signet bundle
+        if let Some(_) = bundle.bundle.host_fills {
+            self.process_signet_bundle(bundle);
+        } else {
+            // otherwise, treat the bundle as a regular eth bundle and ingest it's tx list in order to maintain compatibility
+            self.process_eth_bundle(bundle);
+        }
+    }
 
-        if let Ok(txs) = txs {
+    /// Process a Signet bundle by checking outputs for corresponding host fills and appending the txs in order
+    fn process_signet_bundle(&mut self, bundle: Bundle) {
+        let host_fills = bundle.bundle.host_fills.unwrap(); // safe because we already checked it above
+        let host_fill_list = host_fills.clone().outputs;
+        for output in host_fill_list.iter() {
+            tracing::debug!(?output, "found host fill");
+            // Parse the output as a FillPermit2
+        }
+    }
+
+    /// Processes a typical bundle of transactions, appending them in order to the in progress block.
+    fn process_eth_bundle(&mut self, bundle: Bundle) {
+        if let Ok(txs) = self.decode_2718_txs(bundle.bundle.bundle) {
             self.unseal();
             // extend the transactions with the decoded transactions.
             // As this builder does not provide bundles landing "top of block", its fine to just extend.
@@ -89,6 +113,15 @@ impl InProgressBlock {
         } else {
             tracing::error!("failed to decode bundle. dropping");
         }
+    }
+
+    /// Extracts and decodes a list of 2718 transactions from a EthSendBundle
+    fn decode_2718_txs(&mut self, bundle: EthSendBundle) -> Result<Vec<TxEnvelope>, Eip2718Error> {
+        bundle
+            .txs
+            .into_iter()
+            .map(|tx| TxEnvelope::decode_2718(&mut tx.chunk()))
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// Encode the in-progress block
@@ -125,7 +158,7 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
-    // create a new block builder with the given config.
+    // Creates a new block builder with the given config
     pub fn new(
         config: &BuilderConfig,
         authenticator: Authenticator,
@@ -139,9 +172,10 @@ impl BlockBuilder {
         }
     }
 
+    /// Fetches transactions from the cache and ingests them into the current block
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
         tracing::trace!("query transactions from cache");
-        let txns = self.tx_poller.check_tx_cache().await;
+        let txns: Result<Vec<TxEnvelope>, eyre::Error> = self.tx_poller.check_tx_cache().await;
         match txns {
             Ok(txns) => {
                 tracing::trace!("got transactions response");
@@ -155,12 +189,16 @@ impl BlockBuilder {
         }
     }
 
+    /// Returns bundles from the cache and ingests them into the current block
     async fn _get_bundles(&mut self, in_progress: &mut InProgressBlock) {
         tracing::trace!("query bundles from cache");
+
+        // fetch latest bundles from the cache
         let bundles = self.bundle_poller.check_bundle_cache().await;
         match bundles {
             Ok(bundles) => {
-                tracing::trace!("got bundles response");
+                tracing::trace!(?bundles, "got bundles response");
+                // QUESTION: When does this need to stop attempting to ingest for the current block?
                 for bundle in bundles {
                     in_progress.ingest_bundle(bundle);
                 }
@@ -172,6 +210,7 @@ impl BlockBuilder {
         self.bundle_poller.evict();
     }
 
+    // Filters confirmed transactions from the block
     async fn filter_transactions(&self, in_progress: &mut InProgressBlock) {
         // query the rollup node to see which transaction(s) have been included
         let mut confirmed_transactions = Vec::new();
@@ -193,14 +232,14 @@ impl BlockBuilder {
         }
     }
 
-    // calculate the duration in seconds until the beginning of the next block slot.
+    // Calculate the duration in seconds until the beginning of the next block slot.
     fn secs_to_next_slot(&self) -> u64 {
         let curr_timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let current_slot_time = (curr_timestamp - self.config.chain_offset) % ETHEREUM_SLOT_TIME;
         (ETHEREUM_SLOT_TIME - current_slot_time) % ETHEREUM_SLOT_TIME
     }
 
-    // add a buffer to the beginning of the block slot.
+    // Add a buffer to the beginning of the block slot.
     fn secs_to_next_target(&self) -> u64 {
         self.secs_to_next_slot() + self.config.target_slot_time
     }
@@ -219,8 +258,8 @@ impl BlockBuilder {
                     let mut in_progress = InProgressBlock::default();
                     self.get_transactions(&mut in_progress).await;
 
-                    // TODO: Implement bundle ingestion #later
-                    // self.get_bundles(&mut in_progress).await;
+                    // Ingest bundles
+                    self._get_bundles(&mut in_progress).await;
 
                     // Filter confirmed transactions from the block
                     self.filter_transactions(&mut in_progress).await;

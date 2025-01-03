@@ -4,11 +4,11 @@ use crate::{
     tasks::block::InProgressBlock,
 };
 use alloy::{
-    consensus::{constants::GWEI_TO_WEI, SimpleCoder},
+    consensus::constants::GWEI_TO_WEI,
     eips::BlockNumberOrTag,
-    network::{TransactionBuilder, TransactionBuilder4844},
+    network::TransactionBuilder,
+    providers::Provider as _,
     providers::SendableTx,
-    providers::{Provider as _, WalletProvider},
     rpc::types::eth::TransactionRequest,
     signers::Signer,
     sol_types::SolCall,
@@ -23,8 +23,9 @@ use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
 use zenith_types::{
+    BundleHelper::{submitCall, BlockHeader, FillPermit2},
     SignRequest, SignResponse,
-    Zenith::{self, IncorrectHostBlock},
+    Zenith::IncorrectHostBlock,
 };
 
 macro_rules! spawn_provider_send {
@@ -109,23 +110,6 @@ impl SubmitTask {
         })
     }
 
-    /// Builds blob transaction from the provided header and signature values
-    fn build_blob_tx(
-        &self,
-        header: Zenith::BlockHeader,
-        v: u8,
-        r: FixedBytes<32>,
-        s: FixedBytes<32>,
-        in_progress: &InProgressBlock,
-    ) -> eyre::Result<TransactionRequest> {
-        let data = Zenith::submitBlockCall { header, v, r, s, _4: Default::default() }.abi_encode();
-        let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
-        Ok(TransactionRequest::default()
-            .with_blob_sidecar(sidecar)
-            .with_input(data)
-            .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
-    }
-
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let result = self.host_provider.get_block_number().await?;
         let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
@@ -138,11 +122,20 @@ impl SubmitTask {
         resp: &SignResponse,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<ControlFlow> {
-        let v: u8 = resp.sig.v().y_parity_byte() + 27;
-        let r: FixedBytes<32> = resp.sig.r().into();
-        let s: FixedBytes<32> = resp.sig.s().into();
+        // There are two types of bundles: 
+        // - Bundles with permit2s that require checking and enforcing host fills 
+        // - Bundles that are just groups of transactions and can be executed without sorting host fills
+        // 
+        // Block building depends on the type of bundles being built, and so our builder 
+        // needs to be able to detect and handle both types of bundles or else we will go down. 
+        // This means all builders that build blocks containing bundles on our network need to handle multiple bundle types.
+        //
+        // If a bundle has a permit2 fill, it must be checked if it's one of _our_ permit2 fills. 
+        // If it is, then we can begin the host fills check process.
 
-        let header = Zenith::BlockHeader {
+        let fills: Vec<FillPermit2> = vec![];
+
+        let header = BlockHeader {
             hostBlockNumber: resp.req.host_block_number,
             rollupChainId: U256::from(self.config.ru_chain_id),
             gasLimit: resp.req.gas_limit,
@@ -150,11 +143,27 @@ impl SubmitTask {
             blockDataHash: in_progress.contents_hash(),
         };
 
-        let tx = self
-            .build_blob_tx(header, v, r, s, in_progress)?
-            .with_from(self.host_provider.default_signer_address())
-            .with_to(self.config.zenith_address)
-            .with_gas_limit(1_000_000);
+        // get sig details for signing the tx
+        let v = resp.sig.v().into();
+        let r: FixedBytes<32> = resp.sig.r().into();
+        let s: FixedBytes<32> = resp.sig.s().into();
+
+        let submit_call = submitCall { fills, header, v, r, s }.abi_encode();
+
+        let tx = TransactionRequest::default()
+            .with_input(submit_call)
+            .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128);
+
+        if let Err(TransportError::ErrorResp(e)) =
+            self.host_provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+        {
+            error!(
+                code = e.code,
+                message = %e.message,
+                data = ?e.data,
+                "error in transaction submission"
+            );
+        }
 
         if let Err(TransportError::ErrorResp(e)) =
             self.host_provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
