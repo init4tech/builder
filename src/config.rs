@@ -5,6 +5,7 @@ use alloy::providers::{
     fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
     Identity, ProviderBuilder, RootProvider,
 };
+use alloy::rpc::json_rpc::RequestPacket;
 use alloy::transports::BoxTransport;
 use alloy_primitives::Address;
 use std::{borrow::Cow, env, num, str::FromStr};
@@ -140,8 +141,7 @@ pub type WalletlessProvider = FillProvider<
     BoxTransport,
     Ethereum,
 >;
-
-pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider>;
+pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider, RequestPacket>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
