@@ -7,9 +7,11 @@ use alloy::{
 use alloy_primitives::Address;
 use aws_config::BehaviorVersion;
 use builder::config::{load_address, load_string, load_u64, load_url, Provider};
+use metrics::counter;
 use metrics::histogram;
 use metrics_exporter_prometheus::PrometheusBuilder;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::time::timeout;
 
 #[tokio::main]
 async fn main() {
@@ -46,7 +48,19 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     let result = provider.send_transaction(tx).await.unwrap();
 
     // wait for the transaction to mine
-    let receipt = result.get_receipt().await.unwrap();
+    let receipt = match timeout(Duration::from_secs(60), result.get_receipt()).await {
+        Ok(Ok(receipt)) => receipt,
+        Ok(Err(e)) => {
+            tracing::error!(error = ?e, "failed to get transaction receipt");
+            return;
+        }
+        Err(_) => {
+            tracing::error!("timeout waiting for transaction receipt");
+            counter!("txn_submitter.tx_timeout").increment(1);
+            return;
+        }
+    };
+
     let hash = receipt.transaction_hash.to_string();
 
     // record metrics for how long it took to mine the transaction
