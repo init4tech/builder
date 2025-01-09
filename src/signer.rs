@@ -1,8 +1,8 @@
 use alloy::consensus::SignableTransaction;
+use alloy::primitives::PrimitiveSignature;
+use alloy::primitives::{Address, ChainId, B256};
 use alloy::signers::aws::{AwsSigner, AwsSignerError};
 use alloy::signers::local::{LocalSignerError, PrivateKeySigner};
-use alloy::signers::Signature;
-use alloy_primitives::{Address, ChainId, B256};
 use aws_config::BehaviorVersion;
 
 /// Abstraction over local signer or
@@ -55,7 +55,7 @@ impl LocalOrAws {
 }
 
 #[async_trait::async_trait]
-impl alloy::network::TxSigner<Signature> for LocalOrAws {
+impl alloy::network::TxSigner<PrimitiveSignature> for LocalOrAws {
     fn address(&self) -> Address {
         match self {
             LocalOrAws::Local(signer) => signer.address(),
@@ -65,8 +65,8 @@ impl alloy::network::TxSigner<Signature> for LocalOrAws {
 
     async fn sign_transaction(
         &self,
-        tx: &mut dyn SignableTransaction<Signature>,
-    ) -> alloy::signers::Result<Signature> {
+        tx: &mut dyn SignableTransaction<PrimitiveSignature>,
+    ) -> alloy::signers::Result<PrimitiveSignature> {
         match self {
             LocalOrAws::Local(signer) => signer.sign_transaction(tx).await,
             LocalOrAws::Aws(signer) => signer.sign_transaction(tx).await,
@@ -75,9 +75,9 @@ impl alloy::network::TxSigner<Signature> for LocalOrAws {
 }
 
 #[async_trait::async_trait]
-impl alloy::signers::Signer<Signature> for LocalOrAws {
+impl alloy::signers::Signer<PrimitiveSignature> for LocalOrAws {
     /// Signs the given hash.
-    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
+    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<PrimitiveSignature> {
         match self {
             LocalOrAws::Local(signer) => signer.sign_hash(hash).await,
             LocalOrAws::Aws(signer) => signer.sign_hash(hash).await,

@@ -5,6 +5,7 @@ use alloy::providers::{
     fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
     Identity, ProviderBuilder, RootProvider,
 };
+use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::BoxTransport;
 use alloy_primitives::Address;
 use std::{borrow::Cow, env, num, str::FromStr};
@@ -205,7 +206,7 @@ impl BuilderConfig {
         let builder_signer = self.connect_builder_signer().await?;
         ProviderBuilder::new()
             .with_recommended_fillers()
-            .wallet(EthereumWallet::from(builder_signer))
+            .wallet(PrivateKeySigner::from(builder_signer))
             .on_builtin(&self.host_rpc_url)
             .await
             .map_err(Into::into)

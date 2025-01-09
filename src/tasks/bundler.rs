@@ -1,11 +1,10 @@
 //! Bundler service responsible for polling and submitting bundles to the in-progress block.
-use std::time::{Duration, Instant};
-
 pub use crate::config::BuilderConfig;
-use alloy_primitives::map::HashMap;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use signet_types::SignetEthBundle;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use oauth2::TokenResponse;
 

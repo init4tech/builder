@@ -23,12 +23,7 @@ path = "bin/submit_transaction.rs"
 
 [dependencies]
 zenith-types = { git = "https://github.com/init4tech/zenith-rs", tag = "v0.10.1" }
-
-alloy-primitives = { version = "=0.8.8", features = ["serde", "tiny-keccak"] }
-alloy-sol-types = { version = "=0.8.8", features = ["json"] }
-alloy-rlp = { version = "0.3.4" }
-
-alloy = { version = "0.5.4", features = ["full", "json-rpc", "signer-aws"] }
+alloy = { version = "=0.5.4", features = ["full", "json-rpc", "signer-aws", "rlp"] }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
@@ -37,7 +32,7 @@ hex = { package = "const-hex", version = "1", default-features = false, features
     "alloc",
 ] }
 
-signet-types = { git = "ssh://git@github.com/init4tech/signet-node.git" }
+signet-types = { git = "ssh://git@github.com/init4tech/signet-node.git", rev = "6fc8b20" }
 
 serde = { version = "1.0.197", features = ["derive"] }
 tracing = "0.1.40"

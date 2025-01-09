@@ -1,5 +1,5 @@
 mod tests {
-    use alloy_primitives::Address;
+    use alloy::primitives::Address;
     use builder::{config::BuilderConfig, tasks::oauth::Authenticator};
     use eyre::Result;
 
