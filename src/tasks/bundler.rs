@@ -2,7 +2,7 @@
 use std::time::{Duration, Instant};
 
 pub use crate::config::BuilderConfig;
-use alloy_primitives::map::HashMap;
+use alloy::primitives::map::HashMap;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use signet_types::SignetEthBundle;

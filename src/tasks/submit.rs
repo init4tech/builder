@@ -3,6 +3,8 @@ use crate::{
     signer::LocalOrAws,
     tasks::block::InProgressBlock,
 };
+use alloy::primitives::{FixedBytes, U256};
+use alloy::sol_types::SolError;
 use alloy::{
     consensus::{constants::GWEI_TO_WEI, SimpleCoder},
     eips::BlockNumberOrTag,
@@ -14,8 +16,6 @@ use alloy::{
     sol_types::SolCall,
     transports::TransportError,
 };
-use alloy_primitives::{FixedBytes, U256};
-use alloy_sol_types::SolError;
 use eyre::{bail, eyre};
 use metrics::{counter, histogram};
 use oauth2::TokenResponse;

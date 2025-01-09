@@ -1,10 +1,10 @@
+use alloy::primitives::Address;
 use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     providers::{Provider as _, ProviderBuilder, WalletProvider},
     rpc::types::eth::TransactionRequest,
     signers::aws::AwsSigner,
 };
-use alloy_primitives::Address;
 use aws_config::BehaviorVersion;
 use builder::config::{load_address, load_string, load_u64, load_url, Provider};
 use metrics::counter;
@@ -37,7 +37,7 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     let tx = TransactionRequest::default()
         .with_from(provider.default_signer_address())
         .with_to(recipient_address)
-        .with_value(alloy_primitives::U256::from(1))
+        .with_value(alloy::primitives::U256::from(1))
         .with_gas_limit(30_000);
 
     // start timer to measure how long it takes to mine the transaction
