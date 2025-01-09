@@ -24,6 +24,7 @@ path = "bin/submit_transaction.rs"
 [dependencies]
 zenith-types = { git = "https://github.com/init4tech/zenith-rs", tag = "v0.10.1" }
 
+# alloy
 alloy = { version = "0.5.4", features = ["full", "json-rpc", "signer-aws", "rlp"] }
 
 aws-config = "1.1.7"
