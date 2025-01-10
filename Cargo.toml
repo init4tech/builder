@@ -51,3 +51,6 @@ async-trait = "0.1.80"
 oauth2 = "4.4.2"
 metrics = "0.24.1"
 metrics-exporter-prometheus = "0.16.0"
+
+[dev-dependencies]
+httpmock = "0.7.0"
