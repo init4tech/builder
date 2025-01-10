@@ -6,26 +6,22 @@ use crate::{
 use alloy::{
     consensus::{constants::GWEI_TO_WEI, SimpleCoder},
     eips::BlockNumberOrTag,
-    network::{TransactionBuilder, TransactionBuilder4844},
-    providers::SendableTx,
-    providers::{Provider as _, WalletProvider},
+    network::TransactionBuilder,
+    network::TransactionBuilder4844,
+    primitives::{FixedBytes, U256},
+    providers::{Provider as _, SendableTx, WalletProvider},
     rpc::types::eth::TransactionRequest,
     signers::Signer,
-    sol_types::SolCall,
+    sol_types::{SolCall, SolError},
     transports::TransportError,
 };
-use alloy_primitives::{FixedBytes, U256};
-use alloy_sol_types::SolError;
 use eyre::{bail, eyre};
 use metrics::{counter, histogram};
 use oauth2::TokenResponse;
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
-use zenith_types::{
-    SignRequest, SignResponse,
-    Zenith::{self, IncorrectHostBlock},
-};
+use zenith_types::{SignRequest, SignResponse, Zenith, Zenith::IncorrectHostBlock};
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -138,7 +134,7 @@ impl SubmitTask {
         resp: &SignResponse,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<ControlFlow> {
-        let v: u8 = resp.sig.v().y_parity_byte() + 27;
+        let v = resp.sig.v().into();
         let r: FixedBytes<32> = resp.sig.r().into();
         let s: FixedBytes<32> = resp.sig.s().into();
 
