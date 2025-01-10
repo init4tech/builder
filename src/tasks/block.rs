@@ -87,6 +87,8 @@ impl InProgressBlock {
 
         if let Ok(txs) = txs {
             self.unseal();
+            // extend the transactions with the decoded transactions.
+            // As this builder does not provide bundles landing "top of block", its fine to just extend.
             self.transactions.extend(txs);
         } else {
             error!("failed to decode bundle. dropping");
