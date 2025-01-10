@@ -21,7 +21,11 @@ use oauth2::TokenResponse;
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
-use zenith_types::{SignRequest, SignResponse, Zenith, Zenith::IncorrectHostBlock};
+use zenith_types::{
+    BundleHelper::{self, FillPermit2},
+    SignRequest, SignResponse,
+    Zenith::IncorrectHostBlock,
+};
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -110,13 +114,15 @@ impl SubmitTask {
     /// Builds blob transaction from the provided header and signature values
     fn build_blob_tx(
         &self,
-        header: Zenith::BlockHeader,
+        fills: Vec<FillPermit2>,
+        header: BundleHelper::BlockHeader,
         v: u8,
         r: FixedBytes<32>,
         s: FixedBytes<32>,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<TransactionRequest> {
-        let data = Zenith::submitBlockCall { header, v, r, s, _4: Default::default() }.abi_encode();
+        let data = zenith_types::BundleHelper::submitCall { fills, header, v, r, s }.abi_encode();
+
         let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
         Ok(TransactionRequest::default()
             .with_blob_sidecar(sidecar)
@@ -124,6 +130,7 @@ impl SubmitTask {
             .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
     }
 
+    /// Returns the next host block height
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let result = self.host_provider.get_block_number().await?;
         let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
@@ -138,7 +145,7 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let (v, r, s) = extract_signature_components(&resp.sig);
 
-        let header = Zenith::BlockHeader {
+        let header = zenith_types::BundleHelper::BlockHeader {
             hostBlockNumber: resp.req.host_block_number,
             rollupChainId: U256::from(self.config.ru_chain_id),
             gasLimit: resp.req.gas_limit,
@@ -146,8 +153,9 @@ impl SubmitTask {
             blockDataHash: in_progress.contents_hash(),
         };
 
+        let fills = vec![]; // NB: ignored until fills are implemented
         let tx = self
-            .build_blob_tx(header, v, r, s, in_progress)?
+            .build_blob_tx(fills, header, v, r, s, in_progress)?
             .with_from(self.host_provider.default_signer_address())
             .with_to(self.config.zenith_address)
             .with_gas_limit(1_000_000);
@@ -168,6 +176,8 @@ impl SubmitTask {
 
             return Ok(ControlFlow::Skip);
         }
+
+        // All validation checks have passed, send the transaction
         self.send_transaction(resp, tx).await
     }
 
