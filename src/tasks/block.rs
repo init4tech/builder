@@ -2,12 +2,12 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
+use alloy::primitives::{keccak256, Bytes, B256};
 use alloy::providers::Provider;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
 };
-use alloy_primitives::{keccak256, Bytes, B256};
 use alloy_rlp::Buf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
@@ -98,7 +98,7 @@ impl InProgressBlock {
     }
 
     /// Calculate the hash of the in-progress block, finishing the block.
-    pub fn contents_hash(&self) -> alloy_primitives::B256 {
+    pub fn contents_hash(&self) -> B256 {
         self.seal();
         *self.hash.get().unwrap()
     }

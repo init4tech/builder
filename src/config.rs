@@ -1,12 +1,12 @@
 use crate::signer::{LocalOrAws, SignerError};
 use alloy::network::{Ethereum, EthereumWallet};
+use alloy::primitives::Address;
 use alloy::providers::fillers::BlobGasFiller;
 use alloy::providers::{
     fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
     Identity, ProviderBuilder, RootProvider,
 };
 use alloy::transports::BoxTransport;
-use alloy_primitives::Address;
 use std::{borrow::Cow, env, num, str::FromStr};
 use zenith_types::Zenith;
 
@@ -140,8 +140,7 @@ pub type WalletlessProvider = FillProvider<
     BoxTransport,
     Ethereum,
 >;
-
-pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider>;
+pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
@@ -247,7 +246,7 @@ fn load_u16(key: &str) -> Result<u16, ConfigError> {
 }
 
 pub fn load_url(key: &str) -> Result<Cow<'static, str>, ConfigError> {
-    load_string(key).map_err(Into::into).map(Into::into)
+    load_string(key).map(Into::into)
 }
 
 pub fn load_address(key: &str) -> Result<Address, ConfigError> {

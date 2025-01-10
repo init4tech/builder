@@ -119,7 +119,7 @@ impl Authenticator {
 
 mod tests {
     use crate::config::BuilderConfig;
-    use alloy_primitives::Address;
+    use alloy::primitives::Address;
     use eyre::Result;
 
     #[ignore = "integration test"]

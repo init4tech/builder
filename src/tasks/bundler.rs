@@ -1,20 +1,19 @@
-//! Bundler service responsible for polling and submitting bundles to the in-progress block.
-use std::time::{Duration, Instant};
+//! Bundler service responsible for managing bundles.
+use super::oauth::Authenticator;
 
 pub use crate::config::BuilderConfig;
-use alloy_primitives::map::HashMap;
-use reqwest::Url;
-use serde::{Deserialize, Serialize};
-use signet_types::SignetEthBundle;
 
 use oauth2::TokenResponse;
-
-use super::oauth::Authenticator;
+use reqwest::Url;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+use zenith_types::ZenithEthBundle;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
     pub id: String,
-    pub bundle: SignetEthBundle,
+    pub bundle: ZenithEthBundle,
 }
 
 /// Response from the tx-pool containing a list of bundles.
@@ -23,6 +22,7 @@ pub struct TxPoolBundleResponse {
     pub bundles: Vec<Bundle>,
 }
 
+/// The BundlePoller polls the tx-pool for bundles and manages the seen bundles.
 pub struct BundlePoller {
     pub config: BuilderConfig,
     pub authenticator: Authenticator,
