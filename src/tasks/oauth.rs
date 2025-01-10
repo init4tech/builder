@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::config::BuilderConfig;
 use oauth2::{
     basic::{BasicClient, BasicTokenType},
-    reqwest::http_client,
+    reqwest::async_http_client,
     AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
@@ -89,7 +89,8 @@ impl Authenticator {
             Some(TokenUrl::new(config.oauth_token_url.clone())?),
         );
 
-        let token_result = client.exchange_client_credentials().request(http_client)?;
+        let token_result =
+            client.exchange_client_credentials().request_async(async_http_client).await?;
 
         Ok(token_result)
     }
