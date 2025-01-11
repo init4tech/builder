@@ -16,7 +16,7 @@ use eyre::{bail, eyre};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, Instrument};
+use tracing::{error, Instrument};
 use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
 /// Ethereum's slot time in seconds.
@@ -75,7 +75,7 @@ impl InProgressBlock {
     /// Ingest a bundle into the in-progress block.
     /// Ignores Signed Orders for now.
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
-        debug!(bundle = %bundle.id, "ingesting bundle");
+        tracing::trace!(bundle = %bundle.id, "ingesting bundle");
 
         let txs = bundle
             .bundle

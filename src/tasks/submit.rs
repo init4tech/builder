@@ -157,7 +157,7 @@ impl SubmitTask {
         let tx = self
             .build_blob_tx(fills, header, v, r, s, in_progress)?
             .with_from(self.host_provider.default_signer_address())
-            .with_to(self.config.zenith_address)
+            .with_to(self.config.builder_helper_address)
             .with_gas_limit(1_000_000);
 
         if let Err(TransportError::ErrorResp(e)) =

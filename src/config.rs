@@ -33,6 +33,7 @@ const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
+const BUILDER_HELPER_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
@@ -50,6 +51,8 @@ pub struct BuilderConfig {
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.
     pub zenith_address: Address,
+    /// address of the Builder Helper contract on Host.
+    pub builder_helper_address: Address,
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// Disregarded if a sequencer_signer is configured.
     pub quincey_url: Cow<'static, str>,
@@ -157,6 +160,7 @@ impl BuilderConfig {
                 .map(Into::into)
                 .collect(),
             zenith_address: load_address(ZENITH_ADDRESS)?,
+            builder_helper_address: load_address(BUILDER_HELPER_ADDRESS)?,
             quincey_url: load_url(QUINCEY_URL)?,
             builder_port: load_u16(BUILDER_PORT)?,
             sequencer_key: load_string_option(SEQUENCER_KEY),
