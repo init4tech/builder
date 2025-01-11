@@ -33,7 +33,7 @@ const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
-const BUILDER_HELPER_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
+const BUILDER_HELPER_ADDRESS: &str = "BUILDER_HELPER_ADDRESS";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
