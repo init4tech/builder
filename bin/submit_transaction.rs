@@ -48,7 +48,7 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     let result = provider.send_transaction(tx).await.unwrap();
 
     // wait for the transaction to mine
-    let receipt = match timeout(Duration::from_secs(60), result.get_receipt()).await {
+    let receipt = match timeout(Duration::from_secs(240), result.get_receipt()).await {
         Ok(Ok(receipt)) => receipt,
         Ok(Err(e)) => {
             tracing::error!(error = ?e, "failed to get transaction receipt");
