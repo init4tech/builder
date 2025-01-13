@@ -66,7 +66,7 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     // record metrics for how long it took to mine the transaction
     let mine_time = dispatch_start_time.elapsed().as_secs();
     tracing::debug!(success = receipt.status(), mine_time, hash, "transaction mined");
-    histogram!("integration.tx_mine_time").record(mine_time as f64);
+    histogram!("txn_submitter.tx_mine_time").record(mine_time as f64);
 }
 
 async fn connect_from_config() -> (Provider, Address, u64) {
