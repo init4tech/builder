@@ -48,7 +48,7 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     let result = provider.send_transaction(tx).await.unwrap();
 
     // wait for the transaction to mine
-    let receipt = match timeout(Duration::from_secs(60), result.get_receipt()).await {
+    let receipt = match timeout(Duration::from_secs(240), result.get_receipt()).await {
         Ok(Ok(receipt)) => receipt,
         Ok(Err(e)) => {
             tracing::error!(error = ?e, "failed to get transaction receipt");
@@ -66,7 +66,7 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     // record metrics for how long it took to mine the transaction
     let mine_time = dispatch_start_time.elapsed().as_secs();
     tracing::debug!(success = receipt.status(), mine_time, hash, "transaction mined");
-    histogram!("integration.tx_mine_time").record(mine_time as f64);
+    histogram!("txn_submitter.tx_mine_time").record(mine_time as f64);
 }
 
 async fn connect_from_config() -> (Provider, Address, u64) {
