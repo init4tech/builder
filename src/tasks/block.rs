@@ -143,6 +143,7 @@ impl BlockBuilder {
         }
     }
 
+    /// Fetches transactions from the cache and ingests them into the in progress block
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
         tracing::trace!("query transactions from cache");
         let txns = self.tx_poller.check_tx_cache().await;
@@ -159,7 +160,14 @@ impl BlockBuilder {
         }
     }
 
+    /// Fetches bundles from the cache and ingests them into the in progress block
     async fn get_bundles(&mut self, host_provider: &Provider, in_progress: &mut InProgressBlock) {
+        // Authenticate before fetching to ensure access to a valid token
+        if let Err(err) = self.bundle_poller.authenticator.authenticate().await {
+            tracing::error!(err = %err, "bundle fetcher failed to authenticate");
+            return;
+        }
+
         tracing::trace!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
         // OPTIMIZE: Sort bundles received from cache
