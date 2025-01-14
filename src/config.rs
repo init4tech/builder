@@ -17,6 +17,7 @@ const HOST_RPC_URL: &str = "HOST_RPC_URL";
 const ROLLUP_RPC_URL: &str = "ROLLUP_RPC_URL";
 const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URLS";
 const ZENITH_ADDRESS: &str = "ZENITH_ADDRESS";
+const BUILDER_HELPER_ADDRESS: &str = "BUILDER_HELPER_ADDRESS";
 const QUINCEY_URL: &str = "QUINCEY_URL";
 const BUILDER_PORT: &str = "BUILDER_PORT";
 const SEQUENCER_KEY: &str = "SEQUENCER_KEY"; // empty (to use Quincey) OR AWS key ID (to use AWS signer) OR raw private key (to use local signer)
@@ -33,7 +34,6 @@ const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
-const BUILDER_HELPER_ADDRESS: &str = "BUILDER_HELPER_ADDRESS";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
