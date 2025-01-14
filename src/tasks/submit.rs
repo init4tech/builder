@@ -2,12 +2,12 @@ use crate::{
     config::{Provider, ZenithInstance},
     signer::LocalOrAws,
     tasks::block::InProgressBlock,
+    utils::extract_signature_components,
 };
 use alloy::{
     consensus::{constants::GWEI_TO_WEI, SimpleCoder},
     eips::BlockNumberOrTag,
-    network::TransactionBuilder,
-    network::TransactionBuilder4844,
+    network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{FixedBytes, U256},
     providers::{Provider as _, SendableTx, WalletProvider},
     rpc::types::eth::TransactionRequest,
@@ -134,9 +134,7 @@ impl SubmitTask {
         resp: &SignResponse,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<ControlFlow> {
-        let v = resp.sig.as_bytes()[64];
-        let r: FixedBytes<32> = resp.sig.r().into();
-        let s: FixedBytes<32> = resp.sig.s().into();
+        let (v, r, s) = extract_signature_components(&resp.sig);
 
         let header = Zenith::BlockHeader {
             hostBlockNumber: resp.req.host_block_number,
