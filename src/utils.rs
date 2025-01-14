@@ -1,5 +1,11 @@
 use alloy::primitives::{PrimitiveSignature, B256};
 
+/// Extracts the components of a signature. 
+/// Currently alloy has no function for extracting the components of a signature.
+/// Returns a tuple of (v, r, s) where:
+/// - `v` is the recovery id
+/// - `r` is the r component of the signature
+/// - `s` is the s component of the signature
 pub fn extract_signature_components(sig: &PrimitiveSignature) -> (u8, B256, B256) {
     let v = sig.as_bytes()[64];
     let r = sig.r().into();
