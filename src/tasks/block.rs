@@ -1,15 +1,13 @@
 use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
-
-use crate::config::{BuilderConfig, Provider, WalletlessProvider};
-
-use alloy::primitives::{keccak256, Bytes, FixedBytes, B256};
-use alloy::providers::Provider as _;
-use alloy::rpc::types::TransactionRequest;
+use crate::config::{BuilderConfig, WalletlessProvider};
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
+    primitives::{keccak256, Bytes, FixedBytes, B256},
+    providers::Provider as _,
+    rpc::types::TransactionRequest,
 };
 use alloy_rlp::Buf;
 use eyre::{bail, eyre};
@@ -161,7 +159,11 @@ impl BlockBuilder {
     }
 
     /// Fetches bundles from the cache and ingests them into the in progress block
-    async fn get_bundles(&mut self, host_provider: &Provider, in_progress: &mut InProgressBlock) {
+    async fn get_bundles(
+        &mut self,
+        ru_provider: &WalletlessProvider,
+        in_progress: &mut InProgressBlock,
+    ) {
         // Authenticate before fetching to ensure access to a valid token
         if let Err(err) = self.bundle_poller.authenticator.authenticate().await {
             tracing::error!(err = %err, "bundle fetcher failed to authenticate");
@@ -174,7 +176,7 @@ impl BlockBuilder {
         match bundles {
             Ok(bundles) => {
                 for bundle in bundles {
-                    let result = self.simulate_bundle(&bundle.bundle, host_provider).await;
+                    let result = self.simulate_bundle(&bundle.bundle, ru_provider).await;
                     if result.is_ok() {
                         in_progress.ingest_bundle(bundle.clone());
                     }
@@ -187,13 +189,13 @@ impl BlockBuilder {
         self.bundle_poller.evict();
     }
 
-    /// Simulates a Flashbots-style ZenithEthBundle, simualating each transaction in it's bundle
+    /// Simulates a Flashbots-style `ZenithEthBundle`, simualating each transaction in its bundle
     /// by calling it against the host provider at the current height against default storage (no state overrides)
     /// and failing the whole bundle if any transaction not listed in the reverts list fails that call.
     async fn simulate_bundle(
         &mut self,
         bundle: &ZenithEthBundle,
-        host_provider: &Provider,
+        ru_provider: &WalletlessProvider,
     ) -> eyre::Result<()> {
         tracing::info!("simulating bundle");
 
@@ -202,9 +204,10 @@ impl BlockBuilder {
 
         for tx in &bundle.bundle.txs {
             let (tx_env, hash) = self.parse_from_bundle(tx)?;
+            tracing::debug!(?hash, "tx_envelope parsed from bundle");
 
             // Simulate and check for reversion allowance
-            match self.simulate_transaction(host_provider, tx_env).await {
+            match self.simulate_transaction(ru_provider, tx_env).await {
                 Ok(_) => {
                     // Passed, log trace and continue
                     tracing::debug!(tx = %hash, "tx passed simulation");
@@ -212,7 +215,7 @@ impl BlockBuilder {
                 }
                 Err(sim_err) => {
                     // Failed, only continfue if tx is marked in revert list
-                    tracing::debug!("tx failed simulation: {}", sim_err);
+                    tracing::debug!(?sim_err, "tx failed simulation");
                     if reverts.contains(&hash) {
                         continue;
                     } else {
@@ -224,14 +227,14 @@ impl BlockBuilder {
         Ok(())
     }
 
-    /// Simulates a transaction by calling it on the host provider at the current height with the current state.
+    /// Simulates a rollup transaction by calling it on the ru provider at the current height with the current state.
     async fn simulate_transaction(
         &self,
-        host_provider: &Provider,
+        ru_provider: &WalletlessProvider,
         tx_env: TxEnvelope,
     ) -> eyre::Result<()> {
         let tx = TransactionRequest::from_transaction(tx_env);
-        host_provider.call(&tx).await?;
+        ru_provider.call(&tx).await?;
         Ok(())
     }
 
@@ -285,7 +288,7 @@ impl BlockBuilder {
     pub fn spawn(
         mut self,
         outbound: mpsc::UnboundedSender<InProgressBlock>,
-        host_provider: Provider,
+        ru_provider: WalletlessProvider,
     ) -> JoinHandle<()> {
         tokio::spawn(
             async move {
@@ -297,7 +300,7 @@ impl BlockBuilder {
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
                     self.get_transactions(&mut in_progress).await;
-                    self.get_bundles(&host_provider, &mut in_progress).await;
+                    self.get_bundles(&ru_provider, &mut in_progress).await;
 
                     // Filter confirmed transactions from the block
                     self.filter_transactions(&mut in_progress).await;

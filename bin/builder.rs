@@ -27,14 +27,13 @@ async fn main() -> eyre::Result<()> {
     let sequencer_signer = config.connect_sequencer_signer().await?;
     let zenith = config.connect_zenith(host_provider.clone());
 
-    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider);
-
     let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
+    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider.clone());
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
-        host_provider: host_provider.clone(),
+        host_provider,
         zenith,
         client: reqwest::Client::new(),
         sequencer_signer,
@@ -44,7 +43,7 @@ async fn main() -> eyre::Result<()> {
 
     let authenticator_jh = authenticator.spawn();
     let (submit_channel, submit_jh) = submit.spawn();
-    let build_jh = builder.spawn(submit_channel, host_provider.clone());
+    let build_jh = builder.spawn(submit_channel, ru_provider);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
