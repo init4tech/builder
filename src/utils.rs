@@ -1,6 +1,6 @@
 use alloy::primitives::{PrimitiveSignature, B256};
 
-/// Extracts the components of a signature. 
+/// Extracts the components of a signature.
 /// Currently alloy has no function for extracting the components of a signature.
 /// Returns a tuple of (v, r, s) where:
 /// - `v` is the recovery id
