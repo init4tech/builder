@@ -134,7 +134,7 @@ impl SubmitTask {
         resp: &SignResponse,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<ControlFlow> {
-        let v = resp.sig.v().into();
+        let v = resp.sig.as_bytes()[64];
         let r: FixedBytes<32> = resp.sig.r().into();
         let s: FixedBytes<32> = resp.sig.s().into();
 
