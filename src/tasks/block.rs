@@ -14,7 +14,7 @@ use eyre::{bail, eyre};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{error, debug, info, trace, Instrument};
+use tracing::{debug, error, info, trace, Instrument};
 use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
 /// Ethereum's slot time in seconds.
