@@ -2,6 +2,7 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
+use alloy::rpc::types::TransactionRequest;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
