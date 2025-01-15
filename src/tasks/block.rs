@@ -230,11 +230,11 @@ impl BlockBuilder {
     /// Simulates a rollup transaction by calling it on the ru provider at the current height with the current state.
     async fn simulate_transaction(
         &self,
-        _ru_provider: &WalletlessProvider,
-        _tx_env: TxEnvelope,
+        ru_provider: &WalletlessProvider,
+        tx_env: TxEnvelope,
     ) -> eyre::Result<()> {
-        // let tx = TransactionRequest::from_transaction(tx_env);
-        // ru_provider.call(&tx).await?;
+        let tx = TransactionRequest::from_transaction(tx_env);
+        ru_provider.call(&tx).await?;
         Ok(())
     }
 
