@@ -7,14 +7,13 @@ use alloy::{
     eips::eip2718::Decodable2718,
     primitives::{keccak256, Bytes, FixedBytes, B256},
     providers::Provider as _,
-    rpc::types::TransactionRequest,
 };
 use alloy_rlp::Buf;
 use eyre::{bail, eyre};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{error, Instrument};
+use tracing::{error, debug, info, trace, Instrument};
 use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
 /// Ethereum's slot time in seconds.
@@ -58,14 +57,14 @@ impl InProgressBlock {
 
     /// Ingest a transaction into the in-progress block. Fails
     pub fn ingest_tx(&mut self, tx: &TxEnvelope) {
-        tracing::trace!(hash = %tx.tx_hash(), "ingesting tx");
+        trace!(hash = %tx.tx_hash(), "ingesting tx");
         self.unseal();
         self.transactions.push(tx.clone());
     }
 
     /// Remove a transaction from the in-progress block.
     pub fn remove_tx(&mut self, tx: &TxEnvelope) {
-        tracing::trace!(hash = %tx.tx_hash(), "removing tx");
+        trace!(hash = %tx.tx_hash(), "removing tx");
         self.unseal();
         self.transactions.retain(|t| t.tx_hash() != tx.tx_hash());
     }
@@ -73,7 +72,7 @@ impl InProgressBlock {
     /// Ingest a bundle into the in-progress block.
     /// Ignores Signed Orders for now.
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
-        tracing::trace!(bundle = %bundle.id, "ingesting bundle");
+        trace!(bundle = %bundle.id, "ingesting bundle");
 
         let txs = bundle
             .bundle
@@ -143,17 +142,17 @@ impl BlockBuilder {
 
     /// Fetches transactions from the cache and ingests them into the in progress block
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
-        tracing::trace!("query transactions from cache");
+        trace!("query transactions from cache");
         let txns = self.tx_poller.check_tx_cache().await;
         match txns {
             Ok(txns) => {
-                tracing::trace!("got transactions response");
+                trace!("got transactions response");
                 for txn in txns.into_iter() {
                     in_progress.ingest_tx(&txn);
                 }
             }
             Err(e) => {
-                tracing::error!(error = %e, "error polling transactions");
+                error!(error = %e, "error polling transactions");
             }
         }
     }
@@ -166,13 +165,13 @@ impl BlockBuilder {
     ) {
         // Authenticate before fetching to ensure access to a valid token
         if let Err(err) = self.bundle_poller.authenticator.authenticate().await {
-            tracing::error!(err = %err, "bundle fetcher failed to authenticate");
+            error!(err = %err, "bundle fetcher failed to authenticate");
             return;
         }
 
-        tracing::trace!("query bundles from cache");
+        trace!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
-        // OPTIMIZE: Sort bundles received from cache
+        // TODO: Sort bundles received from cache
         match bundles {
             Ok(bundles) => {
                 for bundle in bundles {
@@ -183,13 +182,13 @@ impl BlockBuilder {
                 }
             }
             Err(e) => {
-                tracing::error!(error = %e, "error polling bundles");
+                error!(error = %e, "error polling bundles");
             }
         }
         self.bundle_poller.evict();
     }
 
-    /// Simulates a Flashbots-style `ZenithEthBundle`, simualating each transaction in its bundle
+    /// Simulates a Flashbots-style `ZenithEthBundle`, simulating each transaction in its bundle
     /// by calling it against the host provider at the current height against default storage (no state overrides)
     /// and failing the whole bundle if any transaction not listed in the reverts list fails that call.
     async fn simulate_bundle(
@@ -197,26 +196,27 @@ impl BlockBuilder {
         bundle: &ZenithEthBundle,
         ru_provider: &WalletlessProvider,
     ) -> eyre::Result<()> {
-        tracing::info!("simulating bundle");
+        // TODO: Simulate bundles with the Simulation Engine
+        debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "beginning bundle simulation");
 
         let reverts = &bundle.bundle.reverting_tx_hashes;
-        tracing::debug!(reverts = ?reverts, "processing bundle with reverts");
+        debug!(reverts = ?reverts, "processing bundle with reverts");
 
         for tx in &bundle.bundle.txs {
             let (tx_env, hash) = self.parse_from_bundle(tx)?;
-            tracing::debug!(?hash, "tx_envelope parsed from bundle");
+            debug!(?hash, "tx_envelope parsed from bundle");
 
             // Simulate and check for reversion allowance
             match self.simulate_transaction(ru_provider, tx_env).await {
                 Ok(_) => {
                     // Passed, log trace and continue
-                    tracing::debug!(tx = %hash, "tx passed simulation");
+                    debug!(tx = %hash, "tx passed simulation");
                     continue;
                 }
                 Err(sim_err) => {
                     // Failed, only continfue if tx is marked in revert list
-                    tracing::debug!(?sim_err, "tx failed simulation");
                     if reverts.contains(&hash) {
+                        debug!(?sim_err, "tx failed simulation but is in revert list; skipping.");
                         continue;
                     } else {
                         bail!("tx {hash} failed simulation but was not marked as allowed to revert")
@@ -230,11 +230,11 @@ impl BlockBuilder {
     /// Simulates a rollup transaction by calling it on the ru provider at the current height with the current state.
     async fn simulate_transaction(
         &self,
-        ru_provider: &WalletlessProvider,
-        tx_env: TxEnvelope,
+        _ru_provider: &WalletlessProvider,
+        _tx_env: TxEnvelope,
     ) -> eyre::Result<()> {
-        let tx = TransactionRequest::from_transaction(tx_env);
-        ru_provider.call(&tx).await?;
+        // let tx = TransactionRequest::from_transaction(tx_env);
+        // ru_provider.call(&tx).await?;
         Ok(())
     }
 
@@ -251,7 +251,7 @@ impl BlockBuilder {
                 confirmed_transactions.push(transaction.clone());
             }
         }
-        tracing::trace!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
+        trace!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
 
         // remove already-confirmed transactions
         for transaction in confirmed_transactions {
@@ -275,9 +275,9 @@ impl BlockBuilder {
     fn parse_from_bundle(&self, tx: &Bytes) -> Result<(TxEnvelope, FixedBytes<32>), eyre::Error> {
         let tx_env = TxEnvelope::decode_2718(&mut tx.chunk())?;
         let hash = tx_env.tx_hash().to_owned();
-        tracing::debug!(hash = %hash, "decoded bundle tx");
+        debug!(hash = %hash, "decoded bundle tx");
         if tx_env.is_eip4844() {
-            tracing::error!("eip-4844 disallowed");
+            error!("eip-4844 disallowed");
             return Err(eyre!("EIP-4844 transactions are not allowed in bundles"));
         }
         Ok((tx_env, hash))
@@ -295,7 +295,7 @@ impl BlockBuilder {
                 loop {
                     // sleep the buffer time
                     tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
-                    tracing::info!("beginning block build cycle");
+                    info!("beginning block build cycle");
 
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
@@ -307,14 +307,14 @@ impl BlockBuilder {
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {
-                        tracing::debug!(txns = in_progress.len(), "sending block to submit task");
+                        debug!(txns = in_progress.len(), "sending block to submit task");
                         let in_progress_block = std::mem::take(&mut in_progress);
                         if outbound.send(in_progress_block).is_err() {
-                            tracing::error!("downstream task gone");
+                            error!("downstream task gone");
                             break;
                         }
                     } else {
-                        tracing::debug!("no transactions, skipping block submission");
+                        debug!("no transactions, skipping block submission");
                     }
                 }
             }
