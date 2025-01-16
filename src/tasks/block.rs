@@ -162,12 +162,6 @@ impl BlockBuilder {
         ru_provider: &WalletlessProvider,
         in_progress: &mut InProgressBlock,
     ) {
-        // Authenticate before fetching to ensure access to a valid token
-        if let Err(err) = self.bundle_poller.authenticator.authenticate().await {
-            error!(err = %err, "bundle fetcher failed to authenticate");
-            return;
-        }
-
         trace!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
         // TODO: Sort bundles received from cache
