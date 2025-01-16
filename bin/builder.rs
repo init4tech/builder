@@ -3,8 +3,8 @@
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
 use builder::tasks::block::BlockBuilder;
+use builder::tasks::metrics::MetricsTask;
 use builder::tasks::oauth::Authenticator;
-use builder::tasks::receipts::ReceiptTask;
 use builder::tasks::submit::SubmitTask;
 use metrics_exporter_prometheus::PrometheusBuilder;
 
@@ -29,8 +29,8 @@ async fn main() -> eyre::Result<()> {
 
     let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider);
 
-    let receipts = ReceiptTask { host_provider: host_provider.clone() };
-    let (tx_channel, receipts_jh) = receipts.spawn();
+    let metrics = MetricsTask { host_provider: host_provider.clone() };
+    let (tx_channel, metrics_jh) = metrics.spawn();
 
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
@@ -53,8 +53,8 @@ async fn main() -> eyre::Result<()> {
         _ = submit_jh => {
             tracing::info!("submit finished");
         },
-        _ = receipts_jh => {
-            tracing::info!("receipts finished");
+        _ = metrics_jh => {
+            tracing::info!("metrics finished");
         },
         _ = build_jh => {
             tracing::info!("build finished");
