@@ -7,8 +7,8 @@ use alloy::{
     eips::eip2718::Decodable2718,
     primitives::{keccak256, Bytes, B256},
     providers::Provider as _,
+    rlp::Buf,
 };
-use alloy_rlp::Buf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};

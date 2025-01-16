@@ -24,7 +24,7 @@ path = "bin/submit_transaction.rs"
 [dependencies]
 zenith-types = "0.13"
 
-alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev"] }
+alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
 alloy-rlp = { version = "0.3.4" }
 
 aws-config = "1.1.7"
