@@ -2,15 +2,13 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
-use alloy::rpc::types::TransactionRequest;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
-    primitives::{keccak256, Bytes, FixedBytes, B256},
+    primitives::{keccak256, Bytes, B256},
     providers::Provider as _,
 };
 use alloy_rlp::Buf;
-use eyre::{bail, eyre};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -189,53 +187,15 @@ impl BlockBuilder {
         self.bundle_poller.evict();
     }
 
-    /// Simulates a Flashbots-style `ZenithEthBundle`, simulating each transaction in its bundle
-    /// by calling it against the host provider at the current height against default storage (no state overrides)
-    /// and failing the whole bundle if any transaction not listed in the reverts list fails that call.
+    /// Simulates a Zenith bundle against the rollup state
     async fn simulate_bundle(
         &mut self,
         bundle: &ZenithEthBundle,
-        ru_provider: &WalletlessProvider,
+        _ru_provider: &WalletlessProvider,
     ) -> eyre::Result<()> {
-        // TODO: Simulate bundles with the Simulation Engine
         debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "beginning bundle simulation");
-
-        let reverts = &bundle.bundle.reverting_tx_hashes;
-        debug!(reverts = ?reverts, "processing bundle with reverts");
-
-        for tx in &bundle.bundle.txs {
-            let (tx_env, hash) = self.parse_from_bundle(tx)?;
-            debug!(?hash, "tx_envelope parsed from bundle");
-
-            // Simulate and check for reversion allowance
-            match self.simulate_transaction(ru_provider, tx_env).await {
-                Ok(_) => {
-                    // Passed, log trace and continue
-                    debug!(tx = %hash, "tx passed simulation");
-                    continue;
-                }
-                Err(sim_err) => {
-                    // Failed, only continfue if tx is marked in revert list
-                    if reverts.contains(&hash) {
-                        debug!(?sim_err, "tx failed simulation but is in revert list; skipping.");
-                        continue;
-                    } else {
-                        bail!("tx {hash} failed simulation but was not marked as allowed to revert")
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Simulates a rollup transaction by calling it on the ru provider at the current height with the current state.
-    async fn simulate_transaction(
-        &self,
-        ru_provider: &WalletlessProvider,
-        tx_env: TxEnvelope,
-    ) -> eyre::Result<()> {
-        let tx = TransactionRequest::from_transaction(tx_env);
-        ru_provider.call(&tx).await?;
+        // TODO: Simulate bundles with the Simulation Engine
+        // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
         Ok(())
     }
 
@@ -270,18 +230,6 @@ impl BlockBuilder {
     // add a buffer to the beginning of the block slot.
     fn secs_to_next_target(&self) -> u64 {
         self.secs_to_next_slot() + self.config.target_slot_time
-    }
-
-    /// Parses bytes into a transaction envelope that is compatible with Flashbots-style bundles
-    fn parse_from_bundle(&self, tx: &Bytes) -> Result<(TxEnvelope, FixedBytes<32>), eyre::Error> {
-        let tx_env = TxEnvelope::decode_2718(&mut tx.chunk())?;
-        let hash = tx_env.tx_hash().to_owned();
-        debug!(hash = %hash, "decoded bundle tx");
-        if tx_env.is_eip4844() {
-            error!("eip-4844 disallowed");
-            return Err(eyre!("EIP-4844 transactions are not allowed in bundles"));
-        }
-        Ok((tx_env, hash))
     }
 
     /// Spawn the block builder task, returning the inbound channel to it, and
