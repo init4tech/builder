@@ -12,7 +12,7 @@ use alloy::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, info, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, Instrument};
 use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
 /// Ethereum's slot time in seconds.
@@ -157,22 +157,15 @@ impl BlockBuilder {
     }
 
     /// Fetches bundles from the cache and ingests them into the in progress block
-    async fn get_bundles(
-        &mut self,
-        ru_provider: &WalletlessProvider,
-        in_progress: &mut InProgressBlock,
-    ) {
+    async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
         trace!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
-        // TODO: Sort bundles received from cache
         match bundles {
             Ok(bundles) => {
                 for bundle in bundles {
-                    let result = self.simulate_bundle(&bundle.bundle, ru_provider).await;
-                    if let Ok(()) = result {
-                        in_progress.ingest_bundle(bundle.clone());
-                    } else {
-                        warn!(id = ?bundle.id, "bundle failed simulation")
+                    match self.simulate_bundle(&bundle.bundle).await {
+                        Ok(()) => in_progress.ingest_bundle(bundle.clone()),
+                        Err(e) => error!(error = %e, id = ?bundle.id, "bundle simulation failed"),
                     }
                 }
             }
@@ -184,11 +177,7 @@ impl BlockBuilder {
     }
 
     /// Simulates a Zenith bundle against the rollup state
-    async fn simulate_bundle(
-        &mut self,
-        bundle: &ZenithEthBundle,
-        _ru_provider: &WalletlessProvider,
-    ) -> eyre::Result<()> {
+    async fn simulate_bundle(&mut self, bundle: &ZenithEthBundle) -> eyre::Result<()> {
         // TODO: Simulate bundles with the Simulation Engine
         // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
         debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "bundle simulations is not implemented yet - skipping simulation");
@@ -230,11 +219,7 @@ impl BlockBuilder {
 
     /// Spawn the block builder task, returning the inbound channel to it, and
     /// a handle to the running task.
-    pub fn spawn(
-        mut self,
-        outbound: mpsc::UnboundedSender<InProgressBlock>,
-        ru_provider: WalletlessProvider,
-    ) -> JoinHandle<()> {
+    pub fn spawn(mut self, outbound: mpsc::UnboundedSender<InProgressBlock>) -> JoinHandle<()> {
         tokio::spawn(
             async move {
                 loop {
@@ -245,7 +230,7 @@ impl BlockBuilder {
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
                     self.get_transactions(&mut in_progress).await;
-                    self.get_bundles(&ru_provider, &mut in_progress).await;
+                    self.get_bundles(&mut in_progress).await;
 
                     // Filter confirmed transactions from the block
                     self.filter_transactions(&mut in_progress).await;

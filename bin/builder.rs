@@ -43,7 +43,7 @@ async fn main() -> eyre::Result<()> {
 
     let authenticator_jh = authenticator.spawn();
     let (submit_channel, submit_jh) = submit.spawn();
-    let build_jh = builder.spawn(submit_channel, ru_provider);
+    let build_jh = builder.spawn(submit_channel);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
