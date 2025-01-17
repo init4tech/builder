@@ -1,12 +1,16 @@
 use crate::signer::{LocalOrAws, SignerError};
-use alloy::network::{Ethereum, EthereumWallet};
-use alloy::primitives::Address;
-use alloy::providers::fillers::BlobGasFiller;
-use alloy::providers::{
-    fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
-    Identity, ProviderBuilder, RootProvider,
+use alloy::{
+    network::{Ethereum, EthereumWallet},
+    primitives::Address,
+    providers::{
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+        Identity, ProviderBuilder, RootProvider,
+    },
+    transports::BoxTransport,
 };
-use alloy::transports::BoxTransport;
 use std::{borrow::Cow, env, num, str::FromStr};
 use zenith_types::Zenith;
 
