@@ -8,7 +8,7 @@ use alloy::{
     consensus::{constants::GWEI_TO_WEI, SimpleCoder},
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
-    primitives::{FixedBytes, U256},
+    primitives::{FixedBytes, TxHash, U256},
     providers::{Provider as _, SendableTx, WalletProvider},
     rpc::types::eth::TransactionRequest,
     signers::Signer,
@@ -59,6 +59,8 @@ pub struct SubmitTask {
     pub config: crate::config::BuilderConfig,
     /// Authenticator
     pub authenticator: Authenticator,
+    // Channel over which to send pending transactions
+    pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
 impl SubmitTask {
@@ -190,6 +192,11 @@ impl SubmitTask {
         // Spawn send_tx futures for all additional broadcast host_providers
         for host_provider in self.config.connect_additional_broadcast().await? {
             spawn_provider_send!(&host_provider, &tx);
+        }
+
+        // send the in-progress transaction over the outbound_tx_channel
+        if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
+            tracing::error!("receipts task gone");
         }
 
         // question mark unwraps join error, which would be an internal panic

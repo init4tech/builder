@@ -3,6 +3,7 @@
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
 use builder::tasks::block::BlockBuilder;
+use builder::tasks::metrics::MetricsTask;
 use builder::tasks::oauth::Authenticator;
 use builder::tasks::submit::SubmitTask;
 use metrics_exporter_prometheus::PrometheusBuilder;
@@ -27,6 +28,10 @@ async fn main() -> eyre::Result<()> {
     let zenith = config.connect_zenith(host_provider.clone());
 
     let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider);
+
+    let metrics = MetricsTask { host_provider: host_provider.clone() };
+    let (tx_channel, metrics_jh) = metrics.spawn();
+
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
         host_provider,
@@ -34,6 +39,7 @@ async fn main() -> eyre::Result<()> {
         client: reqwest::Client::new(),
         sequencer_signer,
         config: config.clone(),
+        outbound_tx_channel: tx_channel,
     };
 
     let authenticator_jh = authenticator.spawn();
@@ -46,6 +52,9 @@ async fn main() -> eyre::Result<()> {
     select! {
         _ = submit_jh => {
             tracing::info!("submit finished");
+        },
+        _ = metrics_jh => {
+            tracing::info!("metrics finished");
         },
         _ = build_jh => {
             tracing::info!("build finished");
