@@ -12,7 +12,7 @@ use alloy::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, info, trace, Instrument};
+use tracing::{debug, error, info, trace, warn, Instrument};
 use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
 /// Ethereum's slot time in seconds.
@@ -169,8 +169,10 @@ impl BlockBuilder {
             Ok(bundles) => {
                 for bundle in bundles {
                     let result = self.simulate_bundle(&bundle.bundle, ru_provider).await;
-                    if result.is_ok() {
+                    if let Ok(()) = result {
                         in_progress.ingest_bundle(bundle.clone());
+                    } else {
+                        warn!(id = ?bundle.id, "bundle failed simulation")
                     }
                 }
             }
@@ -187,9 +189,9 @@ impl BlockBuilder {
         bundle: &ZenithEthBundle,
         _ru_provider: &WalletlessProvider,
     ) -> eyre::Result<()> {
-        debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "beginning bundle simulation");
         // TODO: Simulate bundles with the Simulation Engine
         // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
+        debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "bundle simulations is not implemented yet - skipping simulation");
         Ok(())
     }
 
