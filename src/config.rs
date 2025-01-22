@@ -1,12 +1,16 @@
 use crate::signer::{LocalOrAws, SignerError};
-use alloy::network::{Ethereum, EthereumWallet};
-use alloy::primitives::Address;
-use alloy::providers::fillers::BlobGasFiller;
-use alloy::providers::{
-    fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
-    Identity, ProviderBuilder, RootProvider,
+use alloy::{
+    network::{Ethereum, EthereumWallet},
+    primitives::Address,
+    providers::{
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+        Identity, ProviderBuilder, RootProvider,
+    },
+    transports::BoxTransport,
 };
-use alloy::transports::BoxTransport;
 use std::{borrow::Cow, env, num, str::FromStr};
 use zenith_types::Zenith;
 
@@ -17,6 +21,7 @@ const HOST_RPC_URL: &str = "HOST_RPC_URL";
 const ROLLUP_RPC_URL: &str = "ROLLUP_RPC_URL";
 const TX_BROADCAST_URLS: &str = "TX_BROADCAST_URLS";
 const ZENITH_ADDRESS: &str = "ZENITH_ADDRESS";
+const BUILDER_HELPER_ADDRESS: &str = "BUILDER_HELPER_ADDRESS";
 const QUINCEY_URL: &str = "QUINCEY_URL";
 const BUILDER_PORT: &str = "BUILDER_PORT";
 const SEQUENCER_KEY: &str = "SEQUENCER_KEY"; // empty (to use Quincey) OR AWS key ID (to use AWS signer) OR raw private key (to use local signer)
@@ -50,6 +55,8 @@ pub struct BuilderConfig {
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.
     pub zenith_address: Address,
+    /// address of the Builder Helper contract on Host.
+    pub builder_helper_address: Address,
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// Disregarded if a sequencer_signer is configured.
     pub quincey_url: Cow<'static, str>,
@@ -157,6 +164,7 @@ impl BuilderConfig {
                 .map(Into::into)
                 .collect(),
             zenith_address: load_address(ZENITH_ADDRESS)?,
+            builder_helper_address: load_address(BUILDER_HELPER_ADDRESS)?,
             quincey_url: load_url(QUINCEY_URL)?,
             builder_port: load_u16(BUILDER_PORT)?,
             sequencer_key: load_string_option(SEQUENCER_KEY),

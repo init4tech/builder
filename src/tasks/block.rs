@@ -2,18 +2,18 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
-use alloy::primitives::{keccak256, Bytes, B256};
-use alloy::providers::Provider;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
+    primitives::{keccak256, Bytes, B256},
+    providers::Provider as _,
+    rlp::Buf,
 };
-use alloy_rlp::Buf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::Instrument;
-use zenith_types::{encode_txns, Alloy2718Coder};
+use tracing::{debug, error, info, trace, Instrument};
+use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
@@ -56,14 +56,14 @@ impl InProgressBlock {
 
     /// Ingest a transaction into the in-progress block. Fails
     pub fn ingest_tx(&mut self, tx: &TxEnvelope) {
-        tracing::trace!(hash = %tx.tx_hash(), "ingesting tx");
+        trace!(hash = %tx.tx_hash(), "ingesting tx");
         self.unseal();
         self.transactions.push(tx.clone());
     }
 
     /// Remove a transaction from the in-progress block.
     pub fn remove_tx(&mut self, tx: &TxEnvelope) {
-        tracing::trace!(hash = %tx.tx_hash(), "removing tx");
+        trace!(hash = %tx.tx_hash(), "removing tx");
         self.unseal();
         self.transactions.retain(|t| t.tx_hash() != tx.tx_hash());
     }
@@ -71,7 +71,7 @@ impl InProgressBlock {
     /// Ingest a bundle into the in-progress block.
     /// Ignores Signed Orders for now.
     pub fn ingest_bundle(&mut self, bundle: Bundle) {
-        tracing::trace!(bundle = %bundle.id, "ingesting bundle");
+        trace!(bundle = %bundle.id, "ingesting bundle");
 
         let txs = bundle
             .bundle
@@ -87,7 +87,7 @@ impl InProgressBlock {
             // As this builder does not provide bundles landing "top of block", its fine to just extend.
             self.transactions.extend(txs);
         } else {
-            tracing::error!("failed to decode bundle. dropping");
+            error!("failed to decode bundle. dropping");
         }
     }
 
@@ -139,37 +139,49 @@ impl BlockBuilder {
         }
     }
 
+    /// Fetches transactions from the cache and ingests them into the in progress block
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
-        tracing::trace!("query transactions from cache");
+        trace!("query transactions from cache");
         let txns = self.tx_poller.check_tx_cache().await;
         match txns {
             Ok(txns) => {
-                tracing::trace!("got transactions response");
+                trace!("got transactions response");
                 for txn in txns.into_iter() {
                     in_progress.ingest_tx(&txn);
                 }
             }
             Err(e) => {
-                tracing::error!(error = %e, "error polling transactions");
+                error!(error = %e, "error polling transactions");
             }
         }
     }
 
-    async fn _get_bundles(&mut self, in_progress: &mut InProgressBlock) {
-        tracing::trace!("query bundles from cache");
+    /// Fetches bundles from the cache and ingests them into the in progress block
+    async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
+        trace!("query bundles from cache");
         let bundles = self.bundle_poller.check_bundle_cache().await;
         match bundles {
             Ok(bundles) => {
-                tracing::trace!("got bundles response");
                 for bundle in bundles {
-                    in_progress.ingest_bundle(bundle);
+                    match self.simulate_bundle(&bundle.bundle).await {
+                        Ok(()) => in_progress.ingest_bundle(bundle.clone()),
+                        Err(e) => error!(error = %e, id = ?bundle.id, "bundle simulation failed"),
+                    }
                 }
             }
             Err(e) => {
-                tracing::error!(error = %e, "error polling bundles");
+                error!(error = %e, "error polling bundles");
             }
         }
         self.bundle_poller.evict();
+    }
+
+    /// Simulates a Zenith bundle against the rollup state
+    async fn simulate_bundle(&mut self, bundle: &ZenithEthBundle) -> eyre::Result<()> {
+        // TODO: Simulate bundles with the Simulation Engine
+        // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
+        debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "bundle simulations is not implemented yet - skipping simulation");
+        Ok(())
     }
 
     async fn filter_transactions(&self, in_progress: &mut InProgressBlock) {
@@ -185,7 +197,7 @@ impl BlockBuilder {
                 confirmed_transactions.push(transaction.clone());
             }
         }
-        tracing::trace!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
+        trace!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
 
         // remove already-confirmed transactions
         for transaction in confirmed_transactions {
@@ -213,32 +225,98 @@ impl BlockBuilder {
                 loop {
                     // sleep the buffer time
                     tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
-                    tracing::info!("beginning block build cycle");
+                    info!("beginning block build cycle");
 
                     // Build a block
                     let mut in_progress = InProgressBlock::default();
                     self.get_transactions(&mut in_progress).await;
-
-                    // TODO: Implement bundle ingestion #later
-                    // self.get_bundles(&mut in_progress).await;
+                    self.get_bundles(&mut in_progress).await;
 
                     // Filter confirmed transactions from the block
                     self.filter_transactions(&mut in_progress).await;
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {
-                        tracing::debug!(txns = in_progress.len(), "sending block to submit task");
+                        debug!(txns = in_progress.len(), "sending block to submit task");
                         let in_progress_block = std::mem::take(&mut in_progress);
                         if outbound.send(in_progress_block).is_err() {
-                            tracing::error!("downstream task gone");
+                            error!("downstream task gone");
                             break;
                         }
                     } else {
-                        tracing::debug!("no transactions, skipping block submission");
+                        debug!("no transactions, skipping block submission");
                     }
                 }
             }
             .in_current_span(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Address;
+    use alloy::{
+        eips::eip2718::Encodable2718,
+        network::{EthereumWallet, TransactionBuilder},
+        rpc::types::{mev::EthSendBundle, TransactionRequest},
+        signers::local::PrivateKeySigner,
+    };
+    use zenith_types::ZenithEthBundle;
+
+    /// Create a mock bundle for testing with a single transaction
+    async fn create_mock_bundle(wallet: &EthereumWallet) -> Bundle {
+        let tx = TransactionRequest::default()
+            .to(Address::ZERO)
+            .from(wallet.default_signer().address())
+            .nonce(1)
+            .max_fee_per_gas(2)
+            .max_priority_fee_per_gas(3)
+            .gas_limit(4)
+            .build(wallet)
+            .await
+            .unwrap()
+            .encoded_2718();
+
+        let eth_bundle = EthSendBundle {
+            txs: vec![tx.into()],
+            block_number: 1,
+            min_timestamp: Some(u64::MIN),
+            max_timestamp: Some(u64::MAX),
+            reverting_tx_hashes: vec![],
+            replacement_uuid: Some("replacement_uuid".to_owned()),
+        };
+
+        let zenith_bundle = ZenithEthBundle { bundle: eth_bundle, host_fills: None };
+
+        Bundle { id: "mock_bundle".to_owned(), bundle: zenith_bundle }
+    }
+
+    #[tokio::test]
+    async fn test_ingest_bundle() {
+        // Setup random creds
+        let signer = PrivateKeySigner::random();
+        let wallet = EthereumWallet::from(signer);
+
+        // Create an empty InProgressBlock and bundle
+        let mut in_progress_block = InProgressBlock::new();
+        let bundle = create_mock_bundle(&wallet).await;
+
+        // Save previous hash for comparison
+        let prev_hash = in_progress_block.contents_hash();
+
+        // Ingest the bundle
+        in_progress_block.ingest_bundle(bundle);
+
+        // Assert hash is changed after ingest
+        assert_ne!(prev_hash, in_progress_block.contents_hash(), "Bundle should change block hash");
+
+        // Assert that the transaction was persisted into block
+        assert_eq!(in_progress_block.len(), 1, "Bundle should be persisted");
+
+        // Assert that the block is properly sealed
+        let raw_encoding = in_progress_block.encode_raw();
+        assert!(!raw_encoding.is_empty(), "Raw encoding should not be empty");
     }
 }

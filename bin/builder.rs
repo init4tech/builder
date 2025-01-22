@@ -27,11 +27,10 @@ async fn main() -> eyre::Result<()> {
     let sequencer_signer = config.connect_sequencer_signer().await?;
     let zenith = config.connect_zenith(host_provider.clone());
 
-    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider);
-
     let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
+    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider.clone());
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
         host_provider,
