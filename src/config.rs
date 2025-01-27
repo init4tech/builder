@@ -52,7 +52,7 @@ pub struct BuilderConfig {
     /// URL for the Rollup RPC node.
     pub ru_rpc_url: Cow<'static, str>,
     /// Additional RPC URLs to which to broadcast transactions.
-    /// NOTE: should not include the host RPC URL
+    /// NOTE: should not include the host_rpc_url value
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.
     pub zenith_address: Address,
