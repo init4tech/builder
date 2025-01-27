@@ -221,13 +221,17 @@ impl BuilderConfig {
     pub async fn connect_additional_broadcast(
         &self,
     ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
-        let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
-        for url in self.tx_broadcast_urls.iter() {
-            let provider =
-                ProviderBuilder::new().on_builtin(url).await.map_err(Into::<ConfigError>::into)?;
-            providers.push(provider);
+        if self.tx_broadcast_urls.len() > 0 && self.tx_broadcast_urls[0] != "" {
+            let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
+            for url in self.tx_broadcast_urls.iter() {
+                let provider =
+                    ProviderBuilder::new().on_builtin(url).await.map_err(Into::<ConfigError>::into)?;
+                providers.push(provider);
+            }
+            Ok(providers)
+        } else {
+            Ok(vec![])
         }
-        Ok(providers)
     }
 
     pub fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
