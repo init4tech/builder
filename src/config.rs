@@ -221,7 +221,7 @@ impl BuilderConfig {
     pub async fn connect_additional_broadcast(
         &self,
     ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
-        if self.tx_broadcast_urls.len() > 0 && self.tx_broadcast_urls[0] != "" {
+        if !self.tx_broadcast_urls.is_empty() && self.tx_broadcast_urls[0] != "" {
             let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
             for url in self.tx_broadcast_urls.iter() {
                 let provider = ProviderBuilder::new()
