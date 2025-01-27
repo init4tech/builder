@@ -160,6 +160,8 @@ impl BuilderConfig {
             tx_broadcast_urls: env::var(TX_BROADCAST_URLS)
                 .unwrap_or_default()
                 .split(',')
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
                 .map(ToOwned::to_owned)
                 .map(Into::into)
                 .collect(),
