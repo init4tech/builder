@@ -112,7 +112,7 @@ impl SubmitTask {
     }
 
     /// Builds blob transaction from the provided header and signature values
-    fn build_blob_tx(
+    async fn build_blob_tx(
         &self,
         fills: Vec<FillPermit2>,
         header: BundleHelper::BlockHeader,
@@ -121,13 +121,23 @@ impl SubmitTask {
         s: FixedBytes<32>,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<TransactionRequest> {
-        let data = zenith_types::BundleHelper::submitCall { fills, header, v, r, s }.abi_encode();
+            // Start of Selection
+            let data = zenith_types::BundleHelper::submitCall { fills, header, v, r, s }.abi_encode();
 
-        let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
-        Ok(TransactionRequest::default()
-            .with_blob_sidecar(sidecar)
-            .with_input(data)
-            .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
+            let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
+
+            // Manually calculate the nonce
+            let latest_nonce = self.host_provider
+                .get_transaction_count(self.host_provider.default_signer_address())
+                .latest()
+                .await?;
+
+            Ok(TransactionRequest::default()
+                .with_nonce(latest_nonce)
+                .with_blob_sidecar(sidecar)
+                .with_input(data)
+                .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
+            
     }
 
     /// Returns the next host block height
@@ -155,7 +165,8 @@ impl SubmitTask {
 
         let fills = vec![]; // NB: ignored until fills are implemented
         let tx = self
-            .build_blob_tx(fills, header, v, r, s, in_progress)?
+            .build_blob_tx(fills, header, v, r, s, in_progress)
+            .await?
             .with_from(self.host_provider.default_signer_address())
             .with_to(self.config.builder_helper_address)
             .with_gas_limit(1_000_000);
