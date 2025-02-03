@@ -26,6 +26,7 @@ zenith-types = "0.13"
 
 alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
 alloy-rlp = { version = "0.3.4" }
+alloy-mev = { git = "https://github.com/dylanlott/alloy-mev", branch = "dylan/alloy-0.7.3" }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
