@@ -9,12 +9,13 @@ use alloy::{
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{FixedBytes, TxHash, U256},
-    providers::{Provider as _, SendableTx, WalletProvider},
+    providers::{Provider as _, ProviderBuilder, SendableTx, WalletProvider},
     rpc::types::eth::TransactionRequest,
     signers::Signer,
     sol_types::{SolCall, SolError},
     transports::TransportError,
 };
+use alloy_mev::{EthBundle, EthMevProviderExt};
 use eyre::{bail, eyre};
 use metrics::{counter, histogram};
 use oauth2::TokenResponse;
@@ -130,6 +131,48 @@ impl SubmitTask {
             .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
     }
 
+    /// Sends a rollup block to Flashbots Holesky relay in a bundle
+    async fn send_to_flashbots(&self, tx: TransactionRequest) -> eyre::Result<ControlFlow> {
+        // TODO: add to tx_broadcast_urls instead and fetch from config
+        let holesky_flashbots_rpc = "https://relay-holesky.flashbots.net";
+
+        // create a provider out of builder's wallet and holesky RPC
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.host_provider.wallet())
+            .on_http(holesky_flashbots_rpc.parse()?);
+
+        // configure list of endpoints
+        let endpoints =
+            provider.endpoints_builder().endpoint(holesky_flashbots_rpc.parse()?).build();
+        tracing::debug!(endpoints = ?endpoints, "configured endpoints");
+
+        // determine current block number for bundle creation
+        let block_number = provider.get_block_number().await?;
+        tracing::debug!(block_number = ?block_number, "current block number");
+
+        // encode the transaction into a bundle, set it's block number, and send it to flashbots
+        let responses = EthBundle::new(&provider)
+            .add_tx(provider.encode_request(tx).await?)
+            .on_block(block_number + 1)
+            .send(&endpoints)
+            .await;
+
+        for resp in responses {
+            match resp {
+                Ok(success) => {
+                    tracing::info!(bundle_hash = %success.bundle_hash, "Bundle sent successfully");
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Error sending bundle");
+                    return Ok(ControlFlow::Skip);
+                }
+            }
+        }
+
+        Ok(ControlFlow::Done)
+    }
+
     /// Returns the next host block height
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let result = self.host_provider.get_block_number().await?;
@@ -160,8 +203,15 @@ impl SubmitTask {
             .with_to(self.config.builder_helper_address)
             .with_gas_limit(1_000_000);
 
-        if let Err(TransportError::ErrorResp(e)) =
-            self.host_provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+        let SendableTx::Envelope(tx) = self.host_provider.fill(tx.into()).await? else {
+            bail!("failed to fill transaction")
+        };
+
+        if let Err(TransportError::ErrorResp(e)) = self
+            .host_provider
+            .call(&tx.clone().into())
+            .block(BlockNumberOrTag::Pending.into())
+            .await
         {
             error!(
                 code = e.code,
@@ -177,8 +227,10 @@ impl SubmitTask {
             return Ok(ControlFlow::Skip);
         }
 
-        // All validation checks have passed, send the transaction
-        self.send_transaction(resp, tx).await
+        let result = self.send_to_flashbots(tx.clone().into()).await?;
+        self.outbound_tx_channel.send(*tx.clone().tx_hash())?;
+
+        Ok(result)
     }
 
     async fn send_transaction(
