@@ -2,10 +2,12 @@
 
 use builder::config::BuilderConfig;
 use builder::service::serve_builder_with_span;
-use builder::tasks::block::BlockBuilder;
+use builder::tasks::bundler::BundlePoller;
 use builder::tasks::metrics::MetricsTask;
 use builder::tasks::oauth::Authenticator;
+use builder::tasks::simulator::Simulator;
 use builder::tasks::submit::SubmitTask;
+use builder::tasks::tx_poller::TxPoller;
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 use tokio::select;
@@ -27,10 +29,11 @@ async fn main() -> eyre::Result<()> {
     let sequencer_signer = config.connect_sequencer_signer().await?;
     let zenith = config.connect_zenith(host_provider.clone());
 
+    // Metrics
     let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
-    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider.clone());
+    // Submit
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
         host_provider,
@@ -40,29 +43,49 @@ async fn main() -> eyre::Result<()> {
         config: config.clone(),
         outbound_tx_channel: tx_channel,
     };
-
-    let authenticator_jh = authenticator.spawn();
     let (submit_channel, submit_jh) = submit.spawn();
-    let build_jh = builder.spawn(submit_channel);
 
+    // Bundle poller
+    let bundle_poller = BundlePoller::new(&config, authenticator.clone());
+    let (inbound_bundles, bundle_jh) = bundle_poller.spawn();
+
+    // Transaction poller
+    let tx_poller = TxPoller::new(&config);
+    let (inbound_txs, tx_jh) = tx_poller.spawn();
+
+    // Authenticator
+    let authenticator_jh = authenticator.spawn();
+
+    // Simulator
+    let simulator = Simulator::new(ru_provider, config.clone()).await?;
+    let simulator_jh = simulator.spawn(inbound_bundles, inbound_txs, submit_channel);
+
+    // Server
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
 
+    // Graceful shutdown
     select! {
-        _ = submit_jh => {
-            tracing::info!("submit finished");
-        },
         _ = metrics_jh => {
             tracing::info!("metrics finished");
         },
-        _ = build_jh => {
-            tracing::info!("build finished");
-        }
-        _ = server => {
-            tracing::info!("server finished");
-        }
         _ = authenticator_jh => {
             tracing::info!("authenticator finished");
+        }
+        _ = tx_jh => {
+            tracing::info!("tx poller finished");
+        }
+        _ = bundle_jh => {
+            tracing::info!("bundle poller finished");
+        }
+        _ = simulator_jh => {
+            tracing::info!("simulator finished");
+        }
+        _ = submit_jh => {
+            tracing::info!("submit finished");
+        },
+        _ = server => {
+            tracing::info!("server finished");
         }
     }
 

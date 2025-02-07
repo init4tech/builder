@@ -1,25 +1,16 @@
-use super::bundler::{Bundle, BundlePoller};
-use super::oauth::Authenticator;
-use super::tx_poller::TxPoller;
-use crate::config::{BuilderConfig, WalletlessProvider};
+use super::bundler::Bundle;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
     primitives::{keccak256, Bytes, B256},
-    providers::Provider as _,
     rlp::Buf,
 };
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{sync::OnceLock, time::Duration};
-use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, info, trace, Instrument};
-use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
+use std::sync::OnceLock;
+use tracing::{error, trace};
+use zenith_types::{encode_txns, Alloy2718Coder};
 
-/// Ethereum's slot time in seconds.
-pub const ETHEREUM_SLOT_TIME: u64 = 12;
-
-#[derive(Debug, Default, Clone)]
 /// A block in progress.
+#[derive(Debug, Default, Clone)]
 pub struct InProgressBlock {
     transactions: Vec<TxEnvelope>,
     raw_encoding: OnceLock<Bytes>,
@@ -113,143 +104,6 @@ impl InProgressBlock {
         let mut coder = SidecarBuilder::<T>::default();
         coder.ingest(self.encode_raw());
         coder
-    }
-}
-
-/// BlockBuilder is a task that periodically builds a block then sends it for signing and submission.
-pub struct BlockBuilder {
-    pub config: BuilderConfig,
-    pub ru_provider: WalletlessProvider,
-    pub tx_poller: TxPoller,
-    pub bundle_poller: BundlePoller,
-}
-
-impl BlockBuilder {
-    // create a new block builder with the given config.
-    pub fn new(
-        config: &BuilderConfig,
-        authenticator: Authenticator,
-        ru_provider: WalletlessProvider,
-    ) -> Self {
-        Self {
-            config: config.clone(),
-            ru_provider,
-            tx_poller: TxPoller::new(config),
-            bundle_poller: BundlePoller::new(config, authenticator),
-        }
-    }
-
-    /// Fetches transactions from the cache and ingests them into the in progress block
-    async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
-        trace!("query transactions from cache");
-        let txns = self.tx_poller.check_tx_cache().await;
-        match txns {
-            Ok(txns) => {
-                trace!("got transactions response");
-                for txn in txns.into_iter() {
-                    in_progress.ingest_tx(&txn);
-                }
-            }
-            Err(e) => {
-                error!(error = %e, "error polling transactions");
-            }
-        }
-    }
-
-    /// Fetches bundles from the cache and ingests them into the in progress block
-    async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
-        trace!("query bundles from cache");
-        let bundles = self.bundle_poller.check_bundle_cache().await;
-        match bundles {
-            Ok(bundles) => {
-                for bundle in bundles {
-                    match self.simulate_bundle(&bundle.bundle).await {
-                        Ok(()) => in_progress.ingest_bundle(bundle.clone()),
-                        Err(e) => error!(error = %e, id = ?bundle.id, "bundle simulation failed"),
-                    }
-                }
-            }
-            Err(e) => {
-                error!(error = %e, "error polling bundles");
-            }
-        }
-        self.bundle_poller.evict();
-    }
-
-    /// Simulates a Zenith bundle against the rollup state
-    async fn simulate_bundle(&mut self, bundle: &ZenithEthBundle) -> eyre::Result<()> {
-        // TODO: Simulate bundles with the Simulation Engine
-        // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
-        debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "bundle simulations is not implemented yet - skipping simulation");
-        Ok(())
-    }
-
-    async fn filter_transactions(&self, in_progress: &mut InProgressBlock) {
-        // query the rollup node to see which transaction(s) have been included
-        let mut confirmed_transactions = Vec::new();
-        for transaction in in_progress.transactions.iter() {
-            let tx = self
-                .ru_provider
-                .get_transaction_by_hash(*transaction.tx_hash())
-                .await
-                .expect("failed to get receipt");
-            if tx.is_some() {
-                confirmed_transactions.push(transaction.clone());
-            }
-        }
-        trace!(confirmed = confirmed_transactions.len(), "found confirmed transactions");
-
-        // remove already-confirmed transactions
-        for transaction in confirmed_transactions {
-            in_progress.remove_tx(&transaction);
-        }
-    }
-
-    // calculate the duration in seconds until the beginning of the next block slot.
-    fn secs_to_next_slot(&self) -> u64 {
-        let curr_timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let current_slot_time = (curr_timestamp - self.config.chain_offset) % ETHEREUM_SLOT_TIME;
-        (ETHEREUM_SLOT_TIME - current_slot_time) % ETHEREUM_SLOT_TIME
-    }
-
-    // add a buffer to the beginning of the block slot.
-    fn secs_to_next_target(&self) -> u64 {
-        self.secs_to_next_slot() + self.config.target_slot_time
-    }
-
-    /// Spawn the block builder task, returning the inbound channel to it, and
-    /// a handle to the running task.
-    pub fn spawn(mut self, outbound: mpsc::UnboundedSender<InProgressBlock>) -> JoinHandle<()> {
-        tokio::spawn(
-            async move {
-                loop {
-                    // sleep the buffer time
-                    tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
-                    info!("beginning block build cycle");
-
-                    // Build a block
-                    let mut in_progress = InProgressBlock::default();
-                    self.get_transactions(&mut in_progress).await;
-                    self.get_bundles(&mut in_progress).await;
-
-                    // Filter confirmed transactions from the block
-                    self.filter_transactions(&mut in_progress).await;
-
-                    // submit the block if it has transactions
-                    if !in_progress.is_empty() {
-                        debug!(txns = in_progress.len(), "sending block to submit task");
-                        let in_progress_block = std::mem::take(&mut in_progress);
-                        if outbound.send(in_progress_block).is_err() {
-                            error!("downstream task gone");
-                            break;
-                        }
-                    } else {
-                        debug!("no transactions, skipping block submission");
-                    }
-                }
-            }
-            .in_current_span(),
-        )
     }
 }
 

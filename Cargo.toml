@@ -24,6 +24,9 @@ path = "bin/submit_transaction.rs"
 [dependencies]
 zenith-types = "0.13"
 
+trevm = "0.19"
+revm = { version = "19.4.0", features = [ "alloydb" ]} 
+
 alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
 alloy-rlp = { version = "0.3.4" }
 

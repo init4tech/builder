@@ -6,8 +6,8 @@ pub use crate::config::BuilderConfig;
 use oauth2::TokenResponse;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::task::JoinHandle;
 use zenith_types::ZenithEthBundle;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,24 +26,20 @@ pub struct TxPoolBundleResponse {
 pub struct BundlePoller {
     pub config: BuilderConfig,
     pub authenticator: Authenticator,
-    pub seen_uuids: HashMap<String, Instant>,
 }
 
 /// Implements a poller for the block builder to pull bundles from the tx cache.
 impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config.
     pub fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
-        Self { config: config.clone(), authenticator, seen_uuids: HashMap::new() }
+        Self { config: config.clone(), authenticator }
     }
 
     /// Fetches bundles from the transaction cache and returns the (oldest? random?) bundle in the cache.
     pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<Bundle>> {
-        let mut unique: Vec<Bundle> = Vec::new();
-
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
         let token = self.authenticator.fetch_oauth_token().await?;
 
-        // Add the token to the request headers
         let result = reqwest::Client::new()
             .get(bundle_url)
             .bearer_auth(token.access_token().secret())
@@ -52,42 +48,28 @@ impl BundlePoller {
             .error_for_status()?;
 
         let body = result.bytes().await?;
-        let bundles: TxPoolBundleResponse = serde_json::from_slice(&body)?;
+        let resp: TxPoolBundleResponse = serde_json::from_slice(&body)?;
 
-        bundles.bundles.iter().for_each(|bundle| {
-            self.check_seen_bundles(bundle.clone(), &mut unique);
-        });
-
-        Ok(unique)
+        Ok(resp.bundles)
     }
 
-    /// Checks if the bundle has been seen before and if not, adds it to the unique bundles list.
-    fn check_seen_bundles(&mut self, bundle: Bundle, unique: &mut Vec<Bundle>) {
-        self.seen_uuids.entry(bundle.id.clone()).or_insert_with(|| {
-            // add to the set of unique bundles
-            unique.push(bundle.clone());
-            Instant::now() + Duration::from_secs(self.config.tx_pool_cache_duration)
-        });
-    }
-
-    /// Evicts expired bundles from the cache.
-    pub fn evict(&mut self) {
-        let expired_keys: Vec<String> = self
-            .seen_uuids
-            .iter()
-            .filter_map(
-                |(key, expiry)| {
-                    if expiry.elapsed().is_zero() {
-                        Some(key.clone())
-                    } else {
-                        None
+    /// Spawns a task that simply sends out any bundles it ever finds
+    pub fn spawn(mut self) -> (UnboundedReceiver<Bundle>, JoinHandle<()>) {
+        let (outbound, inbound) = unbounded_channel();
+        let jh = tokio::spawn(async move {
+            loop {
+                if let Ok(bundles) = self.check_bundle_cache().await {
+                    tracing::debug!(count = ?bundles.len(), "found bundles");
+                    for bundle in bundles.iter() {
+                        if let Err(err) = outbound.send(bundle.clone()) {
+                            tracing::error!(err = ?err, "Failed to send bundle");
+                        }
                     }
-                },
-            )
-            .collect();
-
-        for key in expired_keys {
-            self.seen_uuids.remove(&key);
-        }
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+        });
+        
+        (inbound, jh)
     }
 }
