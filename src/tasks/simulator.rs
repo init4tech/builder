@@ -18,8 +18,7 @@ use tokio::{
     task::JoinHandle,
 };
 use trevm::{
-    revm::{primitives::EVMError, Database},
-    BlockDriver, NoopBlock, NoopCfg, TrevmBuilder,
+    revm::{primitives::EVMError, Database}, BlockDriver, NoopBlock, NoopCfg, Trevm, TrevmBuilder
 };
 use zenith_types::ZenithEthBundle;
 
@@ -34,6 +33,12 @@ pub struct Simulator {
 
 /// Defines the SimulatorDatabase type for ease of use and clarityDefines the SimulatorDatabase type
 pub type SimulatorDatabase = CacheDB<AlloyDB<BoxTransport, Ethereum, WalletlessProvider>>;
+
+struct SimAndEvalResult {
+    pub bundle: Bundle,
+    pub score: U256,
+    pub resultant_state: bool, // TODO
+}
 
 impl Simulator {
     /// Creates a new simulator at the latest block number.
@@ -59,32 +64,89 @@ impl Simulator {
         // Instantiate chain state at latest with trevm
         let db = self.get_latest_db().await?;
         let mut extractor = create_extractor::<SimulatorDatabase>();
-        let trevm_env = extractor.trevm(db);
+        let current_state = extractor.trevm(db);
 
         let cancel = tokio::time::sleep(deadline);
-        let best_candidate: InProgressBlock = InProgressBlock::new();
-        let mut _candidate_bundles: Vec<Bundle> = Vec::new();
+        let mut included_bundles: Vec<Bundle> = Vec::new();
+        let mut candidate_bundles: Vec<Bundle> = Vec::new();
 
         loop {
             select! {
                 // Handle cancellation
                 _ = cancel => {
-                    return Ok(best_candidate)
+                    let mut final_block: InProgressBlock = InProgressBlock::new();
+                    // loop through bundles in block and ingest them
+                    for bundle in included_bundles {
+                        final_block.ingest_bundle(bundle);
+                    }
+                    return Ok(final_block)
                 },
                 // Handle bundle receive
-                Some(_bundle) = inbound_bundles.recv() => {
-                    // if candidate bundles does not contain bundle,
-                    // then push it into candidate bundles
-                    todo!()
+                Some(bundle) = inbound_bundles.recv() => {
+                    if included_bundles.contains(&bundle) {
+                        // TODO: check if this is a replacement (same id, diff bundle contents)
+                        // if it's a replacement, remove it from included_bundles, and allow it to be added back to candidate_bundles
+                        // if it's NOT a replacement (same id, same bundle contents), leave it in included_bundles
+                        todo!("handle replacement");
+                    }
+                    // remove any candidate bundles with the same uuid
+                    candidate_bundles.retain(|b| b.id != bundle.id);
+                    // push the new bundle
+                    candidate_bundles.push(bundle);
                 },
-                Some(_tx) = inbound_txs.recv() => {
-                    // transform transaction into bundle
-                    // if bundle not in candidate bundles, push bundle
-                    todo!()
+                Some(tx) = inbound_txs.recv() => {
+                    // transform the tx into a bundle
+                    // TODO: do we really want to do this? 
+                    // should we actually write simulator logic that handles txs differently?
+                    let bundle = Bundle::from(tx);
+                    // ensure the bundle is not already included or in the candidate bundles
+                    if included_bundles.contains(&bundle) {
+                        // TODO: check if this is a replacement (same id, diff bundle contents)
+                        // if it's a replacement, remove it from included_bundles, and allow it to be added back to candidate_bundles
+                        // if it's NOT a replacement (same id, same bundle contents), leave it in included_bundles
+                        todo!("handle replacement");
+                    }
+                    // remove any candidate bundles with the same uuid
+                    candidate_bundles.retain(|b| b.id != bundle.id);
+                    // push the new bundle
+                    candidate_bundles.push(bundle);
+                },
+                Some(best_bundle) = self.sim_and_eval_in_parallel(&current_state, &candidate_bundles) => {
+                    // add the best bundle into the block
+                    included_bundles.push(best_bundle.bundle);
+                    // remove it from candidate bundles
+                    candidate_bundles.retain(|b| b.id != best_bundle.bundle.id);
+                    // update the resulting state, so next evaluation runs against new state
+                    // TODO
+                    // current_state = best_bundle.resultant_state;
                 }
             }
         }
     }
+
+    async fn sim_and_eval_in_parallel(current_state, bundles) => SimAndEvalResult {
+    //     // for each bundle, spawn a simulation of that bundle against current state
+    //    let futs = bundles.foreach(bundle => spawn(simulate_and_evaluate(current_state, bundle)));
+    
+    //    // await the results in parallel
+    //    let results = futs.await_all;
+    
+    //    // sort the best score to pick the best result
+    //    sort_by_score(results);
+    //    best = results[0];
+    //    return best;
+    }
+    
+    // async fn simulate_and_evaluate(current_state, bundle) => SimAndEvalResult {
+    //     // apply bundle to state
+    //     let resultant_state = current_state.run(bundle);
+    
+    //     // run evaluator function
+    //     let score = evaluator(current_state, resultant_state);
+    
+    //     // return results
+    //     return {bundle, score, resultant_state}
+    // }
 
     /// Returns a prepared Simulator database out of the ru_provider at the latest block number
     pub async fn get_latest_db(&self) -> eyre::Result<SimulatorDatabase> {

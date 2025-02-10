@@ -3,17 +3,49 @@ use super::oauth::Authenticator;
 
 pub use crate::config::BuilderConfig;
 
+use alloy::consensus::TxEnvelope;
+use alloy::rpc::types::mev::EthSendBundle;
 use oauth2::TokenResponse;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::task::JoinHandle;
 use zenith_types::ZenithEthBundle;
+use alloy::eips::eip2718::Encodable2718;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
     pub id: String,
     pub bundle: ZenithEthBundle,
+}
+
+// TODO: we might not want to impl PartialEq this way
+impl PartialEq for Bundle {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Bundle {}
+
+impl From<TxEnvelope> for Bundle {
+    fn from(tx: TxEnvelope) -> Self {    
+        let tx_vec = vec![tx.encoded_2718()];
+        Self {
+            id: tx.tx_hash().to_string(),
+            bundle: ZenithEthBundle {
+                bundle: EthSendBundle {
+                    txs: tx_vec,
+                    reverting_tx_hashes: tx_vec,
+                    block_number: todo!(),
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    replacement_uuid: None,
+                },
+                host_fills: None,
+            },
+        }
+    }
 }
 
 /// Response from the tx-pool containing a list of bundles.
