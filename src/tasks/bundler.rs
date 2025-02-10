@@ -4,6 +4,7 @@ use super::oauth::Authenticator;
 pub use crate::config::BuilderConfig;
 
 use alloy::consensus::TxEnvelope;
+use alloy::eips::eip2718::Encodable2718;
 use alloy::rpc::types::mev::EthSendBundle;
 use oauth2::TokenResponse;
 use reqwest::Url;
@@ -11,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::task::JoinHandle;
 use zenith_types::ZenithEthBundle;
-use alloy::eips::eip2718::Encodable2718;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
@@ -29,15 +29,15 @@ impl PartialEq for Bundle {
 impl Eq for Bundle {}
 
 impl From<TxEnvelope> for Bundle {
-    fn from(tx: TxEnvelope) -> Self {    
-        let tx_vec = vec![tx.encoded_2718()];
+    fn from(tx: TxEnvelope) -> Self {
+        let tx_vec = vec![tx.encoded_2718().into()];
         Self {
             id: tx.tx_hash().to_string(),
             bundle: ZenithEthBundle {
                 bundle: EthSendBundle {
                     txs: tx_vec,
-                    reverting_tx_hashes: tx_vec,
-                    block_number: todo!(),
+                    reverting_tx_hashes: vec![*tx.tx_hash()],
+                    block_number: 0, // TODO: This needs to be set properly somewhere after into() is called
                     min_timestamp: None,
                     max_timestamp: None,
                     replacement_uuid: None,
@@ -101,7 +101,7 @@ impl BundlePoller {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         });
-        
+
         (inbound, jh)
     }
 }

@@ -8,7 +8,7 @@ use alloy_rlp::Encodable;
 use eyre::Result;
 use revm::{
     db::{AlloyDB, CacheDB},
-    primitives::{ResultAndState, U256},
+    primitives::{bytes, ResultAndState, U256},
     DatabaseCommit,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,7 +18,8 @@ use tokio::{
     task::JoinHandle,
 };
 use trevm::{
-    revm::{primitives::EVMError, Database}, BlockDriver, NoopBlock, NoopCfg, Trevm, TrevmBuilder
+    revm::{primitives::EVMError, Database},
+    BlockDriver, EvmNeedsBlock, NoopBlock, NoopCfg, Trevm, TrevmBuilder,
 };
 use zenith_types::ZenithEthBundle;
 
@@ -34,10 +35,10 @@ pub struct Simulator {
 /// Defines the SimulatorDatabase type for ease of use and clarityDefines the SimulatorDatabase type
 pub type SimulatorDatabase = CacheDB<AlloyDB<BoxTransport, Ethereum, WalletlessProvider>>;
 
-struct SimAndEvalResult {
-    pub bundle: Bundle,
+struct SimAndEvalResult<'a, Ext, Db: Database + DatabaseCommit> {
+    pub bundle: &'a Bundle,
     pub score: U256,
-    pub resultant_state: bool, // TODO
+    pub resultant_state: trevm::EvmNeedsBlock<'a, Ext, Db>, // TODO
 }
 
 impl Simulator {
@@ -51,7 +52,7 @@ impl Simulator {
     /// - The evaluator function is applied to incoming bundles and they are scored accordingly.
     /// - The best scored bundles are assembled into a block candidate.
     /// - The best block candidate is returned when cancel is received.
-    pub async fn run_simulation<F>(
+    pub async fn run_simulation<'a, F, Db: Database + DatabaseCommit>(
         &self,
         mut deadline: Duration,
         inbound_bundles: &mut mpsc::UnboundedReceiver<Bundle>,
@@ -59,7 +60,9 @@ impl Simulator {
         eval: F,
     ) -> Result<InProgressBlock>
     where
-        F: Fn(&ResultAndState, &ResultAndState) -> U256 + Send + 'static,
+        F: Fn(&trevm::EvmNeedsBlock<'a, (), Db>, &trevm::EvmNeedsBlock<'a, (), Db>) -> U256
+            + Send
+            + 'static,
     {
         // Instantiate chain state at latest with trevm
         let db = self.get_latest_db().await?;
@@ -67,14 +70,17 @@ impl Simulator {
         let current_state = extractor.trevm(db);
 
         let cancel = tokio::time::sleep(deadline);
+        tokio::pin!(cancel);
+
         let mut included_bundles: Vec<Bundle> = Vec::new();
         let mut candidate_bundles: Vec<Bundle> = Vec::new();
 
         loop {
             select! {
                 // Handle cancellation
-                _ = cancel => {
+                _ = &mut cancel => {
                     let mut final_block: InProgressBlock = InProgressBlock::new();
+
                     // loop through bundles in block and ingest them
                     for bundle in included_bundles {
                         final_block.ingest_bundle(bundle);
@@ -96,7 +102,7 @@ impl Simulator {
                 },
                 Some(tx) = inbound_txs.recv() => {
                     // transform the tx into a bundle
-                    // TODO: do we really want to do this? 
+                    // TODO: do we really want to do this?
                     // should we actually write simulator logic that handles txs differently?
                     let bundle = Bundle::from(tx);
                     // ensure the bundle is not already included or in the candidate bundles
@@ -113,7 +119,7 @@ impl Simulator {
                 },
                 Some(best_bundle) = self.sim_and_eval_in_parallel(&current_state, &candidate_bundles) => {
                     // add the best bundle into the block
-                    included_bundles.push(best_bundle.bundle);
+                    included_bundles.push(best_bundle.bundle.clone());
                     // remove it from candidate bundles
                     candidate_bundles.retain(|b| b.id != best_bundle.bundle.id);
                     // update the resulting state, so next evaluation runs against new state
@@ -124,29 +130,44 @@ impl Simulator {
         }
     }
 
-    async fn sim_and_eval_in_parallel(current_state, bundles) => SimAndEvalResult {
-    //     // for each bundle, spawn a simulation of that bundle against current state
-    //    let futs = bundles.foreach(bundle => spawn(simulate_and_evaluate(current_state, bundle)));
-    
-    //    // await the results in parallel
-    //    let results = futs.await_all;
-    
-    //    // sort the best score to pick the best result
-    //    sort_by_score(results);
-    //    best = results[0];
-    //    return best;
+    async fn sim_and_eval_in_parallel<Db: Database + DatabaseCommit>(
+        &self,
+        current_state: trevm::EvmNeedsBlock<'static, (), Db>,
+        bundles: &Vec<Bundle>,
+    ) -> Option<SimAndEvalResult<(), Db>> {
+        // Simulate and evaluate bundles in parallel
+        let mut best_result: Option<SimAndEvalResult<(), Db>> = None;
+
+        for bundle in bundles {
+            let block = bundle.bundle.bundle.txs.clone();
+            let bz: Vec<u8> = block.into_iter().flat_map(|b| b.to_vec()).collect();
+
+            let mut driver = create_extractor::<SimulatorDatabase>().extract(&bz);
+
+            let result = current_state.drive_block(&mut driver);
+
+            match result {
+                Ok(updated_state) => {
+                    let score = evaluator(&current_state, &updated_state);
+                    if best_result.is_none()
+                        || best_result.is_some() && score > best_result.as_ref().unwrap().score
+                    {
+                        best_result = Some(SimAndEvalResult {
+                            bundle,
+                            score,
+                            resultant_state: updated_state,
+                        });
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(err = ?err, "failed to simulate bundle");
+                    continue;
+                }
+            }
+        }
+
+        best_result
     }
-    
-    // async fn simulate_and_evaluate(current_state, bundle) => SimAndEvalResult {
-    //     // apply bundle to state
-    //     let resultant_state = current_state.run(bundle);
-    
-    //     // run evaluator function
-    //     let score = evaluator(current_state, resultant_state);
-    
-    //     // return results
-    //     return {bundle, score, resultant_state}
-    // }
 
     /// Returns a prepared Simulator database out of the ru_provider at the latest block number
     pub async fn get_latest_db(&self) -> eyre::Result<SimulatorDatabase> {
@@ -156,15 +177,6 @@ impl Simulator {
         } else {
             Err(eyre::eyre!("failed to create alloyDB from ru_provider"))
         }
-    }
-
-    /// Simulates a bundle against latest tip state
-    pub async fn simulate_bundle(&self, bundle: ZenithEthBundle) -> eyre::Result<()> {
-        let db = self.get_latest_db().await?;
-        let mut extractor = create_extractor::<SimulatorDatabase>();
-        let trevm_env = extractor.trevm(db);
-        let mut driver = extractor.extract(todo!());
-        Ok(())
     }
 
     /// Spawn a new Simulator that receives bundles and transactions and simulates them into finalized
@@ -203,7 +215,9 @@ impl Simulator {
         inbound_bundles: &mut mpsc::UnboundedReceiver<Bundle>,
         inbound_txs: &mut mpsc::UnboundedReceiver<TxEnvelope>,
     ) -> InProgressBlock {
-        let result = self.run_simulation(deadline, inbound_bundles, inbound_txs, evaluator).await;
+        let result = self
+            .run_simulation(deadline, inbound_bundles, inbound_txs, evaluator::<SimulatorDatabase>)
+            .await;
         match result {
             Ok(finalized) => finalized,
             Err(_) => InProgressBlock::default(),
@@ -212,7 +226,11 @@ impl Simulator {
 }
 
 /// Evaluates the value of a bundle and returns its score for sorting purposes
-fn evaluator(prev: &ResultAndState, proposed: &ResultAndState) -> U256 {
+fn evaluator<Db: Database + DatabaseCommit>(
+    prev: &EvmNeedsBlock<'static, (), Db>,
+    proposed: &EvmNeedsBlock<'static, (), Db>,
+) -> U256 {
+    // Implement the evaluation logic here
     todo!()
 }
 
@@ -267,6 +285,7 @@ where
         trevm::revm::EvmBuilder::default().with_db(db).build_trevm().fill_cfg(&NoopCfg)
     }
 
+    // Takes a a slice of bytes and decodes them as TxEnvelope types
     fn extract(&mut self, bytes: &[u8]) -> Self::Driver {
         let txs: Vec<TxEnvelope> =
             alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap_or_default();
