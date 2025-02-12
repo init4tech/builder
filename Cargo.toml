@@ -35,7 +35,6 @@ hex = { package = "const-hex", version = "1", default-features = false, features
 ] }
 
 serde = { version = "1.0.197", features = ["derive"] }
-tracing = "0.1.40"
 
 axum = "0.7.5"
 eyre = "0.6.12"
@@ -45,9 +44,20 @@ ruint = "1.12.1"
 serde_json = "1.0"
 thiserror = "1.0.68"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
-tracing-subscriber = "0.3.18"
 
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
+
 metrics = "0.24.1"
 metrics-exporter-prometheus = "0.16.0"
+
+# Tracing
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["registry"] }
+
+# OTLP
+tracing-opentelemetry = "0.29.0"
+opentelemetry_sdk = "0.28.0"
+opentelemetry = "0.28.0"
+opentelemetry-otlp = "0.28.0"
+opentelemetry-semantic-conventions = { version = "0.28.0", features = ["semconv_experimental"] }
