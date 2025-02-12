@@ -1,18 +1,34 @@
 #![allow(dead_code)]
 
 use builder::config::BuilderConfig;
+use builder::otlp::{OtelConfig, OtelGuard};
 use builder::service::serve_builder_with_span;
 use builder::tasks::block::BlockBuilder;
 use builder::tasks::metrics::MetricsTask;
 use builder::tasks::oauth::Authenticator;
 use builder::tasks::submit::SubmitTask;
-use metrics_exporter_prometheus::PrometheusBuilder;
 
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::select;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+fn init_tracing() -> Option<OtelGuard> {
+    let registry = tracing_subscriber::registry().with(tracing_subscriber::fmt::layer());
+
+    if let Some(cfg) = OtelConfig::load() {
+        let guard = cfg.provider();
+        registry.with(guard.layer()).init();
+        Some(guard)
+    } else {
+        registry.init();
+        None
+    }
+}
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    tracing_subscriber::fmt::try_init().unwrap();
+    let _guard = init_tracing();
+
     let span = tracing::info_span!("zenith-builder");
 
     let config = BuilderConfig::load_from_env()?.clone();
@@ -50,19 +66,19 @@ async fn main() -> eyre::Result<()> {
 
     select! {
         _ = submit_jh => {
-            tracing::info!("submit finished");
+            tracing::info!("submit is cooked");
         },
         _ = metrics_jh => {
-            tracing::info!("metrics finished");
+            tracing::info!("metrics is cooked");
         },
         _ = build_jh => {
-            tracing::info!("build finished");
+            tracing::info!("build is cooked");
         }
         _ = server => {
-            tracing::info!("server finished");
+            tracing::info!("server is cooked");
         }
         _ = authenticator_jh => {
-            tracing::info!("authenticator finished");
+            tracing::info!("authenticator is cooked");
         }
     }
 
