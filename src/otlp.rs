@@ -46,13 +46,14 @@ impl Drop for OtelGuard {
 }
 
 /// OTLP protocol options.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum OtlpProtocols {
     /// GRPC.
     Grpc,
     /// Binary.
     Binary,
     /// JSON.
+    #[default]
     Json,
 }
 
@@ -101,10 +102,8 @@ impl OtelConfig {
     pub fn load() -> Option<Self> {
         let endpoint = std::env::var(OTEL_ENDPOINT).ok()?.parse().ok()?;
 
-        let protocol = std::env::var(OTEL_PROTOCOL)
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(OtlpProtocols::Json);
+        let protocol =
+            std::env::var(OTEL_PROTOCOL).ok().and_then(|v| v.parse().ok()).unwrap_or_default();
 
         let level = std::env::var(OTEL_LEVEL)
             .ok()
