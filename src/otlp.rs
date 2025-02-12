@@ -17,6 +17,21 @@ const OTEL_LEVEL: &str = "OTEL_LEVEL";
 const OTEL_TIMEOUT: &str = "OTEL_TIMEOUT";
 const OTEL_ENVIRONMENT: &str = "OTEL_ENVIRONMENT_NAME";
 
+/// Drop guard for the Otel provider. This will shutdown the provider when
+/// dropped, and generally should be held for the lifetime of the `main`
+/// function.
+///
+/// ```
+/// # use builder::otlp::{OtelConfig, OtelGuard};
+/// # fn test() {
+/// fn main() {
+///     let cfg = OtelConfig::load().unwrap();
+///     let guard = cfg.provider();
+///     // do stuff
+///     // drop the guard when the program is done
+/// }
+/// # }
+/// ```
 pub struct OtelGuard(SdkTracerProvider, tracing::Level);
 
 impl OtelGuard {
