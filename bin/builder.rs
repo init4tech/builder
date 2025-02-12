@@ -66,19 +66,19 @@ async fn main() -> eyre::Result<()> {
 
     select! {
         _ = submit_jh => {
-            tracing::info!("submit is cooked");
+            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "submit is cooked");
         },
         _ = metrics_jh => {
-            tracing::info!("metrics is cooked");
+            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "metrics is cooked");
         },
         _ = build_jh => {
-            tracing::info!("build is cooked");
+            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "build is cooked");
         }
         _ = server => {
-            tracing::info!("server is cooked");
+            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "server is cooked");
         }
         _ = authenticator_jh => {
-            tracing::info!("authenticator is cooked");
+            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "authenticator is cooked");
         }
     }
 
