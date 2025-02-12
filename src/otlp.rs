@@ -60,7 +60,7 @@ impl Drop for OtelGuard {
     }
 }
 
-/// OTLP protocol options.
+/// OTLP protocol choices
 #[derive(Debug, Clone, Copy, Default)]
 pub enum OtlpProtocols {
     /// GRPC.
@@ -95,7 +95,20 @@ impl From<OtlpProtocols> for opentelemetry_otlp::Protocol {
     }
 }
 
-/// Otel configuration
+/// Otel configuration. This struct is intended to be loaded from the env vars
+///
+/// The env vars it checks are:
+/// - OTEL_ENDPOINT - optional. The endpoint to send traces to, should be some
+///   valid URL. If not specified, then [`OtelConfig::load`] will return
+///   [`None`].
+/// - OTEL_PROTOCOL - optional. Specifies the OTLP protocol to use, should be
+///   one of "grpc", "binary" or "json". Defaults to json.
+/// - OTEL_LEVEL - optional. Specifies the minimum [`tracing::Level`] to
+///   export. Defaults to [`tracing::Level::DEBUG`].
+/// - OTEL_TIMEOUT - optional. Specifies the timeout for the exporter in
+///   **milliseconds**. Defaults to 1000ms, which is equivalent to 1 second.
+/// - OTEL_ENVIRONMENT_NAME - optional. Value for the `deployment.environment.
+///   name` resource key according to the OTEL conventions.
 #[derive(Debug, Clone)]
 pub struct OtelConfig {
     /// The endpoint to send traces to, should be some valid HTTP endpoint for
@@ -114,6 +127,20 @@ pub struct OtelConfig {
 
 impl OtelConfig {
     /// Load from env vars.
+    ///
+    /// The env vars it checks are:
+    /// - OTEL_ENDPOINT - optional. The endpoint to send traces to, should be
+    ///   some  valid URL. If not specified, then [`OtelConfig::load`] will
+    ///   return [`None`].
+    /// - OTEL_PROTOCOL - optional. Specifies the OTLP protocol to use, should
+    ///   be one of "grpc", "binary" or "json". Defaults to json.
+    /// - OTEL_LEVEL - optional. Specifies the minimum [`tracing::Level`] to
+    ///   export. Defaults to [`tracing::Level::DEBUG`].
+    /// - OTEL_TIMEOUT - optional. Specifies the timeout for the exporter in
+    ///   **milliseconds**. Defaults to 1000ms, which is equivalent to 1 second.
+    /// - OTEL_ENVIRONMENT_NAME - optional. Value for the
+    ///   `deployment.environment.name` resource key according to the OTEL
+    ///   conventions.
     pub fn load() -> Option<Self> {
         // load endpoint from env. ignore empty values (shortcut return None), parse, and print the error if any using inspect_err
         let endpoint =
