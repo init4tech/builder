@@ -64,21 +64,23 @@ async fn main() -> eyre::Result<()> {
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
 
+    let slang_definition = r#"in this context, "cooked" means that it finished running"#;
+
     select! {
         _ = submit_jh => {
-            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "submit is cooked");
+            tracing::info!(slang_definition, "submit is cooked");
         },
         _ = metrics_jh => {
-            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "metrics is cooked");
+            tracing::info!(slang_definition, "metrics is cooked");
         },
         _ = build_jh => {
-            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "build is cooked");
+            tracing::info!(slang_definition, "build is cooked");
         }
         _ = server => {
-            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "server is cooked");
+            tracing::info!(slang_definition, "server is cooked");
         }
         _ = authenticator_jh => {
-            tracing::info!(slang_definition = r#"in this context, "cooked" means that it finished running"#, "authenticator is cooked");
+            tracing::info!(slang_definition, "authenticator is cooked");
         }
     }
 
