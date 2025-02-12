@@ -100,7 +100,11 @@ pub struct OtelConfig {
 impl OtelConfig {
     /// Load from env vars.
     pub fn load() -> Option<Self> {
-        let endpoint = std::env::var(OTEL_ENDPOINT).ok()?.parse().ok()?;
+        // load endpoint from env. ignore empty values (shortcut return None), parse, and print the error if any using inspect_err
+        let endpoint =
+            std::env::var(OTEL_ENDPOINT).inspect_err(|e| println!("{e}")).ok().and_then(|v| {
+                v.parse().inspect_err(|e| println!("Error parsing url: {e}. Input was {v}")).ok()
+            })?;
 
         let protocol =
             std::env::var(OTEL_PROTOCOL).ok().and_then(|v| v.parse().ok()).unwrap_or_default();
