@@ -8,14 +8,14 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 use builder::config::BuilderConfig;
 use builder::tasks::bundler::Bundle;
-use builder::tasks::simulator::Simulator;
+use builder::tasks::simulator::{EvmPool, Simulator};
 use revm::primitives::{bytes, Address, TxKind, U256};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use trevm::{NoopBlock, NoopCfg};
-use zenith_types::ZenithEthBundle;
 use tokio::time::Duration;
+use trevm::{EvmFactory, NoopBlock, NoopCfg};
+use zenith_types::ZenithEthBundle;
 
 #[tokio::test]
 async fn test_simulator_spawn() {
@@ -23,8 +23,7 @@ async fn test_simulator_spawn() {
     let config = load_test_config();
     let ru_provider = config.connect_ru_provider().await.unwrap();
 
-    // create a new Simulator
-    let simulator: Simulator<(), NoopCfg, NoopBlock> = Simulator::new(ru_provider, config.clone()).await.unwrap();
+    let sim: Simulator<NoopCfg, NoopCfg, NoopBlock> = Simulator::new(ru_provider, config).await.unwrap();
 
     // plumb the mocked simulator
     let (bundle_sender, inbound_bundles) = mpsc::unbounded_channel();
@@ -33,7 +32,7 @@ async fn test_simulator_spawn() {
 
     // spawn the simulator
     let simulator_handle: JoinHandle<()> =
-        simulator.spawn(inbound_bundles, inbound_txs, submit_sender).await;
+        sim.spawn(inbound_bundles, inbound_txs, submit_sender).await;
 
     // create a random test transaction
     let wallet = PrivateKeySigner::random();
@@ -99,11 +98,12 @@ fn load_test_config() -> BuilderConfig {
     BuilderConfig {
         host_chain_id: 1,
         ru_chain_id: 2,
-        host_rpc_url: "http://localhost:8545".into(), // TODO link this to a local anvil? 
-        ru_rpc_url: "http://localhost:8546".into(), // TODO link this to a local signet-node
+        host_rpc_url: "http://localhost:8545".into(), // TODO link this to a local anvil?
+        ru_rpc_url: "http://localhost:8546".into(),   // TODO link this to a local signet-node
         tx_broadcast_urls: vec!["http://localhost:8547".into()],
         zenith_address: Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
-        builder_helper_address: Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
+        builder_helper_address: Address::from_str("0x0000000000000000000000000000000000000000")
+            .unwrap(),
         quincey_url: "http://localhost:8548".into(),
         builder_port: 8080,
         sequencer_key: Some("test_sequencer_key".to_string()),
@@ -111,7 +111,8 @@ fn load_test_config() -> BuilderConfig {
         block_confirmation_buffer: 10,
         chain_offset: 0,
         target_slot_time: 6,
-        builder_rewards_address: Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
+        builder_rewards_address: Address::from_str("0x0000000000000000000000000000000000000000")
+            .unwrap(),
         rollup_block_gas_limit: 1000000,
         tx_pool_url: "http://localhost:8549".into(),
         tx_pool_cache_duration: 60,

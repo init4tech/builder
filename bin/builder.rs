@@ -58,8 +58,7 @@ async fn main() -> eyre::Result<()> {
     let authenticator_jh = authenticator.spawn();
 
     // Simulator
-    let simulator: Simulator<(), NoopCfg, NoopBlock> = Simulator::new(ru_provider, config.clone()).await?;
-
+    let simulator= Simulator::new(ru_provider, config.clone()).await?;
     let simulator_jh = simulator.spawn(inbound_bundles, inbound_txs, submit_channel);
 
     // Server

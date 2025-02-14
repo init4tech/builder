@@ -5,10 +5,11 @@ use alloy::{
     transports::BoxTransport,
 };
 use eyre::Result;
+use reqwest::Url;
 use revm::{
     db::{AlloyDB, CacheDB},
     primitives::{ResultAndState, U256},
-    DatabaseCommit,
+    DatabaseCommit, EvmBuilder,
 };
 use std::{
     marker::PhantomData,
@@ -19,7 +20,8 @@ use thiserror::Error;
 use tokio::{
     select,
     sync::mpsc::{self, UnboundedReceiver},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
+    time::Instant,
 };
 use trevm::{
     revm::{primitives::EVMError, Database},
@@ -30,7 +32,6 @@ use trevm::{
 /// Ethereum's slot time in seconds
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
 
-/// Simulator wraps a trevm environment to a rollup provider to simulate transactions against that rollup state.
 #[derive(Debug, Clone)]
 pub struct Simulator<Ef, C, B> {
     pub ru_provider: WalletlessProvider,
@@ -38,6 +39,7 @@ pub struct Simulator<Ef, C, B> {
     _marker: PhantomData<(Ef, C, B)>,
 }
 
+#[derive(Debug, Clone)]
 pub struct EvmPool<Ef, C, B> {
     evm: EvmCtx<Ef, C, B>,
 }
@@ -48,17 +50,8 @@ where
     C: Cfg + 'static,
     B: TrevmBlock + 'static,
 {
-    pub fn spawn<T, F>(
-        self,
-        mut rx: UnboundedReceiver<Arc<T>>,
-        evaluator: F,
-        deadline: tokio::time::Instant,
-    ) -> tokio::task::JoinHandle<Option<EvalResult<T>>>
-    where
-        T: Tx + 'static,
-        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static + Clone,
-    {
-        tokio::spawn(async move { todo!() })
+    pub fn weak_evm(&self) -> Weak<EvmCtxInner<Ef, C, B>> {
+        Arc::downgrade(&self.evm.0)
     }
 }
 
@@ -83,7 +76,7 @@ struct SimAndEvalResult<'a, Ext, Db: Database + DatabaseCommit> {
 }
 
 /// A shared EVM state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EvmCtxInner<Ef, C, B> {
     evm_factory: Ef,
     config: C,
@@ -101,6 +94,12 @@ pub struct EvalResult<T, Score: PartialOrd + Ord = U256> {
     pub score: Score,
 }
 
+pub struct Best<T, Score: PartialOrd + Ord = U256> {
+    pub item: T,
+    pub result: ResultAndState,
+    pub score: Score,
+}
+
 /// Defines the eval function
 async fn evaluate<Ef, C, B, T, F>(
     evm: Weak<EvmCtxInner<Ef, C, B>>,
@@ -112,7 +111,7 @@ where
     C: Cfg + 'static,
     B: TrevmBlock + 'static,
     T: Tx + 'static,
-    F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+    F: for<'a> Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
 {
     let evm = evm.upgrade()?;
     let tx = tx.upgrade()?;
@@ -126,31 +125,38 @@ where
 async fn create_pool<Ef, C, B>(
     ru_provider: WalletlessProvider,
     config: BuilderConfig,
-) -> EvmPool<Simulator<Ef, NoopCfg, NoopBlock>, NoopCfg, NoopBlock> 
-where 
-    Ef: Send + Sync, 
+) -> Result<EvmPool<Simulator<Ef, NoopCfg, NoopBlock>, NoopCfg, NoopBlock>>
+where
+    Ef: Send + Sync + for<'b> EvmFactory<'b>,
 {
-    let sim = Simulator::new(ru_provider, config).await;
-    match sim {
-        Ok(simulator) => {
-            let pool = EvmPool {
-                evm: EvmCtx(Arc::new(EvmCtxInner {
-                    evm_factory: simulator,
-                    config: NoopCfg,
-                    block: NoopBlock,
-                })),
-            };
-            pool
-        },
-        Err(_) => todo!(),
+    let sim = Simulator::<Ef, NoopCfg, NoopBlock>::new(ru_provider, config).await?;
+    let pool = EvmPool {
+        evm: EvmCtx(Arc::new(EvmCtxInner { evm_factory: sim, config: NoopCfg, block: NoopBlock })),
+    };
+    Ok(pool)
+}
+
+impl<'a, Ef, C, B> EvmFactory<'a> for Simulator<Ef, C, B>
+where
+    Simulator<Ef, C, B>: DbConnect<'a>,
+    C: Cfg + 'static,
+    B: TrevmBlock + 'static,
+{
+    type Ext = ();
+
+    // TODO: Implement this function for the Simulator with a TrevmBuilder I think?
+    fn create(
+        &'a self,
+    ) -> std::result::Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
+        todo!()
     }
 }
 
 impl<'a, Ef, C, B> DbConnect<'a> for Simulator<Ef, C, B>
 where
     Ef: for<'b> EvmFactory<'b> + Send + Sync + 'static,
-    C: Cfg + Default + 'static,
-    B: TrevmBlock + Default + 'static,
+    C: Cfg + 'static,
+    B: TrevmBlock + 'static,
 {
     type Database = SimulatorDatabase;
     type Error = SimulatorError;
@@ -166,9 +172,9 @@ where
 
 impl<'a, Ef, C, B> Simulator<Ef, C, B>
 where
-    Ef: Send + Sync + 'static,
-    C: Default + Cfg + 'static,
-    B: Default + TrevmBlock + 'static,
+    Ef: for<'b> EvmFactory<'b> + Send + Sync,
+    C: Cfg + 'static,
+    B: TrevmBlock + 'static,
 {
     /// Creates a new simulator at the latest block number.
     pub async fn new(ru_provider: WalletlessProvider, config: BuilderConfig) -> Result<Self> {
@@ -176,13 +182,51 @@ where
     }
 
     /// Returns a prepared Simulator database out of the ru_provider at the latest block number
-    pub async fn get_latest_db(&'a self) -> eyre::Result<SimulatorDatabase> {
+    pub async fn get_latest_db(&self) -> eyre::Result<SimulatorDatabase> {
         let latest = self.ru_provider.clone().get_block_number().await?;
         if let Some(db) = AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest)) {
             Ok(CacheDB::new(db))
         } else {
             Err(eyre::eyre!("failed to create alloyDB from ru_provider"))
         }
+    }
+
+    pub async fn spawn_simulation(
+        &self,
+        mut inbound: UnboundedReceiver<Arc<TxEnvelope>>,
+        deadline: Instant,
+    ) -> JoinHandle<()> {
+        let jh = tokio::spawn(async move {
+            let cancel = tokio::time::sleep_until(deadline);
+            tokio::pin!(cancel);
+
+            let mut best: Option<Best<InProgressBlock>> = None;
+
+            let result = create_pool::<Ef, C, B>(self.ru_provider, self.config).await;
+            let pool = match result {
+                Ok(evm_pool) => evm_pool,
+                Err(e) => {
+                    tracing::error!("failed to create evm pool");
+                    return;
+                }
+            };
+
+            loop {
+                select! {
+                    biased;
+                    // Break when cancel is received
+                    _ = &mut cancel => break,
+                    tx = inbound.recv() => {
+                        if let Some(tx) = tx {
+                            let weak_tx = Arc::downgrade(&tx);
+                            let evm = pool.weak_evm();
+                            let eval = evaluator.clone();
+                        };
+                    }
+                }
+            }
+        });
+        jh
     }
 
     /// Spawn a new Simulator that receives bundles and transactions and simulates them into finalized
@@ -195,7 +239,6 @@ where
     ) -> JoinHandle<()> {
         let jh = tokio::spawn(async move {
             let timer = Timer::new(self.config.clone());
-
             let candidate_block: Option<InProgressBlock> = None;
 
             loop {
@@ -233,7 +276,7 @@ where
 }
 
 /// Evaluates the value of a bundle and returns its score for sorting purposes
-fn evaluator<Db: Database + DatabaseCommit>(proposed: &EvmNeedsBlock<'static, (), Db>) -> U256 {
+fn evaluator<Db: Database + DatabaseCommit>(state: &EvmNeedsBlock<'static, (), Db>) -> U256 {
     // Implement the evaluation logic here
     todo!()
 }

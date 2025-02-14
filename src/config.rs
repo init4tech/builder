@@ -95,6 +95,38 @@ pub struct BuilderConfig {
     pub oauth_token_refresh_interval: u64,
 }
 
+impl Default for BuilderConfig {
+    /// Default is used for sane starting points for a test or dummy config
+    fn default() -> Self {
+        Self {
+            host_chain_id: 1,
+            ru_chain_id: 2,
+            host_rpc_url: "http://localhost:8545".into(),
+            ru_rpc_url: "http://localhost:8546".into(),
+            tx_broadcast_urls: vec!["http://localhost:8547".into()],
+            zenith_address: Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
+            builder_helper_address: Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
+            quincey_url: "http://localhost:8548".into(),
+            builder_port: 8080,
+            sequencer_key: Some("test_sequencer_key".to_string()),
+            builder_key: "test_builder_key".to_string(),
+            block_confirmation_buffer: 10,
+            chain_offset: 0,
+            target_slot_time: 6,
+            builder_rewards_address: Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
+            rollup_block_gas_limit: 1000000,
+            tx_pool_url: "http://localhost:8549".into(),
+            tx_pool_cache_duration: 60,
+            oauth_client_id: "test_client_id".to_string(),
+            oauth_client_secret: "test_client_secret".to_string(),
+            oauth_authenticate_url: "http://localhost:8550/auth".to_string(),
+            oauth_token_url: "http://localhost:8550/token".to_string(),
+            oauth_token_refresh_interval: 3600,
+        }
+    }
+}
+
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// Error loading from environment variable
