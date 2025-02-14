@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy::consensus::TxEnvelope;
 use eyre::Error;
 use reqwest::{Client, Url};
@@ -37,14 +39,14 @@ impl TxPoller {
     }
 
     /// Spawns a task that trawls the cache for transactions and sends along anything it finds
-    pub fn spawn(mut self) -> (mpsc::UnboundedReceiver<TxEnvelope>, JoinHandle<()>) {
+    pub fn spawn(mut self) -> (mpsc::UnboundedReceiver<Arc<TxEnvelope>>, JoinHandle<()>) {
         let (outbound, inbound) = mpsc::unbounded_channel();
         let jh = tokio::spawn(async move {
             loop {
                 if let Ok(transactions) = self.check_tx_cache().await {
                     tracing::debug!(count = ?transactions.len(), "found transactions");
                     for tx in transactions.iter() {
-                        if let Err(err) = outbound.send(tx.clone()) {
+                        if let Err(err) = outbound.send(Arc::new(tx.clone())) {
                             tracing::error!(err = ?err, "failed to send transaction outbound");
                         }
                     }

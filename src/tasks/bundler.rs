@@ -1,4 +1,6 @@
 //! Bundler service responsible for managing bundles.
+use std::sync::Arc;
+
 use super::oauth::Authenticator;
 
 pub use crate::config::BuilderConfig;
@@ -86,14 +88,14 @@ impl BundlePoller {
     }
 
     /// Spawns a task that simply sends out any bundles it ever finds
-    pub fn spawn(mut self) -> (UnboundedReceiver<Bundle>, JoinHandle<()>) {
+    pub fn spawn(mut self) -> (UnboundedReceiver<Arc<Bundle>>, JoinHandle<()>) {
         let (outbound, inbound) = unbounded_channel();
         let jh = tokio::spawn(async move {
             loop {
                 if let Ok(bundles) = self.check_bundle_cache().await {
                     tracing::debug!(count = ?bundles.len(), "found bundles");
                     for bundle in bundles.iter() {
-                        if let Err(err) = outbound.send(bundle.clone()) {
+                        if let Err(err) = outbound.send(Arc::new(bundle.clone())) {
                             tracing::error!(err = ?err, "Failed to send bundle");
                         }
                     }

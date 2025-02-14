@@ -4,6 +4,7 @@ use alloy::{
     eips::eip2718::Decodable2718,
     primitives::{keccak256, Bytes, B256},
     rlp::Buf,
+    rpc::types::mev::EthSendBundle,
 };
 use std::sync::OnceLock;
 use tracing::{error, trace};
@@ -12,6 +13,7 @@ use zenith_types::{encode_txns, Alloy2718Coder};
 /// A block in progress.
 #[derive(Debug, Default, Clone)]
 pub struct InProgressBlock {
+    bundles: Vec<Bundle>,
     transactions: Vec<TxEnvelope>,
     raw_encoding: OnceLock<Bytes>,
     hash: OnceLock<B256>,
@@ -20,7 +22,12 @@ pub struct InProgressBlock {
 impl InProgressBlock {
     /// Create a new `InProgressBlock`
     pub fn new() -> Self {
-        Self { transactions: Vec::new(), raw_encoding: OnceLock::new(), hash: OnceLock::new() }
+        Self {
+            bundles: Vec::new(),
+            transactions: Vec::new(),
+            raw_encoding: OnceLock::new(),
+            hash: OnceLock::new(),
+        }
     }
 
     /// Get the number of transactions in the block.
@@ -41,11 +48,20 @@ impl InProgressBlock {
 
     /// Seal the block by encoding the transactions and calculating the contentshash.
     fn seal(&self) {
+        // TODO: If block is finalized, ingest all bundled txs into &self.transactions before calling the line below
+        // That should generate an ordered list of transactions while still guaranteeing proper revertibles handling
         self.raw_encoding.get_or_init(|| encode_txns::<Alloy2718Coder>(&self.transactions).into());
         self.hash.get_or_init(|| keccak256(self.raw_encoding.get().unwrap().as_ref()));
     }
 
-    /// Ingest a transaction into the in-progress block. Fails
+    /// Adds a bundle to in-progress block for tracking and simulation.
+    /// Adding does _not_ ingest the bundle into the Zenith block, it only tracks it for simulation purposes.
+    pub fn add_bundle(&mut self, bundle: &Bundle) {
+        trace!(bundle = %bundle.id, "ingesting bundle");
+        self.bundles.push(bundle.clone());
+    }
+
+    /// Ingest a transaction into the in-progress block.
     pub fn ingest_tx(&mut self, tx: &TxEnvelope) {
         trace!(hash = %tx.tx_hash(), "ingesting tx");
         self.unseal();
@@ -59,14 +75,14 @@ impl InProgressBlock {
         self.transactions.retain(|t| t.tx_hash() != tx.tx_hash());
     }
 
-    /// Ingest a bundle into the in-progress block.
-    /// Ignores Signed Orders for now.
-    pub fn ingest_bundle(&mut self, bundle: Bundle) {
-        trace!(bundle = %bundle.id, "ingesting bundle");
+    /// Adds a bundle into the block's transaction list. This will lose all revertible 
+    /// transaction information from the Bundle so this must be performed only after 
+    /// a bundle is simulated and marked as valid.
+    pub fn ingest_bundle(&mut self, bundle: &EthSendBundle) {
+        trace!(bundle = %bundle.bundle_hash(), "finalizing bundle");
 
         let txs = bundle
-            .bundle
-            .bundle
+            .clone()
             .txs
             .into_iter()
             .map(|tx| TxEnvelope::decode_2718(&mut tx.chunk()))
@@ -161,7 +177,7 @@ mod tests {
         let prev_hash = in_progress_block.contents_hash();
 
         // Ingest the bundle
-        in_progress_block.ingest_bundle(bundle);
+        in_progress_block.add_bundle(&bundle);
 
         // Assert hash is changed after ingest
         assert_ne!(prev_hash, in_progress_block.contents_hash(), "Bundle should change block hash");

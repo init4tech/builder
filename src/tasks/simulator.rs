@@ -4,173 +4,179 @@ use alloy::{
     consensus::TxEnvelope, eips::BlockId, network::Ethereum, providers::Provider,
     transports::BoxTransport,
 };
-use alloy_rlp::Encodable;
 use eyre::Result;
 use revm::{
     db::{AlloyDB, CacheDB},
-    primitives::{bytes, ResultAndState, U256},
+    primitives::{ResultAndState, U256},
     DatabaseCommit,
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Weak},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use thiserror::Error;
 use tokio::{
     select,
-    sync::mpsc::{self},
+    sync::mpsc::{self, UnboundedReceiver},
     task::JoinHandle,
 };
 use trevm::{
     revm::{primitives::EVMError, Database},
-    BlockDriver, EvmNeedsBlock, NoopBlock, NoopCfg, Trevm, TrevmBuilder,
+    Block as TrevmBlock, BlockDriver, Cfg, DbConnect, EvmFactory, EvmNeedsBlock, NoopBlock,
+    NoopCfg, TrevmBuilder, Tx,
 };
-use zenith_types::ZenithEthBundle;
 
 /// Ethereum's slot time in seconds
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
 
 /// Simulator wraps a trevm environment to a rollup provider to simulate transactions against that rollup state.
-pub struct Simulator {
+#[derive(Debug, Clone)]
+pub struct Simulator<Ef, C, B> {
     pub ru_provider: WalletlessProvider,
     pub config: BuilderConfig,
+    _marker: PhantomData<(Ef, C, B)>,
 }
 
-/// Defines the SimulatorDatabase type for ease of use and clarityDefines the SimulatorDatabase type
+pub struct EvmPool<Ef, C, B> {
+    evm: EvmCtx<Ef, C, B>,
+}
+
+impl<Ef, C, B> EvmPool<Ef, C, B>
+where
+    Ef: for<'a> EvmFactory<'a> + Send + 'static,
+    C: Cfg + 'static,
+    B: TrevmBlock + 'static,
+{
+    pub fn spawn<T, F>(
+        self,
+        mut rx: UnboundedReceiver<Arc<T>>,
+        evaluator: F,
+        deadline: tokio::time::Instant,
+    ) -> tokio::task::JoinHandle<Option<EvalResult<T>>>
+    where
+        T: Tx + 'static,
+        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static + Clone,
+    {
+        tokio::spawn(async move { todo!() })
+    }
+}
+
+/// Defines the SimulatorDatabase type for ease of use and clarity
 pub type SimulatorDatabase = CacheDB<AlloyDB<BoxTransport, Ethereum, WalletlessProvider>>;
 
+/// Error type for the Simulator
+#[derive(Error, Debug)]
+pub enum SimulatorError {
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] EVMError<<SimulatorDatabase as Database>::Error>),
+    #[error("Other error: {0}")]
+    Other(#[from] eyre::Report),
+}
+
+/// Sims and evals a bundle against a given database state,
+/// then returns that bundle, its score, and the updated EVM state.
 struct SimAndEvalResult<'a, Ext, Db: Database + DatabaseCommit> {
     pub bundle: &'a Bundle,
     pub score: U256,
-    pub resultant_state: trevm::EvmNeedsBlock<'a, Ext, Db>, // TODO
+    pub resultant_state: &'a trevm::EvmNeedsBlock<'a, Ext, Db>,
 }
 
-impl Simulator {
+/// A shared EVM state
+#[derive(Debug, Clone)]
+pub struct EvmCtxInner<Ef, C, B> {
+    evm_factory: Ef,
+    config: C,
+    block: B,
+}
+
+/// Creates an ARC over the EVM context
+#[derive(Debug, Clone)]
+pub struct EvmCtx<Ef, C, B>(Arc<EvmCtxInner<Ef, C, B>>);
+
+/// Evaluation result that is orderable over the Score type
+pub struct EvalResult<T, Score: PartialOrd + Ord = U256> {
+    pub tx: Arc<T>,
+    pub result: ResultAndState,
+    pub score: Score,
+}
+
+/// Defines the eval function
+async fn evaluate<Ef, C, B, T, F>(
+    evm: Weak<EvmCtxInner<Ef, C, B>>,
+    tx: Weak<T>,
+    evaluator: F,
+) -> Option<EvalResult<T>>
+where
+    Ef: for<'a> EvmFactory<'a> + Send + 'static,
+    C: Cfg + 'static,
+    B: TrevmBlock + 'static,
+    T: Tx + 'static,
+    F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+{
+    let evm = evm.upgrade()?;
+    let tx = tx.upgrade()?;
+
+    let result_and_state = evm.evm_factory.run(&evm.config, &evm.block, tx.as_ref()).ok()?;
+    let score = evaluator(&result_and_state);
+
+    Some(EvalResult { tx, result: result_and_state, score })
+}
+
+async fn create_pool<Ef, C, B>(
+    ru_provider: WalletlessProvider,
+    config: BuilderConfig,
+) -> EvmPool<Simulator<Ef, NoopCfg, NoopBlock>, NoopCfg, NoopBlock> 
+where 
+    Ef: Send + Sync, 
+{
+    let sim = Simulator::new(ru_provider, config).await;
+    match sim {
+        Ok(simulator) => {
+            let pool = EvmPool {
+                evm: EvmCtx(Arc::new(EvmCtxInner {
+                    evm_factory: simulator,
+                    config: NoopCfg,
+                    block: NoopBlock,
+                })),
+            };
+            pool
+        },
+        Err(_) => todo!(),
+    }
+}
+
+impl<'a, Ef, C, B> DbConnect<'a> for Simulator<Ef, C, B>
+where
+    Ef: for<'b> EvmFactory<'b> + Send + Sync + 'static,
+    C: Cfg + Default + 'static,
+    B: TrevmBlock + Default + 'static,
+{
+    type Database = SimulatorDatabase;
+    type Error = SimulatorError;
+
+    fn connect(&'a self) -> std::result::Result<Self::Database, Self::Error> {
+        let db = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(self.get_latest_db())
+            .map_err(SimulatorError::Other)?;
+        Ok(db)
+    }
+}
+
+impl<'a, Ef, C, B> Simulator<Ef, C, B>
+where
+    Ef: Send + Sync + 'static,
+    C: Default + Cfg + 'static,
+    B: Default + TrevmBlock + 'static,
+{
     /// Creates a new simulator at the latest block number.
     pub async fn new(ru_provider: WalletlessProvider, config: BuilderConfig) -> Result<Self> {
-        Ok(Self { ru_provider, config })
-    }
-
-    /// Takes a cancellation channel `cancel`, a stream of bundles `inbound`, and an evaluator function `eval`
-    /// and listens for incoming bundles to simulate and ingest them into an in progress block.
-    /// - The evaluator function is applied to incoming bundles and they are scored accordingly.
-    /// - The best scored bundles are assembled into a block candidate.
-    /// - The best block candidate is returned when cancel is received.
-    pub async fn run_simulation<'a, F, Db: Database + DatabaseCommit>(
-        &self,
-        mut deadline: Duration,
-        inbound_bundles: &mut mpsc::UnboundedReceiver<Bundle>,
-        inbound_txs: &mut mpsc::UnboundedReceiver<TxEnvelope>,
-        eval: F,
-    ) -> Result<InProgressBlock>
-    where
-        F: Fn(&trevm::EvmNeedsBlock<'a, (), Db>, &trevm::EvmNeedsBlock<'a, (), Db>) -> U256
-            + Send
-            + 'static,
-    {
-        // Instantiate chain state at latest with trevm
-        let db = self.get_latest_db().await?;
-        let mut extractor = create_extractor::<SimulatorDatabase>();
-        let current_state = extractor.trevm(db);
-
-        let cancel = tokio::time::sleep(deadline);
-        tokio::pin!(cancel);
-
-        let mut included_bundles: Vec<Bundle> = Vec::new();
-        let mut candidate_bundles: Vec<Bundle> = Vec::new();
-
-        loop {
-            select! {
-                // Handle cancellation
-                _ = &mut cancel => {
-                    let mut final_block: InProgressBlock = InProgressBlock::new();
-
-                    // loop through bundles in block and ingest them
-                    for bundle in included_bundles {
-                        final_block.ingest_bundle(bundle);
-                    }
-                    return Ok(final_block)
-                },
-                // Handle bundle receive
-                Some(bundle) = inbound_bundles.recv() => {
-                    if included_bundles.contains(&bundle) {
-                        // TODO: check if this is a replacement (same id, diff bundle contents)
-                        // if it's a replacement, remove it from included_bundles, and allow it to be added back to candidate_bundles
-                        // if it's NOT a replacement (same id, same bundle contents), leave it in included_bundles
-                        todo!("handle replacement");
-                    }
-                    // remove any candidate bundles with the same uuid
-                    candidate_bundles.retain(|b| b.id != bundle.id);
-                    // push the new bundle
-                    candidate_bundles.push(bundle);
-                },
-                Some(tx) = inbound_txs.recv() => {
-                    // transform the tx into a bundle
-                    // TODO: do we really want to do this?
-                    // should we actually write simulator logic that handles txs differently?
-                    let bundle = Bundle::from(tx);
-                    // ensure the bundle is not already included or in the candidate bundles
-                    if included_bundles.contains(&bundle) {
-                        // TODO: check if this is a replacement (same id, diff bundle contents)
-                        // if it's a replacement, remove it from included_bundles, and allow it to be added back to candidate_bundles
-                        // if it's NOT a replacement (same id, same bundle contents), leave it in included_bundles
-                        todo!("handle replacement");
-                    }
-                    // remove any candidate bundles with the same uuid
-                    candidate_bundles.retain(|b| b.id != bundle.id);
-                    // push the new bundle
-                    candidate_bundles.push(bundle);
-                },
-                Some(best_bundle) = self.sim_and_eval_in_parallel(&current_state, &candidate_bundles) => {
-                    // add the best bundle into the block
-                    included_bundles.push(best_bundle.bundle.clone());
-                    // remove it from candidate bundles
-                    candidate_bundles.retain(|b| b.id != best_bundle.bundle.id);
-                    // update the resulting state, so next evaluation runs against new state
-                    // TODO
-                    // current_state = best_bundle.resultant_state;
-                }
-            }
-        }
-    }
-
-    async fn sim_and_eval_in_parallel<Db: Database + DatabaseCommit>(
-        &self,
-        current_state: trevm::EvmNeedsBlock<'static, (), Db>,
-        bundles: &Vec<Bundle>,
-    ) -> Option<SimAndEvalResult<(), Db>> {
-        // Simulate and evaluate bundles in parallel
-        let mut best_result: Option<SimAndEvalResult<(), Db>> = None;
-
-        for bundle in bundles {
-            let block = bundle.bundle.bundle.txs.clone();
-            let bz: Vec<u8> = block.into_iter().flat_map(|b| b.to_vec()).collect();
-
-            let mut driver = create_extractor::<SimulatorDatabase>().extract(&bz);
-
-            let result = current_state.drive_block(&mut driver);
-
-            match result {
-                Ok(updated_state) => {
-                    let score = evaluator(&current_state, &updated_state);
-                    if best_result.is_none()
-                        || best_result.is_some() && score > best_result.as_ref().unwrap().score
-                    {
-                        best_result = Some(SimAndEvalResult {
-                            bundle,
-                            score,
-                            resultant_state: updated_state,
-                        });
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(err = ?err, "failed to simulate bundle");
-                    continue;
-                }
-            }
-        }
-
-        best_result
+        Ok(Self { ru_provider, config, _marker: PhantomData })
     }
 
     /// Returns a prepared Simulator database out of the ru_provider at the latest block number
-    pub async fn get_latest_db(&self) -> eyre::Result<SimulatorDatabase> {
+    pub async fn get_latest_db(&'a self) -> eyre::Result<SimulatorDatabase> {
         let latest = self.ru_provider.clone().get_block_number().await?;
         if let Some(db) = AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest)) {
             Ok(CacheDB::new(db))
@@ -183,53 +189,51 @@ impl Simulator {
     /// blocks for later submission to the network.
     pub async fn spawn(
         self,
-        mut inbound_bundles: mpsc::UnboundedReceiver<Bundle>,
-        mut inbound_txs: mpsc::UnboundedReceiver<TxEnvelope>,
+        mut inbound_bundles: mpsc::UnboundedReceiver<Arc<Bundle>>,
+        mut inbound_txs: mpsc::UnboundedReceiver<Arc<TxEnvelope>>,
         submit_channel: mpsc::UnboundedSender<InProgressBlock>,
     ) -> JoinHandle<()> {
         let jh = tokio::spawn(async move {
             let timer = Timer::new(self.config.clone());
 
+            let candidate_block: Option<InProgressBlock> = None;
+
             loop {
-                // Block building loop
-                // TODO: Trevm DB instantiation must respect block timing
+                // Kick off simulation with given deadline
                 let next_target_slot = timer.clone().secs_to_next_target();
                 let deadline = Duration::from_secs(next_target_slot);
+                let sleep = tokio::time::sleep(deadline);
+                tokio::pin!(sleep);
 
-                // Kick off simulation with given deadline
+                // Wait for the best block to be found within the given deadline
                 tracing::info!(deadline = ?deadline, "starting simulation");
-                // TODO: Handles last known best block in simulation loop
-                // let mut last_known_good: Option<InProgressBlock> = None;
-                // let mut candidate_block = InProgressBlock::default();
-                todo!()
+                select! {
+                    biased;
+                    _ = &mut sleep => {
+                        // TODO: send best candidate block on submit channel
+                        break;
+                    },
+                    // Listen for incoming transactions
+                    tx = inbound_txs.recv() => {
+                        if let Some(tx) = tx {
+                            tracing::debug!(tx = ?tx, "tx received");
+                        }
+                    }
+                    // Listen for incoming bundles
+                    bundle = inbound_bundles.recv() => {
+                        if let Some(bundle) = bundle {
+                            tracing::debug!(bundle = ?bundle, "bundle received");
+                        }
+                    }
+                }
             }
         });
         jh
     }
-
-    /// Builds a block by receiving and simulating bundles and transactions within the given deadline
-    /// and then returning the latest candidate block that has been successfully simulated
-    pub async fn build_block(
-        self,
-        deadline: Duration,
-        inbound_bundles: &mut mpsc::UnboundedReceiver<Bundle>,
-        inbound_txs: &mut mpsc::UnboundedReceiver<TxEnvelope>,
-    ) -> InProgressBlock {
-        let result = self
-            .run_simulation(deadline, inbound_bundles, inbound_txs, evaluator::<SimulatorDatabase>)
-            .await;
-        match result {
-            Ok(finalized) => finalized,
-            Err(_) => InProgressBlock::default(),
-        }
-    }
 }
 
 /// Evaluates the value of a bundle and returns its score for sorting purposes
-fn evaluator<Db: Database + DatabaseCommit>(
-    prev: &EvmNeedsBlock<'static, (), Db>,
-    proposed: &EvmNeedsBlock<'static, (), Db>,
-) -> U256 {
+fn evaluator<Db: Database + DatabaseCommit>(proposed: &EvmNeedsBlock<'static, (), Db>) -> U256 {
     // Implement the evaluation logic here
     todo!()
 }
