@@ -16,7 +16,7 @@ use alloy::{
     transports::TransportError,
 };
 use eyre::{bail, eyre};
-use metrics::{counter, histogram};
+use init4_bin_base::deps::metrics::{counter, histogram};
 use oauth2::TokenResponse;
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};

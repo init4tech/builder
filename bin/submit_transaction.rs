@@ -7,18 +7,16 @@ use alloy::{
 };
 use aws_config::BehaviorVersion;
 use builder::config::{load_address, load_string, load_u64, load_url, Provider};
-use metrics::counter;
-use metrics::histogram;
-use metrics_exporter_prometheus::PrometheusBuilder;
+use init4_bin_base::{
+    deps::metrics::{counter, histogram},
+    init4,
+};
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::try_init().unwrap();
-
-    tracing::trace!("installing metrics collector");
-    PrometheusBuilder::new().install().expect("failed to install prometheus exporter");
+    init4();
 
     tracing::trace!("connecting to provider");
     let (provider, recipient_address, sleep_time) = connect_from_config().await;

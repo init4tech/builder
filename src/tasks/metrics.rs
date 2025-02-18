@@ -1,6 +1,6 @@
 use crate::config::Provider;
 use alloy::{primitives::TxHash, providers::Provider as _};
-use metrics::{counter, histogram};
+use init4_bin_base::deps::metrics::{counter, histogram};
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error};
