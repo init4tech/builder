@@ -116,16 +116,22 @@ impl InProgressBlock {
     }
 }
 
-/// BlockBuilder is a task that periodically builds a block then sends it for signing and submission.
+/// BlockBuilder is a task that periodically builds a block then sends it for
+/// signing and submission.
+#[derive(Debug)]
 pub struct BlockBuilder {
+    /// Configuration.
     pub config: BuilderConfig,
+    /// A provider that cannot sign transactions.
     pub ru_provider: WalletlessProvider,
+    /// A poller for fetching transactions.
     pub tx_poller: TxPoller,
+    /// A poller for fetching bundles.
     pub bundle_poller: BundlePoller,
 }
 
 impl BlockBuilder {
-    // create a new block builder with the given config.
+    /// Create a new block builder with the given config.
     pub fn new(
         config: &BuilderConfig,
         authenticator: Authenticator,
@@ -139,7 +145,8 @@ impl BlockBuilder {
         }
     }
 
-    /// Fetches transactions from the cache and ingests them into the in progress block
+    /// Fetches transactions from the cache and ingests them into the in
+    /// progress block
     async fn get_transactions(&mut self, in_progress: &mut InProgressBlock) {
         trace!("query transactions from cache");
         let txns = self.tx_poller.check_tx_cache().await;

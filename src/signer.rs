@@ -8,10 +8,13 @@ use aws_config::BehaviorVersion;
 /// Abstraction over local signer or
 #[derive(Debug, Clone)]
 pub enum LocalOrAws {
+    /// Local signer
     Local(PrivateKeySigner),
+    /// AWS signer
     Aws(AwsSigner),
 }
 
+/// Error during signing
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
     /// Error during [`AwsSigner`] instantiation
