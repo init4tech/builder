@@ -18,6 +18,7 @@ type Token = StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
 /// Readers are guaranteed to not read stale tokens as the [RwLock] guarantees that write tasks (refreshing the token) will claim priority over read access.
 #[derive(Debug, Clone)]
 pub struct Authenticator {
+    /// Configuration
     pub config: BuilderConfig,
     inner: Arc<RwLock<AuthenticatorInner>>,
 }
@@ -26,6 +27,7 @@ pub struct Authenticator {
 /// Contains the token that is being used for authentication.
 #[derive(Debug)]
 pub struct AuthenticatorInner {
+    /// The token
     pub token: Option<Token>,
 }
 
@@ -36,7 +38,8 @@ impl Default for AuthenticatorInner {
 }
 
 impl AuthenticatorInner {
-    pub fn new() -> Self {
+    /// Creates a new AuthenticatorInner with no token set.
+    pub const fn new() -> Self {
         Self { token: None }
     }
 }
@@ -140,7 +143,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    pub fn setup_test_config() -> Result<BuilderConfig> {
+    fn setup_test_config() -> Result<BuilderConfig> {
         let config = BuilderConfig {
             host_chain_id: 17000,
             ru_chain_id: 17001,

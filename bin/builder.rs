@@ -6,21 +6,19 @@ use builder::tasks::block::BlockBuilder;
 use builder::tasks::metrics::MetricsTask;
 use builder::tasks::oauth::Authenticator;
 use builder::tasks::submit::SubmitTask;
-use metrics_exporter_prometheus::PrometheusBuilder;
 
 use tokio::select;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    tracing_subscriber::fmt::try_init().unwrap();
+    let _guard = init4_bin_base::init4();
+
     let span = tracing::info_span!("zenith-builder");
 
     let config = BuilderConfig::load_from_env()?.clone();
     let host_provider = config.connect_host_provider().await?;
     let ru_provider = config.connect_ru_provider().await?;
     let authenticator = Authenticator::new(&config);
-
-    PrometheusBuilder::new().install().expect("failed to install prometheus exporter");
 
     tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
 

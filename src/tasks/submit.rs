@@ -16,7 +16,7 @@ use alloy::{
     transports::TransportError,
 };
 use eyre::{bail, eyre};
-use metrics::{counter, histogram};
+use init4_bin_base::deps::metrics::{counter, histogram};
 use oauth2::TokenResponse;
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -43,13 +43,19 @@ macro_rules! spawn_provider_send {
 
 use super::oauth::Authenticator;
 
+/// Control flow for transaction submission.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ControlFlow {
+    /// Retry
     Retry,
+    /// Skip
     Skip,
+    /// Succesfully submitted
     Done,
 }
 
 /// Submits sidecars in ethereum txns to mainnet ethereum
+#[derive(Debug, Clone)]
 pub struct SubmitTask {
     /// Ethereum Provider
     pub host_provider: Provider,
@@ -63,7 +69,7 @@ pub struct SubmitTask {
     pub config: crate::config::BuilderConfig,
     /// Authenticator
     pub authenticator: Authenticator,
-    // Channel over which to send pending transactions
+    /// Channel over which to send pending transactions
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 

@@ -22,10 +22,11 @@ name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
+init4-bin-base = "0.1.0"
+
 zenith-types = "0.13"
 
 alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
-alloy-rlp = { version = "0.3.4" }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
@@ -41,13 +42,9 @@ axum = "0.7.5"
 eyre = "0.6.12"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.11.24", features = ["blocking", "json"] }
-ruint = "1.12.1"
 serde_json = "1.0"
 thiserror = "1.0.68"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
-tracing-subscriber = "0.3.18"
 
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
-metrics = "0.24.1"
-metrics-exporter-prometheus = "0.16.0"

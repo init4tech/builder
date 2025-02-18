@@ -10,22 +10,31 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use zenith_types::ZenithEthBundle;
 
+/// A bundle response from the tx-pool endpoint, containing a UUID and a
+/// [`ZenithEthBundle`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
+    /// The bundle id (a UUID)
     pub id: String,
+    /// The bundle itself
     pub bundle: ZenithEthBundle,
 }
 
 /// Response from the tx-pool containing a list of bundles.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxPoolBundleResponse {
+    /// the list of bundles
     pub bundles: Vec<Bundle>,
 }
 
 /// The BundlePoller polls the tx-pool for bundles and manages the seen bundles.
+#[derive(Debug)]
 pub struct BundlePoller {
+    /// Configuration
     pub config: BuilderConfig,
+    /// [`Authenticator`] for fetching OAuth tokens
     pub authenticator: Authenticator,
+    /// Already seen bundle UUIDs
     pub seen_uuids: HashMap<String, Instant>,
 }
 

@@ -6,16 +6,18 @@ use serde_json::from_slice;
 
 pub use crate::config::BuilderConfig;
 
+/// Response from the tx-pool endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxPoolResponse {
     transactions: Vec<TxEnvelope>,
 }
 
 /// Implements a poller for the block builder to pull transactions from the transaction pool.
+#[derive(Debug)]
 pub struct TxPoller {
-    // config for the builder
+    /// config for the builder
     pub config: BuilderConfig,
-    // Reqwest client for fetching transactions from the tx-pool
+    /// Reqwest client for fetching transactions from the tx-pool
     pub client: Client,
 }
 

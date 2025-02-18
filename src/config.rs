@@ -95,6 +95,7 @@ pub struct BuilderConfig {
     pub oauth_token_refresh_interval: u64,
 }
 
+/// Error loading the configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// Error loading from environment variable
@@ -148,7 +149,11 @@ pub type WalletlessProvider = FillProvider<
     BoxTransport,
     Ethereum,
 >;
-pub type ZenithInstance = Zenith::ZenithInstance<BoxTransport, Provider, alloy::network::Ethereum>;
+
+/// A Zenith contract instance, using some provider `P` (defaults to
+/// [`Provider`]).
+pub type ZenithInstance<P = Provider> =
+    Zenith::ZenithInstance<BoxTransport, P, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
@@ -187,10 +192,12 @@ impl BuilderConfig {
         })
     }
 
+    /// Connect to the Builder signer.
     pub async fn connect_builder_signer(&self) -> Result<LocalOrAws, ConfigError> {
         LocalOrAws::load(&self.builder_key, Some(self.host_chain_id)).await.map_err(Into::into)
     }
 
+    /// Connect to the Sequencer signer.
     pub async fn connect_sequencer_signer(&self) -> Result<Option<LocalOrAws>, ConfigError> {
         match &self.sequencer_key {
             Some(sequencer_key) => LocalOrAws::load(sequencer_key, Some(self.host_chain_id))
@@ -221,6 +228,7 @@ impl BuilderConfig {
             .map_err(Into::into)
     }
 
+    /// Connect additional broadcast providers.
     pub async fn connect_additional_broadcast(
         &self,
     ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
@@ -233,33 +241,41 @@ impl BuilderConfig {
         Ok(providers)
     }
 
-    pub fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
+    /// Connect to the Zenith instance, using the specified provider.
+    pub const fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
     }
 }
 
+/// Load a string from an environment variable.
 pub fn load_string(key: &str) -> Result<String, ConfigError> {
     env::var(key).map_err(|_| ConfigError::missing(key))
 }
 
+/// Load a string from an environment variable, returning None if the variable
+/// is not set.
 fn load_string_option(key: &str) -> Option<String> {
     load_string(key).ok()
 }
 
+/// Load a boolean from an environment variable.
 pub fn load_u64(key: &str) -> Result<u64, ConfigError> {
     let val = load_string(key)?;
     val.parse::<u64>().map_err(Into::into)
 }
 
+/// Load a u16 from an environment variable.
 fn load_u16(key: &str) -> Result<u16, ConfigError> {
     let val = load_string(key)?;
     val.parse::<u16>().map_err(Into::into)
 }
 
+/// Load a URL from an environment variable.
 pub fn load_url(key: &str) -> Result<Cow<'static, str>, ConfigError> {
     load_string(key).map(Into::into)
 }
 
+/// Load an address from an environment variable.
 pub fn load_address(key: &str) -> Result<Address, ConfigError> {
     let address = load_string(key)?;
     Address::from_str(&address).map_err(Into::into)
