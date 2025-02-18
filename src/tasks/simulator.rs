@@ -81,6 +81,7 @@ where
     // If none, then simulation is over.
     let evm = evm.upgrade()?;
     println!("evm upgraded");
+
     // If none, tx can be skipped
     let tx = tx.upgrade()?;
     println!("tx upgraded");
@@ -133,7 +134,10 @@ where
             loop {
                 tokio::select! {
                     biased;
-                    _ = &mut sleep => break,
+                    _ = &mut sleep => {
+                        println!("simulation deadline exceeded");
+                        break
+                    },
                     tx = inbound_tx.recv() => {
                         let tx = match tx {
                             Some(tx) => tx,
@@ -176,17 +180,21 @@ impl<Db, Ext> SimulatorFactory<Db, Ext> {
     }
 }
 
+// Wraps a Db into an EvmFactory compatible [`Database`]
 impl<'a, Db, Ext> DbConnect<'a> for SimulatorFactory<Db, Ext>
 where
     Db: Database + DatabaseRef + DatabaseCommit + Clone + Sync,
     Ext: Sync,
 {
-    type Database = ConcurrentState<CacheDB<InMemoryDB>>;
+    type Database = ConcurrentState<CacheDB<Db>>;
     type Error = Infallible;
 
     fn connect(&'a self) -> Result<Self::Database, Self::Error> {
-        println!("db connect called");
-        todo!()
+        println!("connect - function called");
+        let cache: CacheDB<Db>= CacheDB::new(self.db.clone());
+        let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
+        println!("connect - concurrent db created");
+        Ok(concurrent_db)
     }
 }
 
@@ -198,11 +206,14 @@ where
     type Ext = ();
 
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
-        let empty_db = EmptyDBTyped::default();
-        let inner_cache = CacheDB::new(empty_db);
-        let outer_cache = CacheDB::new(inner_cache);
-        let concurrent_db = ConcurrentState::new(outer_cache, ConcurrentStateInfo::default());
+        println!("create - function called");
+        // let db = InMemoryDB::new(EmptyDBTyped::new());
+        // let cache = CacheDB::new(db);
+        let cache = CacheDB::new(self.db.clone());
+        let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
+        println!("create - cloned database");
         let t = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
+        println!("create - trevm created {:?}", t);
         Ok(t)
     }
 }

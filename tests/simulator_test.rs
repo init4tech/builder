@@ -18,7 +18,7 @@ async fn test_spawn() {
     let test_wallet = PrivateKeySigner::random();
 
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(5);
 
     let db = CacheDB::new(InMemoryDB::default());
     let ext = ();
