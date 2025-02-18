@@ -39,7 +39,7 @@ impl Default for AuthenticatorInner {
 
 impl AuthenticatorInner {
     /// Creates a new AuthenticatorInner with no token set.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { token: None }
     }
 }

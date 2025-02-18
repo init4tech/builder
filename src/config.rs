@@ -242,7 +242,7 @@ impl BuilderConfig {
     }
 
     /// Connect to the Zenith instance, using the specified provider.
-    pub fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
+    pub const fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
     }
 }

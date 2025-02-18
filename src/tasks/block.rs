@@ -28,7 +28,7 @@ pub struct InProgressBlock {
 
 impl InProgressBlock {
     /// Create a new `InProgressBlock`
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { transactions: Vec::new(), raw_encoding: OnceLock::new(), hash: OnceLock::new() }
     }
 
