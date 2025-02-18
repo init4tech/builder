@@ -22,6 +22,8 @@ name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
+init4-bin-base = "0.1.0"
+
 zenith-types = "0.13"
 
 alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
