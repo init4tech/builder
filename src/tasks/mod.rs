@@ -4,3 +4,4 @@ pub mod metrics;
 pub mod oauth;
 pub mod submit;
 pub mod tx_poller;
+pub mod simulator;
