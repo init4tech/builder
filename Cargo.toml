@@ -52,4 +52,4 @@ oauth2 = "4.4.2"
 metrics = "0.24.1"
 metrics-exporter-prometheus = "0.16.0"
 trevm = "0.19.3"
-revm = "19.5.0"
+revm = { version = "19.4.0", features = [ "alloydb" ]} 

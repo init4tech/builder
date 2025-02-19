@@ -1,8 +1,6 @@
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
-use revm::db::EmptyDBTyped;
-use revm::{DatabaseRef, InMemoryDB};
-use revm::db::CacheDB;
+use revm::{db::CacheDB, DatabaseRef};
 use trevm::db::ConcurrentStateInfo;
 use std::{
     convert::Infallible,
@@ -207,10 +205,8 @@ where
 
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
         println!("create - function called");
-        // let db = InMemoryDB::new(EmptyDBTyped::new());
-        // let cache = CacheDB::new(db);
         let cache = CacheDB::new(self.db.clone());
-        let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
+        let concurrent_db: ConcurrentState<CacheDB<Db>> = ConcurrentState::new(cache, ConcurrentStateInfo::default());
         println!("create - cloned database");
         let t = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
         println!("create - trevm created {:?}", t);
@@ -273,7 +269,7 @@ pub struct SimTxEnvelope(pub TxEnvelope);
 
 impl Tx for SimTxEnvelope {
     fn fill_tx_env(&self, tx_env: &mut revm::primitives::TxEnv) {
-        println!("fillng tx env {:?}", tx_env);
+        println!("fillng tx env {:?}", tx_env); // Possible cause 
         let revm::primitives::TxEnv { ..  } = tx_env;
     }
 }

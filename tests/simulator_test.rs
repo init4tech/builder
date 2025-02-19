@@ -1,29 +1,42 @@
-use std::str::FromStr;
-use std::sync::Arc;
 use alloy::consensus::{SignableTransaction as _, TxEip1559, TxEnvelope};
+use alloy::eips::BlockId;
+use alloy::primitives::U256;
+use alloy::providers::{Provider, ProviderBuilder};
+use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
 use builder::tasks::simulator::{EvmPool, SimTxEnvelope, SimulatorFactory};
-use revm::db::CacheDB;
+use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
-use revm::InMemoryDB;
+use std::str::FromStr;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
-use alloy::primitives::U256;
-use trevm::{NoopBlock, NoopCfg};
 use trevm::revm::primitives::ResultAndState;
+use trevm::{NoopBlock, NoopCfg};
 
 #[tokio::test]
 async fn test_spawn() {
+    // Create test identity
     let test_wallet = PrivateKeySigner::random();
 
+    // Plumb the transaction pipeline
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
     let deadline = Instant::now() + Duration::from_secs(5);
 
-    let db = CacheDB::new(InMemoryDB::default());
+    // Create an RPC provider for a data source
+    let url = "https://eth.merkle.io".parse().unwrap();
+    let rpc_client = RpcClient::new_http(url);
+    let root_provider = ProviderBuilder::new().on_client(rpc_client.clone());
+
+    // TODO: Add a sanity check that the root_provider has real access and block numbers
+
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let latest = root_provider.get_block_number().await.unwrap();
+    let alloy_db = Arc::new(AlloyDB::with_runtime(root_provider.clone(), BlockId::from(latest), runtime));
     let ext = ();
 
-    let evm_factory = SimulatorFactory::new(db, ext);
+    let evm_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
     let evm_pool = EvmPool::new(evm_factory, NoopCfg, NoopBlock);
 
     // Start the evm pool
@@ -54,9 +67,7 @@ fn new_test_tx(wallet: &PrivateKeySigner) -> eyre::Result<TxEnvelope> {
         chain_id: 17001,
         nonce: 1,
         gas_limit: 50000,
-        to: TxKind::Call(
-            Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
-        ),
+        to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value: U256::from(1_f64),
         input: alloy::primitives::bytes!(""),
         ..Default::default()
