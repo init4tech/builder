@@ -12,7 +12,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
-use trevm::revm::primitives::ResultAndState;
+use trevm::revm::primitives::{Account, ExecutionResult, ResultAndState};
 use trevm::{NoopBlock, NoopCfg};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -56,11 +56,23 @@ async fn test_spawn() {
 
     // Check the result
     assert!(best.is_some());
-    assert_eq!(best.unwrap().score, U256::from(1));
+    assert_eq!(best.unwrap().score, U256::from(0));
 }
 
-fn mock_evaluator(_state: &ResultAndState) -> U256 {
-    U256::from(1)
+fn mock_evaluator(state: &ResultAndState) -> U256 {
+    // log the transaction results
+    match &state.result {
+        ExecutionResult::Success { .. } => println!("Execution was successful."),
+        ExecutionResult::Revert { .. } => println!("Execution reverted."),
+        ExecutionResult::Halt { .. } => println!("Execution halted."),
+    }
+
+    // return the target account balance
+    let target_addr = Address::from_str("0x0000000000000000000000000000000000000000").unwrap();
+    let default_account = Account::default();
+    let target_account = state.state.get(&target_addr).unwrap_or(&default_account);
+    println!("target account balance: {:?}", target_account.info.balance);
+    target_account.info.balance
 }
 
 // Returns a new signed test transaction with default values

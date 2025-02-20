@@ -139,7 +139,10 @@ where
                     }
                     Some(Ok(Some(candidate))) = futs.join_next() => {
                         println!("candidate used gas: {:?}", candidate.result.result.gas_used());
-                        if candidate.score > best.as_ref().map(|b| b.score).unwrap_or_default() {
+                        // TODO: think about equality statement here. 
+                        // if using ">" then no candidate will be returned if every score is zero
+                        // if using ">=" then the candidate will be replaced every time if every score is zero 
+                        if candidate.score >= best.as_ref().map(|b| b.score).unwrap_or_default() {
                             best = Some(candidate);
                         }
                     }
