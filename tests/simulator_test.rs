@@ -15,25 +15,27 @@ use tokio::time::{Duration, Instant};
 use trevm::revm::primitives::ResultAndState;
 use trevm::{NoopBlock, NoopCfg};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
     // Create test identity
     let test_wallet = PrivateKeySigner::random();
 
     // Plumb the transaction pipeline
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(2);
 
-    // Create an RPC provider for a data source
-    let url = "https://eth.merkle.io".parse().unwrap();
-    let rpc_client = RpcClient::new_http(url);
-    let root_provider = ProviderBuilder::new().on_client(rpc_client.clone());
+    // Create an RPC provider from the rollup
+    let url = "https://rpc.havarti.signet.sh ".parse().unwrap();
+    let root_provider = ProviderBuilder::new().on_client(RpcClient::new_http(url));
+    
+    let block_number = root_provider.get_block_number().await.unwrap();
+    println!("block number {}", block_number);
 
-    // TODO: Add a sanity check that the root_provider has real access and block numbers
-
-    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
     let latest = root_provider.get_block_number().await.unwrap();
-    let alloy_db = Arc::new(AlloyDB::with_runtime(root_provider.clone(), BlockId::from(latest), runtime));
+
+    let db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
+    let alloy_db = Arc::new(db);
+
     let ext = ();
 
     let evm_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
@@ -45,7 +47,7 @@ async fn test_spawn() {
     // Send some transactions
     for _ in 0..5 {
         let test_tx = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
-        println!("sending tx in {:?}", test_tx.0);
+        println!("dispatching tx {:?}", test_tx.0);
         tx_sender.send(test_tx).unwrap();
     }
 

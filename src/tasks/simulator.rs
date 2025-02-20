@@ -15,9 +15,6 @@ use trevm::{
     BlockDriver, DbConnect, NoopBlock, NoopCfg, TrevmBuilder,
 };
 
-/// Defines the SimulatorDatabase type for ease of use and clarity
-// pub type SimulatorDatabase = ConcurrentState<CacheDB<InMemoryDB>>;
-
 /// Evm context inner
 #[derive(Debug, Clone)]
 pub struct EvmCtxInner<Ef, C, B> {
@@ -64,7 +61,7 @@ where
 
 fn eval_fn<Ef, C, B, T, F>(
     evm: Weak<EvmCtxInner<Ef, C, B>>,
-    tx: Weak<T>,
+    tx: Arc<T>,
     evaluator: F,
 ) -> Option<Best<T>>
 where
@@ -80,16 +77,8 @@ where
     let evm = evm.upgrade()?;
     println!("evm upgraded");
 
-    // If none, tx can be skipped
-    let tx = tx.upgrade()?;
-    println!("tx upgraded");
-
     // If none, then tx errored, and can be skipped.
     let result = evm.evm_factory.run(&evm.cfg, &evm.block, tx.as_ref()).ok()?;
-    // Best never comes back because run never returns. Why not? 
-
-    // TODO: Result is never returning - but eval_fn is definitely running. 
-    // So what is happening? 
     println!("result: {:?}", &result); 
 
     let score = evaluator(&result);
@@ -144,10 +133,9 @@ where
 
                         println!("receiving transaction");
 
-                        let weak_tx = Arc::downgrade(&tx);
                         let evm = self.weak_evm();
                         let eval = evaluator.clone();
-                        futs.spawn_blocking(|| eval_fn(evm, weak_tx, eval));
+                        futs.spawn_blocking(|| eval_fn(evm, tx, eval));
                     }
                     Some(Ok(Some(candidate))) = futs.join_next() => {
                         println!("candidate used gas: {:?}", candidate.result.result.gas_used());
