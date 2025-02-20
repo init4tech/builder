@@ -1,12 +1,12 @@
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use revm::{db::CacheDB, DatabaseRef};
-use trevm::db::ConcurrentStateInfo;
 use std::{
     convert::Infallible,
     sync::{Arc, Weak},
 };
 use tokio::{sync::mpsc::UnboundedReceiver, task::JoinSet};
+use trevm::db::ConcurrentStateInfo;
 use trevm::{
     self, db::ConcurrentState, revm::primitives::ResultAndState, Block, Cfg, EvmFactory, Tx,
 };
@@ -72,14 +72,14 @@ where
     F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
 {
     println!("eval_fn running - evm: {:?}", evm);
-    
+
     // If none, then simulation is over.
     let evm = evm.upgrade()?;
     println!("evm upgraded");
 
     // If none, then tx errored, and can be skipped.
     let result = evm.evm_factory.run(&evm.cfg, &evm.block, tx.as_ref()).ok()?;
-    println!("result: {:?}", &result); 
+    println!("result: {:?}", &result);
 
     let score = evaluator(&result);
     println!("score: {}", score);
@@ -177,7 +177,7 @@ where
 
     fn connect(&'a self) -> Result<Self::Database, Self::Error> {
         println!("connect - function called");
-        let cache: CacheDB<Db>= CacheDB::new(self.db.clone());
+        let cache: CacheDB<Db> = CacheDB::new(self.db.clone());
         let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
         println!("connect - concurrent db created");
         Ok(concurrent_db)
@@ -194,7 +194,8 @@ where
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
         println!("create - function called");
         let cache = CacheDB::new(self.db.clone());
-        let concurrent_db: ConcurrentState<CacheDB<Db>> = ConcurrentState::new(cache, ConcurrentStateInfo::default());
+        let concurrent_db: ConcurrentState<CacheDB<Db>> =
+            ConcurrentState::new(cache, ConcurrentStateInfo::default());
         println!("create - cloned database");
         let t = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
         println!("create - trevm created {:?}", t);
@@ -257,8 +258,8 @@ pub struct SimTxEnvelope(pub TxEnvelope);
 
 impl Tx for SimTxEnvelope {
     fn fill_tx_env(&self, tx_env: &mut revm::primitives::TxEnv) {
-        println!("fillng tx env {:?}", tx_env); // Possible cause 
-        let revm::primitives::TxEnv { ..  } = tx_env;
+        println!("fillng tx env {:?}", tx_env); // Possible cause
+        let revm::primitives::TxEnv { .. } = tx_env;
     }
 }
 

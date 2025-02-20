@@ -27,7 +27,7 @@ async fn test_spawn() {
     // Create an RPC provider from the rollup
     let url = "https://rpc.havarti.signet.sh ".parse().unwrap();
     let root_provider = ProviderBuilder::new().on_client(RpcClient::new_http(url));
-    
+
     let block_number = root_provider.get_block_number().await.unwrap();
     println!("block number {}", block_number);
 
