@@ -24,15 +24,15 @@ RUN apt-get update && apt-get -y upgrade && apt-get install -y gcc libclang-dev 
 RUN rustup target add x86_64-unknown-linux-gnu 
 RUN rustup toolchain install stable-x86_64-unknown-linux-gnu
 
-RUN --mount=type=ssh cargo chef cook --release --target x86_64-unknown-linux-gnu --recipe-path recipe.json --bin zenith-builder-example 
+RUN --mount=type=ssh cargo chef cook --release --recipe-path recipe.json --bin zenith-builder-example 
 COPY --exclude=target . .
 
-RUN --mount=type=ssh cargo build --release --target x86_64-unknown-linux-gnu --bin zenith-builder-example
+RUN --mount=type=ssh cargo build --release --bin zenith-builder-example
 
 # Stage 3: Final image for running in the env
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 RUN apt-get update && apt-get -y upgrade && apt-get install -y libssl-dev ca-certificates 
 
-COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/zenith-builder-example /usr/local/bin/zenith-builder-example
+COPY --from=builder /app/target/release/zenith-builder-example /usr/local/bin/zenith-builder-example
 
 ENTRYPOINT [ "/usr/local/bin/zenith-builder-example" ]
