@@ -5,7 +5,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
-use builder::tasks::simulator::{EvmPool, SimTxEnvelope, SimulatorFactory};
+use builder::tasks::simulator::{EvmPool, SimBundle, SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
 use std::str::FromStr;
@@ -22,6 +22,8 @@ async fn test_spawn() {
 
     // Plumb the transaction pipeline
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
+    let (inbound_tx, inbound_tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
+    let (inbound_bundle, inbound_bundle_receiver) = mpsc::unbounded_channel::<Arc<SimBundle>>();
     let deadline = Instant::now() + Duration::from_secs(2);
 
     // Create an RPC provider from the rollup
@@ -29,25 +31,27 @@ async fn test_spawn() {
     let root_provider = ProviderBuilder::new().on_client(RpcClient::new_http(url));
 
     let block_number = root_provider.get_block_number().await.unwrap();
-    println!("block number {}", block_number);
+    assert_ne!(block_number, 0, "root provider is reporting block number 0");
 
     let latest = root_provider.get_block_number().await.unwrap();
+    assert!(latest > 0);
 
     let db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
     let alloy_db = Arc::new(db);
 
     let ext = ();
 
-    let evm_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
-    let evm_pool = EvmPool::new(evm_factory, NoopCfg, NoopBlock);
+    let evaluator: Arc<dyn Fn(&ResultAndState) -> U256 + Send + Sync> = Arc::new(|result| {
+        U256::from(1)
+    });
 
-    // Start the evm pool
-    let handle = evm_pool.spawn(tx_receiver, mock_evaluator, deadline);
+    let sim_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
+    sim_factory.spawn_trevm(inbound_tx_receiver, inbound_bundle_receiver, deadline);
 
     // Send some transactions
     for _ in 0..5 {
         let test_tx = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
-        println!("dispatching tx {:?}", test_tx.0);
+        tracing::debug!("dispatching tx {:?}", test_tx.0);
         tx_sender.send(test_tx).unwrap();
     }
 

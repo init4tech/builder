@@ -1,11 +1,12 @@
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
-use revm::{db::CacheDB, DatabaseRef};
+use alloy_rlp::Encodable;
+use revm::{db::CacheDB, primitives::Bytes, DatabaseRef};
 use std::{
     convert::Infallible,
     sync::{Arc, Weak},
 };
-use tokio::{sync::mpsc::UnboundedReceiver, task::JoinSet};
+use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
 use trevm::db::ConcurrentStateInfo;
 use trevm::{
     self, db::ConcurrentState, revm::primitives::ResultAndState, Block, Cfg, EvmFactory, Tx,
@@ -48,44 +49,43 @@ where
     {
         let inner = EvmCtxInner { evm_factory, cfg, block };
         let evm = EvmCtx(Arc::new(inner));
-        println!("evm factory - making new evm");
         EvmPool { evm }
     }
 
     /// Obtains a weak reference to the evm that can be upgrade to run threaded simulation
     fn weak_evm(&self) -> Weak<EvmCtxInner<Ef, C, B>> {
-        println!("obtaining weak evm");
         Arc::downgrade(&self.evm.0)
     }
 }
 
-fn eval_fn<Ef, C, B, T, F>(
-    evm: Weak<EvmCtxInner<Ef, C, B>>,
-    tx: Arc<T>,
-    evaluator: F,
-) -> Option<Best<T>>
-where
-    Ef: for<'a> EvmFactory<'a> + Send + 'static,
-    C: Cfg + 'static,
-    B: Block + 'static,
-    T: Tx + 'static,
-    F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-{
-    println!("eval_fn running - evm: {:?}", evm);
+// fn eval_fn<Ef, C, B, T, F>(
+//     evm: Weak<EvmCtxInner<Ef, C, B>>,
+//     tx: Arc<T>,
+//     evaluator: F,
+// ) -> Option<Best<T>>
+// where
+//     Ef: for<'a> EvmFactory<'a> + Send + 'static,
+//     C: Cfg + 'static,
+//     B: Block + 'static,
+//     T: Tx + 'static,
+//     F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+// {
+//     tracing::info!("eval_fn running - evm: {:?}", evm);
 
-    // If none, then simulation is over.
-    let evm = evm.upgrade()?;
-    println!("evm upgraded");
+//     // If none, then simulation is over.
+//     let evm = evm.upgrade()?;
+//     tracing::info!("evm upgraded");
 
-    // If none, then tx errored, and can be skipped.
-    let result = evm.evm_factory.run(&evm.cfg, &evm.block, tx.as_ref()).ok()?;
-    println!("result: {:?}", &result);
+//     // If none, then tx errored, and can be skipped.
+//     let result = evm.evm_factory.run(&evm.cfg, &evm.block, tx.as_ref()).ok()?;
+//     result.state.
+//     tracing::info!("result: {:?}", &result);
 
-    let score = evaluator(&result);
-    println!("score: {}", score);
+//     let score = evaluator(&result);
+//     tracing::info!("score: {}", score);
 
-    Some(Best { tx, result, score })
-}
+//     Some(Best { tx, result, score })
+// }
 
 pub struct Best<T, Score: PartialOrd + Ord = U256> {
     pub tx: Arc<T>,
@@ -93,80 +93,145 @@ pub struct Best<T, Score: PartialOrd + Ord = U256> {
     pub score: Score,
 }
 
-impl<Ef, C, B> EvmPool<Ef, C, B>
-where
-    Ef: for<'a> EvmFactory<'a> + Send + 'static,
-    C: Cfg + 'static,
-    B: Block + 'static,
-{
-    /// Spawn a task that will evaluate the best candidate from a channel of
-    /// candidates.
-    pub fn spawn<T, F>(
-        self,
-        mut inbound_tx: UnboundedReceiver<Arc<T>>,
-        evaluator: F,
-        deadline: tokio::time::Instant,
-    ) -> tokio::task::JoinHandle<Option<Best<T>>>
-    where
-        T: Tx + 'static,
-        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static + Clone,
-    {
-        tokio::spawn(async move {
-            let mut futs = JoinSet::new();
-            let sleep = tokio::time::sleep_until(deadline);
-            tokio::pin!(sleep);
+// impl<Ef, C, B> EvmPool<Ef, C, B>
+// where
+//     Ef: for<'a> EvmFactory<'a> + Send + 'static,
+//     C: Cfg + 'static,
+//     B: Block + 'static,
+// {
+//     /// Spawn a task that will evaluate the best candidate from a channel of
+//     /// candidates.
+//     pub fn spawn<T>(
+//         self,
+//         mut inbound_tx: UnboundedReceiver<Arc<T>>,
+//         evaluator: Box<dyn Fn(&ResultAndState) -> U256 + Send + Sync>,
+//         deadline: tokio::time::Instant,
+//     ) -> tokio::task::JoinHandle<Option<Best<T>>>
+//     where
+//         T: Tx + 'static,
+//     {
+//         tokio::spawn(async move {
+//             let mut futs = JoinSet::new();
+//             let sleep = tokio::time::sleep_until(deadline);
+//             tokio::pin!(sleep);
 
-            let mut best: Option<Best<T>> = None;
+//             let mut best: Option<Best<T>> = None;
 
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = &mut sleep => {
-                        println!("simulation deadline exceeded");
-                        break
-                    },
-                    tx = inbound_tx.recv() => {
-                        let tx = match tx {
-                            Some(tx) => tx,
-                            None => break,
-                        };
+//             loop {
+//                 tokio::select! {
+//                     biased;
+//                     _ = &mut sleep => {
+//                         tracing::info!("simulation deadline exceeded");
+//                         break
+//                     },
+//                     tx = inbound_tx.recv() => {
+//                         let tx = match tx {
+//                             Some(tx) => tx,
+//                             None => break,
+//                         };
 
-                        println!("receiving transaction");
+//                         tracing::info!("receiving transaction");
 
-                        let evm = self.weak_evm();
-                        let eval = evaluator.clone();
-                        futs.spawn_blocking(|| eval_fn(evm, tx, eval));
-                    }
-                    Some(Ok(Some(candidate))) = futs.join_next() => {
-                        println!("candidate used gas: {:?}", candidate.result.result.gas_used());
-                        // TODO: think about equality statement here. 
-                        // if using ">" then no candidate will be returned if every score is zero
-                        // if using ">=" then the candidate will be replaced every time if every score is zero 
-                        if candidate.score >= best.as_ref().map(|b| b.score).unwrap_or_default() {
-                            best = Some(candidate);
-                        }
-                    }
-                }
-            }
-            best
-        })
-    }
-}
+//                         let evm = self.weak_evm();
+//                         let eval = evaluator;
+//                         let eval = Arc::new(evaluator.as_ref());
+//                     }
+//                     Some(Ok(Some(candidate))) = futs.join_next() => {
+//                         tracing::info!("candidate used gas: {:?}", candidate.result.result.gas_used());
+//                         // TODO: think about equality statement here.
+//                         // if using ">" then no candidate will be returned if every score is zero
+//                         // if using ">=" then the candidate will be replaced every time if every score is zero
+//                         if candidate.score >= best.as_ref().map(|b| b.score).unwrap_or_default() {
+//                             best = Some(candidate);
+//                         }
+//                     }
+//                 }
+//             }
+//             best
+//         })
+//     }
+// }
+
+/// SimBlock wraps an array of SimBundles
+pub struct SimBlock(Vec<SimBundle>);
 
 ///
 /// Simulator Factory
 ///
 
+/// Binds a database and a simulation extension together
 #[derive(Clone)]
 pub struct SimulatorFactory<Db, Ext> {
     pub db: Db,
     pub ext: Ext,
 }
 
-impl<Db, Ext> SimulatorFactory<Db, Ext> {
+type EvalFn = Arc<dyn Fn(&ResultAndState) -> U256 + Send + Sync>;
+
+
+/// Creates a new SimulatorFactory from the given Database and Extension
+impl<Db, Ext> SimulatorFactory<Db, Ext>
+where
+    Db: Database + DatabaseRef + DatabaseCommit + Clone + Send + Sync + 'static,
+{
     pub fn new(db: Db, ext: Ext) -> Self {
         Self { db, ext }
     }
+
+    /// Spawns a trevm simulator
+    pub fn spawn_trevm<T, F>(
+        self,
+        mut inbound_tx: UnboundedReceiver<Arc<T>>,
+        mut inbound_bundle: UnboundedReceiver<Arc<SimBundle>>,
+        deadline: tokio::time::Instant,
+    ) -> tokio::task::JoinHandle<Option<Best<SimBlock>>>
+    where
+        T: Tx + Send + Sync + 'static,
+        Db: Send + Sync + 'static,
+    {
+        tokio::spawn(async move {
+            let evaluator: Arc<dyn Fn(&ResultAndState) -> U256 + Send + Sync> = Arc::new(|result| {
+                // ... your logic ...
+                U256::from(1)
+            });
+
+
+            // let mut futs = JoinSet::new();
+            let sleep = tokio::time::sleep_until(deadline);
+            tokio::pin!(sleep);
+
+            let mut best: Option<Best<SimBlock>> = None;
+
+            let mut extractor = SimulatorExtractor {
+                db: self.db.clone(),
+            };
+
+            let t = extractor.trevm(self.db);
+
+            loop {
+                select! {
+                    _ = sleep => {
+                        break;
+                    },
+                    tx = inbound_tx.recv() => {
+                        let tx = match tx {
+                            Some(tx) => tx,
+                            None => break,
+                        };
+                        let trevm = extractor.trevm();
+                        tracing::info(tx = ?tx);
+                        todo!();
+                    },
+                    b = inbound_bundle.recv() => {
+                        todo!();
+                    }
+                }
+            }
+
+            best
+        })
+    }
+
 }
 
 // Wraps a Db into an EvmFactory compatible [`Database`]
@@ -179,10 +244,9 @@ where
     type Error = Infallible;
 
     fn connect(&'a self) -> Result<Self::Database, Self::Error> {
-        println!("connect - function called");
         let cache: CacheDB<Db> = CacheDB::new(self.db.clone());
         let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
-        println!("connect - concurrent db created");
+        tracing::info!("created concurrent database");
         Ok(concurrent_db)
     }
 }
@@ -194,14 +258,11 @@ where
 {
     type Ext = ();
 
+    /// Create makes a [`ConcurrentState`] database by calling connect
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
-        println!("create - function called");
-        let cache = CacheDB::new(self.db.clone());
-        let concurrent_db: ConcurrentState<CacheDB<Db>> =
-            ConcurrentState::new(cache, ConcurrentStateInfo::default());
-        println!("create - cloned database");
+        let concurrent_db = self.connect()?;
         let t = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
-        println!("create - trevm created {:?}", t);
+        tracing::info!("created trevm");
         Ok(t)
     }
 }
@@ -224,11 +285,16 @@ pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'sta
 }
 
 /// An implementation of BlockExtractor for Simulation purposes
-pub struct SimulatorExtractor {}
+#[derive(Clone)]
+pub struct SimulatorExtractor<Db> {
+    db: Db,
+}
 
-impl<Db> BlockExtractor<(), Db> for SimulatorExtractor
+/// SimulatorExtractor implements a block extractor and trevm block driver
+/// for simulating and successively applying state updates from transactions.
+impl<Db> BlockExtractor<(), Db> for SimulatorExtractor<Db>
 where
-    Db: Database + DatabaseCommit + Send + 'static,
+    Db: Database + DatabaseCommit + Send + Sync + 'static,
 {
     type Driver = SimBundle;
 
@@ -237,6 +303,7 @@ where
     }
 
     fn extract(&mut self, bytes: &[u8]) -> Self::Driver {
+        // TODO: Should this use SimBundle instead of Vec<TxEnvelope>?
         #[allow(clippy::useless_asref)]
         let txs: Vec<TxEnvelope> =
             alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap_or_default();
@@ -244,24 +311,43 @@ where
     }
 }
 
-pub fn create_simulator_extractor<Db>() -> SimulatorExtractor
-where
-    Db: Database + DatabaseCommit + Send + 'static,
-{
-    SimulatorExtractor {}
-}
-
-///
-/// Bundle Driver
-///
-
 pub struct SimBundle(Vec<TxEnvelope>, NoopBlock);
 
 pub struct SimTxEnvelope(pub TxEnvelope);
 
+impl SimTxEnvelope {
+    /// Converts bytes into a SimTxEnvelope
+    pub fn to_tx(bytes: &[u8]) -> Option<Self> {
+        let tx: TxEnvelope = alloy_rlp::Decodable::decode(&mut bytes.as_ref()).ok()?;
+        Some(SimTxEnvelope(tx))
+    }
+
+    /// Converts a SimTxEnvelope into bytes
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.0.encode(&mut out);
+        out
+    }
+}
+
+impl From<&[u8]> for SimTxEnvelope {
+    fn from(bytes: &[u8]) -> Self {
+        let tx: TxEnvelope = alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap();
+        SimTxEnvelope(tx)
+    }
+}
+
+impl From<&SimTxEnvelope> for Vec<u8> {
+    fn from(tx: &SimTxEnvelope) -> Self {
+        let mut out = Vec::new();
+        tx.0.encode(&mut out);
+        out
+    }
+}
+
 impl Tx for SimTxEnvelope {
     fn fill_tx_env(&self, tx_env: &mut revm::primitives::TxEnv) {
-        println!("fillng tx env {:?}", tx_env); // Possible cause
+        tracing::info!("fillng tx env {:?}", tx_env); // Possible cause
         let revm::primitives::TxEnv { .. } = tx_env;
     }
 }
