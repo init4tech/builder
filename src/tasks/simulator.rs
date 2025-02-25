@@ -1,91 +1,18 @@
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use alloy_rlp::Encodable;
-use revm::{db::CacheDB, primitives::Bytes, DatabaseRef};
-use std::{
-    convert::Infallible,
-    sync::{Arc, Weak},
-};
-use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
+use revm::db::AlloyDB;
+use revm::EvmBuilder;
+use revm::{db::CacheDB, DatabaseRef};
+use std::{convert::Infallible, sync::Arc};
+use tokio::{select, sync::mpsc::UnboundedReceiver};
 use trevm::db::ConcurrentStateInfo;
-use trevm::{
-    self, db::ConcurrentState, revm::primitives::ResultAndState, Block, Cfg, EvmFactory, Tx,
-};
+use trevm::EvmNeedsBlock;
+use trevm::{self, db::ConcurrentState, revm::primitives::ResultAndState, EvmFactory, Tx};
 use trevm::{
     revm::{primitives::EVMError, Database, DatabaseCommit},
     BlockDriver, DbConnect, NoopBlock, NoopCfg, TrevmBuilder,
 };
-
-/// Evm context inner
-#[derive(Debug, Clone)]
-pub struct EvmCtxInner<Ef, C, B> {
-    evm_factory: Ef,
-    cfg: C,
-    block: B,
-}
-
-/// Evm evaluation context
-#[derive(Debug, Clone)]
-pub struct EvmCtx<Ef, C, B>(Arc<EvmCtxInner<Ef, C, B>>);
-
-/// Evm simulation pool
-#[derive(Debug, Clone)]
-pub struct EvmPool<Ef, C, B> {
-    evm: EvmCtx<Ef, C, B>,
-}
-
-impl<Ef, C, B> EvmPool<Ef, C, B>
-where
-    Ef: for<'a> EvmFactory<'a> + Send + 'static,
-    C: Cfg + 'static,
-    B: Block + 'static,
-{
-    /// Creates a new Evm Pool from the given factory and configs
-    pub fn new(evm_factory: Ef, cfg: C, block: B) -> EvmPool<Ef, C, B>
-    where
-        Ef: for<'a> EvmFactory<'a> + Send + 'static,
-        C: Cfg + 'static,
-        B: Block + 'static,
-    {
-        let inner = EvmCtxInner { evm_factory, cfg, block };
-        let evm = EvmCtx(Arc::new(inner));
-        EvmPool { evm }
-    }
-
-    /// Obtains a weak reference to the evm that can be upgrade to run threaded simulation
-    fn weak_evm(&self) -> Weak<EvmCtxInner<Ef, C, B>> {
-        Arc::downgrade(&self.evm.0)
-    }
-}
-
-// fn eval_fn<Ef, C, B, T, F>(
-//     evm: Weak<EvmCtxInner<Ef, C, B>>,
-//     tx: Arc<T>,
-//     evaluator: F,
-// ) -> Option<Best<T>>
-// where
-//     Ef: for<'a> EvmFactory<'a> + Send + 'static,
-//     C: Cfg + 'static,
-//     B: Block + 'static,
-//     T: Tx + 'static,
-//     F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-// {
-//     tracing::info!("eval_fn running - evm: {:?}", evm);
-
-//     // If none, then simulation is over.
-//     let evm = evm.upgrade()?;
-//     tracing::info!("evm upgraded");
-
-//     // If none, then tx errored, and can be skipped.
-//     let result = evm.evm_factory.run(&evm.cfg, &evm.block, tx.as_ref()).ok()?;
-//     result.state.
-//     tracing::info!("result: {:?}", &result);
-
-//     let score = evaluator(&result);
-//     tracing::info!("score: {}", score);
-
-//     Some(Best { tx, result, score })
-// }
 
 pub struct Best<T, Score: PartialOrd + Ord = U256> {
     pub tx: Arc<T>,
@@ -93,71 +20,8 @@ pub struct Best<T, Score: PartialOrd + Ord = U256> {
     pub score: Score,
 }
 
-// impl<Ef, C, B> EvmPool<Ef, C, B>
-// where
-//     Ef: for<'a> EvmFactory<'a> + Send + 'static,
-//     C: Cfg + 'static,
-//     B: Block + 'static,
-// {
-//     /// Spawn a task that will evaluate the best candidate from a channel of
-//     /// candidates.
-//     pub fn spawn<T>(
-//         self,
-//         mut inbound_tx: UnboundedReceiver<Arc<T>>,
-//         evaluator: Box<dyn Fn(&ResultAndState) -> U256 + Send + Sync>,
-//         deadline: tokio::time::Instant,
-//     ) -> tokio::task::JoinHandle<Option<Best<T>>>
-//     where
-//         T: Tx + 'static,
-//     {
-//         tokio::spawn(async move {
-//             let mut futs = JoinSet::new();
-//             let sleep = tokio::time::sleep_until(deadline);
-//             tokio::pin!(sleep);
-
-//             let mut best: Option<Best<T>> = None;
-
-//             loop {
-//                 tokio::select! {
-//                     biased;
-//                     _ = &mut sleep => {
-//                         tracing::info!("simulation deadline exceeded");
-//                         break
-//                     },
-//                     tx = inbound_tx.recv() => {
-//                         let tx = match tx {
-//                             Some(tx) => tx,
-//                             None => break,
-//                         };
-
-//                         tracing::info!("receiving transaction");
-
-//                         let evm = self.weak_evm();
-//                         let eval = evaluator;
-//                         let eval = Arc::new(evaluator.as_ref());
-//                     }
-//                     Some(Ok(Some(candidate))) = futs.join_next() => {
-//                         tracing::info!("candidate used gas: {:?}", candidate.result.result.gas_used());
-//                         // TODO: think about equality statement here.
-//                         // if using ">" then no candidate will be returned if every score is zero
-//                         // if using ">=" then the candidate will be replaced every time if every score is zero
-//                         if candidate.score >= best.as_ref().map(|b| b.score).unwrap_or_default() {
-//                             best = Some(candidate);
-//                         }
-//                     }
-//                 }
-//             }
-//             best
-//         })
-//     }
-// }
-
 /// SimBlock wraps an array of SimBundles
-pub struct SimBlock(Vec<SimBundle>);
-
-///
-/// Simulator Factory
-///
+pub struct SimBlock(pub Vec<SimBundle>);
 
 /// Binds a database and a simulation extension together
 #[derive(Clone)]
@@ -166,11 +30,7 @@ pub struct SimulatorFactory<Db, Ext> {
     pub ext: Ext,
 }
 
-type EvalFn = Arc<dyn Fn(&ResultAndState) -> U256 + Send + Sync>;
-
-
-/// Creates a new SimulatorFactory from the given Database and Extension
-impl<Db, Ext> SimulatorFactory<Db, Ext>
+impl<'a, Db, Ext> SimulatorFactory<Db, Ext>
 where
     Db: Database + DatabaseRef + DatabaseCommit + Clone + Send + Sync + 'static,
 {
@@ -179,59 +39,65 @@ where
     }
 
     /// Spawns a trevm simulator
-    pub fn spawn_trevm<T, F>(
+    pub fn spawn<T, F>(
         self,
-        mut inbound_tx: UnboundedReceiver<Arc<T>>,
+        mut inbound_tx: UnboundedReceiver<Arc<SimTxEnvelope>>,
         mut inbound_bundle: UnboundedReceiver<Arc<SimBundle>>,
+        evaluator: Arc<F>,
         deadline: tokio::time::Instant,
     ) -> tokio::task::JoinHandle<Option<Best<SimBlock>>>
     where
         T: Tx + Send + Sync + 'static,
-        Db: Send + Sync + 'static,
+        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+        Ext: Send + Sync + 'static,
+        <Db as DatabaseRef>::Error: Send,
     {
-        tokio::spawn(async move {
-            let evaluator: Arc<dyn Fn(&ResultAndState) -> U256 + Send + Sync> = Arc::new(|result| {
-                // ... your logic ...
-                U256::from(1)
-            });
-
-
-            // let mut futs = JoinSet::new();
+        let jh = tokio::spawn(async move {
+            let mut best: Option<Best<SimBlock>> = None;
             let sleep = tokio::time::sleep_until(deadline);
             tokio::pin!(sleep);
 
-            let mut best: Option<Best<SimBlock>> = None;
-
-            let mut extractor = SimulatorExtractor {
-                db: self.db.clone(),
-            };
-
-            let t = extractor.trevm(self.db);
-
             loop {
                 select! {
-                    _ = sleep => {
+                    _ = &mut sleep => {
                         break;
                     },
                     tx = inbound_tx.recv() => {
-                        let tx = match tx {
-                            Some(tx) => tx,
-                            None => break,
-                        };
-                        let trevm = extractor.trevm();
-                        tracing::info(tx = ?tx);
-                        todo!();
-                    },
-                    b = inbound_bundle.recv() => {
-                        todo!();
+                        println!("received tx");
+                        if let Some(inbound_tx) = tx {
+                            self.handle_inbound_tx(inbound_tx, evaluator.clone());
+                        } else {
+                            break;
+                        }
+                    }
+                    bundle = inbound_bundle.recv() => {
+                        println!("received bundle");
+                        if let Some(bundle) = bundle {
+                            // TODO: Wire this up with proper type
+                            // self.handle_inbound_bundle(bundle, evaluator);
+                        } else {
+                            break;
+                        }
                     }
                 }
             }
 
             best
-        })
+        });
+
+        jh
     }
 
+    /// simulates an inbound tx and applies its state if it's successfully simualted
+    pub fn handle_inbound_tx<T: Tx, F>(&self, tx: Arc<T>, evaluator: Arc<F>) {
+        println!("received tx");
+    }
+
+    /// Simulates an inbound bundle and applies its state if it's successfully simulated
+    pub fn handle_inbound_bundle<T: Tx, F>(&self, bundle: Arc<Vec<T>>, evaluator: Arc<F>) {
+        println!("received tx");
+        todo!()
+    }
 }
 
 // Wraps a Db into an EvmFactory compatible [`Database`]
@@ -246,7 +112,6 @@ where
     fn connect(&'a self) -> Result<Self::Database, Self::Error> {
         let cache: CacheDB<Db> = CacheDB::new(self.db.clone());
         let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
-        tracing::info!("created concurrent database");
         Ok(concurrent_db)
     }
 }
@@ -262,7 +127,6 @@ where
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
         let concurrent_db = self.connect()?;
         let t = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
-        tracing::info!("created trevm");
         Ok(t)
     }
 }
@@ -286,13 +150,11 @@ pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'sta
 
 /// An implementation of BlockExtractor for Simulation purposes
 #[derive(Clone)]
-pub struct SimulatorExtractor<Db> {
-    db: Db,
-}
+pub struct SimulatorExtractor {}
 
 /// SimulatorExtractor implements a block extractor and trevm block driver
 /// for simulating and successively applying state updates from transactions.
-impl<Db> BlockExtractor<(), Db> for SimulatorExtractor<Db>
+impl<Db> BlockExtractor<(), Db> for SimulatorExtractor
 where
     Db: Database + DatabaseCommit + Send + Sync + 'static,
 {
@@ -390,10 +252,6 @@ impl<Ext> BlockDriver<Ext> for SimBundle {
         Ok(())
     }
 }
-
-///
-/// Impls
-///
 
 pub struct Error<Db: Database>(EVMError<Db::Error>);
 

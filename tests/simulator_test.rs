@@ -5,15 +5,16 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
-use builder::tasks::simulator::{EvmPool, SimBundle, SimTxEnvelope, SimulatorFactory};
+use builder::tasks::simulator::{SimBundle, SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
+use revm::Database;
+use trevm::Tx;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 use trevm::revm::primitives::{Account, ExecutionResult, ResultAndState};
-use trevm::{NoopBlock, NoopCfg};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
@@ -22,8 +23,7 @@ async fn test_spawn() {
 
     // Plumb the transaction pipeline
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
-    let (inbound_tx, inbound_tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
-    let (inbound_bundle, inbound_bundle_receiver) = mpsc::unbounded_channel::<Arc<SimBundle>>();
+    let (bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Arc<SimBundle>>();
     let deadline = Instant::now() + Duration::from_secs(2);
 
     // Create an RPC provider from the rollup
@@ -41,17 +41,15 @@ async fn test_spawn() {
 
     let ext = ();
 
-    let evaluator: Arc<dyn Fn(&ResultAndState) -> U256 + Send + Sync> = Arc::new(|result| {
-        U256::from(1)
-    });
+    let evaluator = Arc::new(|_state: &ResultAndState| U256::from(1));
 
     let sim_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
-    sim_factory.spawn_trevm(inbound_tx_receiver, inbound_bundle_receiver, deadline);
+    let handle = sim_factory.spawn(tx_receiver, bundle_receiver, evaluator, deadline);
 
     // Send some transactions
     for _ in 0..5 {
         let test_tx = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
-        tracing::debug!("dispatching tx {:?}", test_tx.0);
+        println!("dispatching tx {:?}", test_tx.0);
         tx_sender.send(test_tx).unwrap();
     }
 
