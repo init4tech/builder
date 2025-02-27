@@ -44,7 +44,7 @@ async fn test_spawn() {
     let evaluator = Arc::new(|_state: &ResultAndState| U256::from(1));
 
     let sim_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
-    let handle = sim_factory.spawn(tx_receiver, bundle_receiver, evaluator, deadline);
+    let handle = sim_factory.spawn::<SimTxEnvelope, _>(tx_receiver, bundle_receiver, evaluator, deadline);
 
     // Send some transactions
     for _ in 0..5 {

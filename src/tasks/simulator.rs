@@ -1,17 +1,17 @@
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
-use alloy_rlp::Encodable;
-use revm::db::AlloyDB;
-use revm::EvmBuilder;
 use revm::{db::CacheDB, DatabaseRef};
 use std::{convert::Infallible, sync::Arc};
 use tokio::{select, sync::mpsc::UnboundedReceiver};
-use trevm::db::ConcurrentStateInfo;
-use trevm::EvmNeedsBlock;
-use trevm::{self, db::ConcurrentState, revm::primitives::ResultAndState, EvmFactory, Tx};
+
 use trevm::{
-    revm::{primitives::EVMError, Database, DatabaseCommit},
-    BlockDriver, DbConnect, NoopBlock, NoopCfg, TrevmBuilder,
+    self,
+    db::{ConcurrentState, ConcurrentStateInfo},
+    revm::{
+        primitives::{EVMError, ResultAndState},
+        Database, DatabaseCommit,
+    },
+    BlockDriver, DbConnect, EvmFactory, NoopBlock, NoopCfg, TrevmBuilder, Tx,
 };
 
 pub struct Best<T, Score: PartialOrd + Ord = U256> {
@@ -49,11 +49,12 @@ where
     where
         T: Tx + Send + Sync + 'static,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-        Ext: Send + Sync + 'static,
+        Ext: Send + Sync + Clone + 'static,
         <Db as DatabaseRef>::Error: Send,
     {
         let jh = tokio::spawn(async move {
             let mut best: Option<Best<SimBlock>> = None;
+
             let sleep = tokio::time::sleep_until(deadline);
             tokio::pin!(sleep);
 
@@ -63,20 +64,35 @@ where
                         break;
                     },
                     tx = inbound_tx.recv() => {
-                        println!("received tx");
+                        tracing::debug!("received tx");
+
                         if let Some(inbound_tx) = tx {
-                            self.handle_inbound_tx(inbound_tx, evaluator.clone());
-                        } else {
-                            break;
+                            tracing::debug!("handling inbound tx");
+
+                            let trevm_instance = match self.create() {
+                                Ok(instance) => instance,
+                                Err(e) => {
+                                    tracing::error!(e = ?e, "Failed to create trevm instance");
+                                    continue
+                                }
+                            };
+
+                            self.handle_inbound_tx(inbound_tx, evaluator.clone(), trevm_instance);
                         }
                     }
                     bundle = inbound_bundle.recv() => {
-                        println!("received bundle");
-                        if let Some(bundle) = bundle {
-                            // TODO: Wire this up with proper type
-                            // self.handle_inbound_bundle(bundle, evaluator);
-                        } else {
-                            break;
+                        if let Some(_bundle) = bundle {
+                            println!("handling inbound bundle");
+
+                            let _trevm_instance = match self.create() {
+                                Ok(instance) => instance,
+                                Err(e) => {
+                                    tracing::error!(e = ?e, "Failed to create trevm instance");
+                                    continue
+                                }
+                            };
+
+                            todo!()
                         }
                     }
                 }
@@ -89,8 +105,37 @@ where
     }
 
     /// simulates an inbound tx and applies its state if it's successfully simualted
-    pub fn handle_inbound_tx<T: Tx, F>(&self, tx: Arc<T>, evaluator: Arc<F>) {
-        println!("received tx");
+    pub fn handle_inbound_tx<T, F>(
+        &self,
+        tx: Arc<T>,
+        evaluator: Arc<F>,
+        trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Db>>>,
+    ) -> Option<Best<SimBlock>>
+    where
+        T: Tx,
+        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+    {
+        let mut block_driver = SimBundle(vec![todo!()], NoopBlock);
+
+        // Configure and run the transaction
+        let result = trevm_instance.fill_cfg(&NoopCfg).drive_block(&mut block_driver);
+
+        match result {
+            Ok(result) => {
+                // TODO: Run the evaluator on the completed state, returning the Best block
+                // let score = evaluator(result);
+                // Some(Best {
+                //     tx,
+                //     result: result_and_state,
+                //     score,
+                // })
+                todo!()
+            }
+            Err(e) => {
+                tracing::error!("Failed to drive block: {:?}", e);
+                None
+            }
+        }
     }
 
     /// Simulates an inbound bundle and applies its state if it's successfully simulated
@@ -103,8 +148,8 @@ where
 // Wraps a Db into an EvmFactory compatible [`Database`]
 impl<'a, Db, Ext> DbConnect<'a> for SimulatorFactory<Db, Ext>
 where
-    Db: Database + DatabaseRef + DatabaseCommit + Clone + Sync,
-    Ext: Sync,
+    Db: Database + DatabaseRef + DatabaseCommit + Clone + Sync + Send + 'static,
+    Ext: Sync + Clone,
 {
     type Database = ConcurrentState<CacheDB<Db>>;
     type Error = Infallible;
@@ -169,41 +214,19 @@ where
         #[allow(clippy::useless_asref)]
         let txs: Vec<TxEnvelope> =
             alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap_or_default();
-        SimBundle(txs, NoopBlock)
+        let sim_txs = txs.iter().map(|f| SimTxEnvelope(f.clone())).collect();
+        SimBundle(sim_txs, NoopBlock)
     }
 }
 
-pub struct SimBundle(Vec<TxEnvelope>, NoopBlock);
+pub struct SimBundle(Vec<SimTxEnvelope>, NoopBlock);
 
 pub struct SimTxEnvelope(pub TxEnvelope);
-
-impl SimTxEnvelope {
-    /// Converts bytes into a SimTxEnvelope
-    pub fn to_tx(bytes: &[u8]) -> Option<Self> {
-        let tx: TxEnvelope = alloy_rlp::Decodable::decode(&mut bytes.as_ref()).ok()?;
-        Some(SimTxEnvelope(tx))
-    }
-
-    /// Converts a SimTxEnvelope into bytes
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        self.0.encode(&mut out);
-        out
-    }
-}
 
 impl From<&[u8]> for SimTxEnvelope {
     fn from(bytes: &[u8]) -> Self {
         let tx: TxEnvelope = alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap();
         SimTxEnvelope(tx)
-    }
-}
-
-impl From<&SimTxEnvelope> for Vec<u8> {
-    fn from(tx: &SimTxEnvelope) -> Self {
-        let mut out = Vec::new();
-        tx.0.encode(&mut out);
-        out
     }
 }
 
@@ -227,10 +250,17 @@ impl<Ext> BlockDriver<Ext> for SimBundle {
         mut trevm: trevm::EvmNeedsTx<'a, Ext, Db>,
     ) -> trevm::RunTxResult<'a, Ext, Db, Self> {
         for tx in self.0.iter() {
-            if tx.recover_signer().is_ok() {
-                let sim_tx = SimTxEnvelope(tx.clone());
+            if tx.0.recover_signer().is_ok() {
+                let sim_tx = SimTxEnvelope(tx.0.clone());
                 let t = match trevm.run_tx(&sim_tx) {
-                    Ok(t) => t,
+                    Ok(t) => {
+                        print!(
+                            "successfully ran transaction - gas used {}",
+                            t.result_and_state().result.gas_used()
+                        );
+
+                        t
+                    }
                     Err(e) => {
                         if e.is_transaction_error() {
                             return Ok(e.discard_error());
