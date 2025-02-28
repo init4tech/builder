@@ -2,7 +2,7 @@ use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use revm::{db::CacheDB, DatabaseRef};
 use std::{convert::Infallible, sync::Arc};
-use tokio::{select, sync::mpsc::UnboundedReceiver};
+use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
 
 use trevm::{
     self,
@@ -55,6 +55,8 @@ where
         let jh = tokio::spawn(async move {
             let best: Option<Best<SimBlock>> = None;
 
+            let mut join_set = JoinSet::new();
+
             let sleep: tokio::time::Sleep = tokio::time::sleep_until(deadline);
             tokio::pin!(sleep);
 
@@ -67,19 +69,23 @@ where
                         tracing::debug!("received tx");
 
                         if let Some(inbound_tx) = tx {
-                            tracing::debug!("handling inbound tx");
+                            // set off a job that creates a new trevm with the concurrent database
+                            // and then runs the simulation on that trevm instance
+                            let simulation_handle = join_set.spawn(async move {
+                                tracing::debug!("handling inbound tx");
+                                let trevm_instance = match self.create() {
+                                    Ok(instance) => instance,
+                                    Err(e) => {
+                                        tracing::error!(e = ?e, "Failed to create trevm instance");
+                                        return
+                                    }
+                                };
 
-                            let trevm_instance = match self.create() {
-                                Ok(instance) => instance,
-                                Err(e) => {
-                                    tracing::error!(e = ?e, "Failed to create trevm instance");
-                                    continue
+                                // simulate the transaction on the created trevm instance
+                                if let Some(result) = self.simulate_tx::<SimTxEnvelope, _>(inbound_tx, evaluator.clone(), trevm_instance) {
+                                    println!("simulation score: {}", result.score)
                                 }
-                            };
-
-                            if let Some(result) = self.handle_inbound_tx::<SimTxEnvelope, _>(inbound_tx, evaluator.clone(), trevm_instance) {
-                                println!("simulation score: {}", result.score)
-                            }
+                            });
                         }
                     }
                     bundle = inbound_bundle.recv() => {
@@ -94,7 +100,19 @@ where
                                 }
                             };
 
+                            if let Some(result) = self.simulate_bundle::<SimBundle, _>(inbound_bundle, evaluator.clone(), trevm_instance) {
+                                println!("simulation score: {}", result)
+                            }
+
                             todo!()
+                        }
+                    }
+                    Some(res) = join_set.join_next() => {
+                        match res {
+                            Ok(simulation_result) => {
+                                println!("simulation result: {}")
+                            },
+                            Err(e) => tracing::error!("Task failed: {}", e),
                         }
                     }
                 }
@@ -107,7 +125,7 @@ where
     }
 
     /// Simulates an inbound tx and applies its state if it's successfully simualted
-    pub fn handle_inbound_tx<T, F>(
+    pub fn simulate_tx<T, F>(
         &self,
         tx: Arc<SimTxEnvelope>,
         evaluator: Arc<F>,
@@ -117,7 +135,6 @@ where
         T: Tx,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
     {
-
         let result = trevm_instance
             .fill_cfg(&NoopCfg)
             .fill_block(&NoopBlock)
@@ -137,8 +154,18 @@ where
     }
 
     /// Simulates an inbound bundle and applies its state if it's successfully simulated
-    pub fn handle_inbound_bundle<T: Tx, F>(&self, bundle: Arc<Vec<T>>, evaluator: Arc<F>) {
+    pub fn simulate_bundle<T: Tx, F, D>(
+        &self,
+        bundle: Arc<Vec<T>>,
+        evaluator: Arc<F>,
+        trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Db>>>,
+    ) -> Option<Best<SimBundle>>
+    {
         println!("received tx");
+
+        let result = trevm_instance.fill_cfg(&NoopCfg);
+        let mut driver: &mut D = todo!(); // TODO: Make SimBundle mirror the SignetEthBundle type
+        result.drive_block(driver);
         todo!()
     }
 }
