@@ -1,10 +1,12 @@
 use alloy::consensus::{SignableTransaction as _, TxEip1559, TxEnvelope};
 use alloy::eips::BlockId;
 use alloy::primitives::U256;
-use alloy::providers::{Provider, ProviderBuilder};
+use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
+use alloy::transports::http::{Client, Http};
+use aws_sdk_kms::types::RotationsListEntry;
 use builder::tasks::simulator::{SimBundle, SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
@@ -23,33 +25,29 @@ async fn test_spawn() {
 
     // Plumb the transaction pipeline
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
-    let (bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Arc<SimBundle>>();
+    let (_bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Arc<SimBundle>>();
     let deadline = Instant::now() + Duration::from_secs(2);
 
-    // Create an RPC provider from the rollup
-    let url = "https://rpc.havarti.signet.sh ".parse().unwrap();
-    let root_provider = ProviderBuilder::new().on_client(RpcClient::new_http(url));
-
-    let block_number = root_provider.get_block_number().await.unwrap();
-    assert_ne!(block_number, 0, "root provider is reporting block number 0");
-
+    // Create a provider
+    let root_provider = new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
     let latest = root_provider.get_block_number().await.unwrap();
-    assert!(latest > 0);
 
     let db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
     let alloy_db = Arc::new(db);
 
     let ext = ();
 
-    let evaluator = Arc::new(|_state: &ResultAndState| U256::from(1));
+    // Define the evaluator function
+    let evaluator = Arc::new(test_evaluator);
 
+    // Create a simulation factory
     let sim_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
     let handle = sim_factory.spawn::<SimTxEnvelope, _>(tx_receiver, bundle_receiver, evaluator, deadline);
 
     // Send some transactions
     for _ in 0..5 {
         let test_tx = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
-        println!("dispatching tx {:?}", test_tx.0);
+        // println!("dispatching tx {:?}", test_tx.0);
         tx_sender.send(test_tx).unwrap();
     }
 
@@ -61,7 +59,8 @@ async fn test_spawn() {
     assert_eq!(best.unwrap().score, U256::from(0));
 }
 
-fn mock_evaluator(state: &ResultAndState) -> U256 {
+/// An example of a simple evaluator function for use in testing
+fn test_evaluator(state: &ResultAndState) -> U256 {
     // log the transaction results
     match &state.result {
         ExecutionResult::Success { .. } => println!("Execution was successful."),
@@ -90,4 +89,18 @@ fn new_test_tx(wallet: &PrivateKeySigner) -> eyre::Result<TxEnvelope> {
     };
     let signature = wallet.sign_hash_sync(&tx.signature_hash())?;
     Ok(TxEnvelope::Eip1559(tx.into_signed(signature)))
+}
+
+/// Returns a new RPC provider from a given URL
+pub fn new_rpc_provider(url: String) -> eyre::Result<RootProvider<Http<Client>>> {
+    let url = url.parse().unwrap();
+    let root_provider = ProviderBuilder::new().on_client(RpcClient::new_http(url));
+    Ok(root_provider)
+}
+
+/// Returns a provider based on a local Anvil instance that it creates
+pub fn new_anvil_provider() -> eyre::Result<RootProvider<Http<Client>>> {
+    let anvil = alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
+    let root_provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
+    Ok(root_provider)
 }

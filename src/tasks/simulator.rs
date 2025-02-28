@@ -53,9 +53,9 @@ where
         <Db as DatabaseRef>::Error: Send,
     {
         let jh = tokio::spawn(async move {
-            let mut best: Option<Best<SimBlock>> = None;
+            let best: Option<Best<SimBlock>> = None;
 
-            let sleep = tokio::time::sleep_until(deadline);
+            let sleep: tokio::time::Sleep = tokio::time::sleep_until(deadline);
             tokio::pin!(sleep);
 
             loop {
@@ -77,14 +77,16 @@ where
                                 }
                             };
 
-                            self.handle_inbound_tx(inbound_tx, evaluator.clone(), trevm_instance);
+                            if let Some(result) = self.handle_inbound_tx::<SimTxEnvelope, _>(inbound_tx, evaluator.clone(), trevm_instance) {
+                                println!("simulation score: {}", result.score)
+                            }
                         }
                     }
                     bundle = inbound_bundle.recv() => {
                         if let Some(_bundle) = bundle {
                             println!("handling inbound bundle");
 
-                            let _trevm_instance = match self.create() {
+                            let trevm_instance = match self.create() {
                                 Ok(instance) => instance,
                                 Err(e) => {
                                     tracing::error!(e = ?e, "Failed to create trevm instance");
@@ -104,35 +106,31 @@ where
         jh
     }
 
-    /// simulates an inbound tx and applies its state if it's successfully simualted
+    /// Simulates an inbound tx and applies its state if it's successfully simualted
     pub fn handle_inbound_tx<T, F>(
         &self,
-        tx: Arc<T>,
+        tx: Arc<SimTxEnvelope>,
         evaluator: Arc<F>,
         trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Db>>>,
-    ) -> Option<Best<SimBlock>>
+    ) -> Option<Best<SimTxEnvelope>>
     where
         T: Tx,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
     {
-        let mut block_driver = SimBundle(vec![todo!()], NoopBlock);
 
-        // Configure and run the transaction
-        let result = trevm_instance.fill_cfg(&NoopCfg).drive_block(&mut block_driver);
+        let result = trevm_instance
+            .fill_cfg(&NoopCfg)
+            .fill_block(&NoopBlock)
+            .fill_tx(tx.as_ref()) // Use as_ref() to get &SimTxEnvelope from Arc
+            .run();
 
         match result {
-            Ok(result) => {
-                // TODO: Run the evaluator on the completed state, returning the Best block
-                // let score = evaluator(result);
-                // Some(Best {
-                //     tx,
-                //     result: result_and_state,
-                //     score,
-                // })
-                todo!()
+            Ok(success) => {
+                let score = evaluator(&success.result_and_state());
+                Some(Best { tx, result: success.result_and_state().clone(), score })
             }
             Err(e) => {
-                tracing::error!("Failed to drive block: {:?}", e);
+                tracing::error!("Failed to run transaction: {:?}", e);
                 None
             }
         }
@@ -210,7 +208,6 @@ where
     }
 
     fn extract(&mut self, bytes: &[u8]) -> Self::Driver {
-        // TODO: Should this use SimBundle instead of Vec<TxEnvelope>?
         #[allow(clippy::useless_asref)]
         let txs: Vec<TxEnvelope> =
             alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap_or_default();
@@ -232,7 +229,7 @@ impl From<&[u8]> for SimTxEnvelope {
 
 impl Tx for SimTxEnvelope {
     fn fill_tx_env(&self, tx_env: &mut revm::primitives::TxEnv) {
-        tracing::info!("fillng tx env {:?}", tx_env); // Possible cause
+        tracing::info!("fillng tx env {:?}", tx_env);
         let revm::primitives::TxEnv { .. } = tx_env;
     }
 }
