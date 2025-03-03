@@ -45,76 +45,47 @@ where
         mut inbound_bundle: UnboundedReceiver<Arc<SimBundle>>,
         evaluator: Arc<F>,
         deadline: tokio::time::Instant,
-    ) -> tokio::task::JoinHandle<Option<Best<SimBlock>>>
+    ) -> tokio::task::JoinHandle<Option<Best<SimTxEnvelope>>>
     where
-        T: Tx + Send + Sync + 'static,
+        T: Tx,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
         Ext: Send + Sync + Clone + 'static,
         <Db as DatabaseRef>::Error: Send,
     {
         let jh = tokio::spawn(async move {
-            let best: Option<Best<SimBlock>> = None;
-
+            let mut best: Option<Best<SimTxEnvelope>> = None;
             let mut join_set = JoinSet::new();
 
-            let sleep: tokio::time::Sleep = tokio::time::sleep_until(deadline);
+            let sleep = tokio::time::sleep_until(deadline);
             tokio::pin!(sleep);
 
             loop {
                 select! {
-                    _ = &mut sleep => {
-                        break;
-                    },
+                    _ = &mut sleep => break,
                     tx = inbound_tx.recv() => {
-                        tracing::debug!("received tx");
-
                         if let Some(inbound_tx) = tx {
-                            // set off a job that creates a new trevm with the concurrent database
-                            // and then runs the simulation on that trevm instance
-                            let simulation_handle = join_set.spawn(async move {
-                                tracing::debug!("handling inbound tx");
-                                let trevm_instance = match self.create() {
+                            let eval = evaluator.clone();
+                            let sim = self.clone();
+
+                            join_set.spawn(async move {
+                                let trevm_instance = match sim.create() {
                                     Ok(instance) => instance,
                                     Err(e) => {
                                         tracing::error!(e = ?e, "Failed to create trevm instance");
-                                        return
+                                        return None
                                     }
                                 };
-
-                                // simulate the transaction on the created trevm instance
-                                if let Some(result) = self.simulate_tx::<SimTxEnvelope, _>(inbound_tx, evaluator.clone(), trevm_instance) {
-                                    println!("simulation score: {}", result.score)
-                                }
+                                sim.simulate_tx(inbound_tx, eval, trevm_instance)
                             });
                         }
                     }
-                    bundle = inbound_bundle.recv() => {
-                        if let Some(_bundle) = bundle {
-                            println!("handling inbound bundle");
-
-                            let trevm_instance = match self.create() {
-                                Ok(instance) => instance,
-                                Err(e) => {
-                                    tracing::error!(e = ?e, "Failed to create trevm instance");
-                                    continue
-                                }
-                            };
-
-                            if let Some(result) = self.simulate_bundle::<SimBundle, _>(inbound_bundle, evaluator.clone(), trevm_instance) {
-                                println!("simulation score: {}", result)
-                            }
-
-                            todo!()
+                    Some(Ok(Some(candidate))) = join_set.join_next() => {
+                        tracing::debug!(score = ?candidate.score, "job finished");
+                        if candidate.score > best.as_ref().map(|b| b.score).unwrap_or_default() {
+                            best = Some(candidate);
                         }
                     }
-                    Some(res) = join_set.join_next() => {
-                        match res {
-                            Ok(simulation_result) => {
-                                println!("simulation result: {}")
-                            },
-                            Err(e) => tracing::error!("Task failed: {}", e),
-                        }
-                    }
+                    else => break,
                 }
             }
 
@@ -125,14 +96,13 @@ where
     }
 
     /// Simulates an inbound tx and applies its state if it's successfully simualted
-    pub fn simulate_tx<T, F>(
+    pub fn simulate_tx<F>(
         &self,
         tx: Arc<SimTxEnvelope>,
         evaluator: Arc<F>,
         trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Db>>>,
     ) -> Option<Best<SimTxEnvelope>>
     where
-        T: Tx,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
     {
         let result = trevm_instance
@@ -162,10 +132,10 @@ where
     ) -> Option<Best<SimBundle>>
     {
         println!("received tx");
-
-        let result = trevm_instance.fill_cfg(&NoopCfg);
-        let mut driver: &mut D = todo!(); // TODO: Make SimBundle mirror the SignetEthBundle type
-        result.drive_block(driver);
+        // TODO: Implement bundle handling, making sure to respect bundle revert guarantees
+        // let result = trevm_instance.fill_cfg(&NoopCfg);
+        // let mut driver: &mut D = todo!(); // TODO: Make SimBundle mirror the SignetEthBundle type
+        // result.drive_block(driver);
         todo!()
     }
 }
@@ -196,8 +166,8 @@ where
     /// Create makes a [`ConcurrentState`] database by calling connect
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
         let concurrent_db = self.connect()?;
-        let t = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
-        Ok(t)
+        let trevm_instance = trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
+        Ok(trevm_instance)
     }
 }
 
@@ -239,18 +209,38 @@ where
         let txs: Vec<TxEnvelope> =
             alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap_or_default();
         let sim_txs = txs.iter().map(|f| SimTxEnvelope(f.clone())).collect();
-        SimBundle(sim_txs, NoopBlock)
+        SimBundle::new(sim_txs)
     }
 }
 
-pub struct SimBundle(Vec<SimTxEnvelope>, NoopBlock);
+#[derive(Clone)]
+pub struct SimBundle {
+    pub transactions: Vec<SimTxEnvelope>,
+    pub block: NoopBlock,
+}
 
+impl SimBundle {
+    pub fn new(transactions: Vec<SimTxEnvelope>) -> Self {
+        Self {
+            transactions,
+            block: NoopBlock,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct SimTxEnvelope(pub TxEnvelope);
 
 impl From<&[u8]> for SimTxEnvelope {
     fn from(bytes: &[u8]) -> Self {
         let tx: TxEnvelope = alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap();
         SimTxEnvelope(tx)
+    }
+}
+
+impl From<SimTxEnvelope> for Vec<u8> {
+    fn from(tx: SimTxEnvelope) -> Vec<u8> {
+        alloy_rlp::encode(tx.0)
     }
 }
 
@@ -266,14 +256,14 @@ impl<Ext> BlockDriver<Ext> for SimBundle {
     type Error<Db: Database> = Error<Db>;
 
     fn block(&self) -> &Self::Block {
-        &NoopBlock
+        &self.block
     }
 
     fn run_txns<'a, Db: Database + DatabaseCommit>(
         &mut self,
         mut trevm: trevm::EvmNeedsTx<'a, Ext, Db>,
     ) -> trevm::RunTxResult<'a, Ext, Db, Self> {
-        for tx in self.0.iter() {
+        for tx in self.transactions.iter() {
             if tx.0.recover_signer().is_ok() {
                 let sim_tx = SimTxEnvelope(tx.0.clone());
                 let t = match trevm.run_tx(&sim_tx) {
@@ -282,7 +272,6 @@ impl<Ext> BlockDriver<Ext> for SimBundle {
                             "successfully ran transaction - gas used {}",
                             t.result_and_state().result.gas_used()
                         );
-
                         t
                     }
                     Err(e) => {

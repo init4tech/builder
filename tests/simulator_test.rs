@@ -56,7 +56,7 @@ async fn test_spawn() {
 
     // Check the result
     assert!(best.is_some());
-    assert_eq!(best.unwrap().score, U256::from(0));
+    assert_ne!(best.unwrap().score, U256::from(0));
 }
 
 /// An example of a simple evaluator function for use in testing
