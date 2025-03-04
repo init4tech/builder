@@ -6,12 +6,9 @@ use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
 use alloy::transports::http::{Client, Http};
-use aws_sdk_kms::types::RotationsListEntry;
 use builder::tasks::simulator::{SimBundle, SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
-use revm::Database;
-use trevm::Tx;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -29,7 +26,8 @@ async fn test_spawn() {
     let deadline = Instant::now() + Duration::from_secs(2);
 
     // Create a provider
-    let root_provider = new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
+    let root_provider =
+        new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
     let latest = root_provider.get_block_number().await.unwrap();
 
     let db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
@@ -42,7 +40,8 @@ async fn test_spawn() {
 
     // Create a simulation factory
     let sim_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
-    let handle = sim_factory.spawn::<SimTxEnvelope, _>(tx_receiver, bundle_receiver, evaluator, deadline);
+    let handle =
+        sim_factory.spawn::<SimTxEnvelope, _>(tx_receiver, bundle_receiver, evaluator, deadline);
 
     // Send some transactions
     for _ in 0..5 {
@@ -100,7 +99,8 @@ pub fn new_rpc_provider(url: String) -> eyre::Result<RootProvider<Http<Client>>>
 
 /// Returns a provider based on a local Anvil instance that it creates
 pub fn new_anvil_provider() -> eyre::Result<RootProvider<Http<Client>>> {
-    let anvil = alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
+    let anvil =
+        alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
     let root_provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
     Ok(root_provider)
 }
