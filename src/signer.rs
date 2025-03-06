@@ -1,8 +1,8 @@
 use alloy::consensus::SignableTransaction;
-use alloy::primitives::{Address, ChainId, B256};
+use alloy::primitives::{Address, B256, ChainId};
+use alloy::signers::Signature;
 use alloy::signers::aws::{AwsSigner, AwsSignerError};
 use alloy::signers::local::{LocalSignerError, PrivateKeySigner};
-use alloy::signers::Signature;
 use aws_config::BehaviorVersion;
 
 /// Abstraction over local signer or

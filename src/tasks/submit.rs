@@ -4,7 +4,7 @@ use crate::{
     tasks::block::InProgressBlock,
 };
 use alloy::{
-    consensus::{constants::GWEI_TO_WEI, SimpleCoder},
+    consensus::{SimpleCoder, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
     network::TransactionBuilder,
     network::TransactionBuilder4844,

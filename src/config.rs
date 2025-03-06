@@ -3,8 +3,8 @@ use alloy::network::{Ethereum, EthereumWallet};
 use alloy::primitives::Address;
 use alloy::providers::fillers::BlobGasFiller;
 use alloy::providers::{
-    fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
     Identity, ProviderBuilder, RootProvider,
+    fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
 };
 use alloy::transports::BoxTransport;
 use std::{borrow::Cow, env, num, str::FromStr};

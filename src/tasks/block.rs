@@ -2,7 +2,7 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
-use alloy::primitives::{keccak256, Bytes, B256};
+use alloy::primitives::{B256, Bytes, keccak256};
 use alloy::providers::Provider;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
-use zenith_types::{encode_txns, Alloy2718Coder};
+use zenith_types::{Alloy2718Coder, encode_txns};
 
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;

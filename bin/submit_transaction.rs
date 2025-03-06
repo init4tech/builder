@@ -6,7 +6,7 @@ use alloy::{
     signers::aws::AwsSigner,
 };
 use aws_config::BehaviorVersion;
-use builder::config::{load_address, load_string, load_u64, load_url, Provider};
+use builder::config::{Provider, load_address, load_string, load_u64, load_url};
 use metrics::counter;
 use metrics::histogram;
 use metrics_exporter_prometheus::PrometheusBuilder;
