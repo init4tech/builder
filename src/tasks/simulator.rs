@@ -1,9 +1,11 @@
+use super::bundler::Bundle;
+use crate::tasks::block::InProgressBlock;
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
+use eyre::Result;
 use revm::{db::CacheDB, DatabaseRef};
 use std::{convert::Infallible, sync::Arc};
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
-
 use trevm::{
     self,
     db::sync::{Child, ConcurrentState, ConcurrentStateInfo},
@@ -13,15 +15,13 @@ use trevm::{
     },
     BlockDriver, DbConnect, EvmFactory, NoopBlock, NoopCfg, TrevmBuilder, Tx,
 };
+use zenith_types::ZenithEthBundle;
 
 pub struct Best<T, Score: PartialOrd + Ord = U256> {
     pub tx: Arc<T>,
     pub result: ResultAndState,
     pub score: Score,
 }
-
-/// SimBlock wraps an array of SimBundles
-pub struct SimBlock(pub Vec<SimBundle>);
 
 /// Binds a database and a simulation extension together
 #[derive(Clone)]
@@ -39,11 +39,14 @@ where
         Self { db, ext }
     }
 
-    /// Spawns a trevm simulator
+    /// Spawns a trevm simulator.
+    /// Spawn does not guarantee that a thread is finished before the deadline.
+    /// This is intentional, so that it can maximize simulation time before the deadline.
+    /// This function will always return whatever the latest finished best was.
     pub fn spawn<T, F>(
         self,
         mut inbound_tx: UnboundedReceiver<Arc<SimTxEnvelope>>,
-        _inbound_bundle: UnboundedReceiver<Arc<SimBundle>>,
+        _inbound_bundle: UnboundedReceiver<Arc<Vec<SimTxEnvelope>>>,
         evaluator: Arc<F>,
         deadline: tokio::time::Instant,
     ) -> tokio::task::JoinHandle<Option<Best<SimTxEnvelope>>>
@@ -52,8 +55,10 @@ where
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
     {
         let jh = tokio::spawn(async move {
-            let mut best: Option<Best<SimTxEnvelope>> = None;
+            // Spawn a join set to track all simulation threads
             let mut join_set = JoinSet::new();
+
+            let mut best: Option<Best<SimTxEnvelope>> = None;
 
             let sleep = tokio::time::sleep_until(deadline);
             tokio::pin!(sleep);
@@ -61,7 +66,7 @@ where
             loop {
                 select! {
                     _ = &mut sleep => break,
-                    // Handle incoming 
+                    // Handle incoming
                     tx = inbound_tx.recv() => {
                         if let Some(inbound_tx) = tx {
                             // Setup the simulation environment
@@ -69,13 +74,13 @@ where
                             let eval = evaluator.clone();
                             let mut parent_db = Arc::new(sim.connect().unwrap());
 
-                            // Kick off the work in a new thread 
+                            // Kick off the work in a new thread
                             join_set.spawn(async move {
                                 let result = sim.simulate_tx(inbound_tx, eval, parent_db.child());
                                 if let Some((best, db)) = result {
                                     if let Ok(()) = parent_db.can_merge(&db) {
                                         if let Ok(()) = parent_db.merge_child(db) {
-                                            println!("merged db");
+                                            tracing::info!("merged db");
                                         }
                                     }
                                     Some(best)
@@ -86,10 +91,9 @@ where
                         }
                     }
                     Some(Ok(Some(candidate))) = join_set.join_next() => {
-                        println!("job finished");
                         tracing::debug!(score = ?candidate.score, "job finished");
                         if candidate.score > best.as_ref().map(|b| b.score).unwrap_or_default() {
-                            println!("best score found: {}", candidate.score);
+                            tracing::info!(score = ?candidate.score, "new best candidate found");
                             best = Some(candidate);
                         }
                     }
@@ -114,7 +118,6 @@ where
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
         Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
     {
-        // take the first child, which must be resolved before this function ends
         let trevm_instance = EvmBuilder::default().with_db(child_db).build_trevm();
 
         let result = trevm_instance
@@ -125,16 +128,20 @@ where
 
         match result {
             Ok(t) => {
-                // run the evaluation against the result and state
+                let hash = tx.0.tx_hash();
+                tracing::info!(hash = ?hash, "simulated transaction");
+                
                 let res = t.result_and_state();
                 let score = evaluator(res);
-                let result_and_state = res.clone();
-                println!("gas used: {}", result_and_state.result.gas_used());
+                tracing::debug!(score = ?score, "evaluated transaction score");
 
+                let result_and_state = res.clone();
+                tracing::debug!(gas_used = result_and_state.result.gas_used(), "gas consumed");
+                
                 // accept and return the updated_db with the execution score
                 let t = t.accept();
-                println!("execution logs: {:?} ", t.0.into_logs());
 
+                // take the db and return it wth the best
                 let db = t.1.into_db();
 
                 Some((Best { tx, result: result_and_state, score }, db))
@@ -146,13 +153,49 @@ where
         }
     }
 
+    /// Adds a given bundle to a given block, creates a [`trevm`] instance,
+    /// runs the  [`BlockDriver`] with that instance, and then returns
+    /// the [`Child<Db>`] of the updated state.
+    pub fn apply_bundle(
+        &self,
+        mut block: InProgressBlock,
+        bundle: Arc<ZenithEthBundle>,
+        child_db: Child<Db>,
+    ) -> Result<Child<Db>> {
+        let trevm = EvmBuilder::default()
+            .with_db(child_db)
+            .build_trevm()
+            .fill_cfg(&NoopCfg)
+            .fill_block(&NoopBlock);
+
+        block.ingest_bundle(Bundle {
+            id: bundle.replacement_uuid().unwrap_or_default().to_string(),
+            bundle: ZenithEthBundle {
+                bundle: bundle.bundle.clone(),
+                host_fills: bundle.host_fills.clone(),
+            },
+        });
+
+        let result = block.run_txns(trevm);
+        match result {
+            Ok(t) => {
+                let db = t.into_db();
+                Ok(db)
+            }
+            Err(t_error) => {
+                tracing::error!(err = ?t_error, "Failed to run block");
+                eyre::bail!("Failed to run block");
+            }
+        }
+    }
+
     /// Simulates an inbound bundle and applies its state if it's successfully simulated
     pub fn simulate_bundle<T, F>(
         &self,
         _bundle: Arc<Vec<T>>,
         _evaluator: Arc<F>,
         _trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Arc<Db>>>>,
-    ) -> Option<Best<SimBundle>>
+    ) -> Option<Best<Vec<T>>>
     where
         T: Tx + Send + Sync + 'static,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
@@ -192,10 +235,6 @@ where
     }
 }
 
-///
-/// Extractor
-///
-
 /// A trait for extracting transactions from
 pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'static {
     type Driver: BlockDriver<Ext, Error<Db>: core::error::Error>;
@@ -207,43 +246,6 @@ pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'sta
     ///
     /// Extraction is infallible. Worst case it should return a no-op driver.
     fn extract(&mut self, bytes: &[u8]) -> Self::Driver;
-}
-
-/// An implementation of BlockExtractor for Simulation purposes
-#[derive(Clone)]
-pub struct SimulatorExtractor {}
-
-/// SimulatorExtractor implements a block extractor and trevm block driver
-/// for simulating and successively applying state updates from transactions.
-impl<Db> BlockExtractor<(), Db> for SimulatorExtractor
-where
-    Db: Database + DatabaseCommit + Send + Sync + 'static,
-{
-    type Driver = SimBundle;
-
-    fn trevm(&self, db: Db) -> trevm::EvmNeedsBlock<'static, (), Db> {
-        trevm::revm::EvmBuilder::default().with_db(db).build_trevm().fill_cfg(&NoopCfg)
-    }
-
-    fn extract(&mut self, bytes: &[u8]) -> Self::Driver {
-        #[allow(clippy::useless_asref)]
-        let txs: Vec<TxEnvelope> =
-            alloy_rlp::Decodable::decode(&mut bytes.as_ref()).unwrap_or_default();
-        let sim_txs = txs.iter().map(|f| SimTxEnvelope(f.clone())).collect();
-        SimBundle::new(sim_txs)
-    }
-}
-
-#[derive(Clone)]
-pub struct SimBundle {
-    pub transactions: Vec<SimTxEnvelope>,
-    pub block: NoopBlock,
-}
-
-impl SimBundle {
-    pub fn new(transactions: Vec<SimTxEnvelope>) -> Self {
-        Self { transactions, block: NoopBlock }
-    }
 }
 
 #[derive(Clone)]
@@ -269,29 +271,26 @@ impl Tx for SimTxEnvelope {
     }
 }
 
-impl<Ext> BlockDriver<Ext> for SimBundle {
+impl<Ext> BlockDriver<Ext> for InProgressBlock {
     type Block = NoopBlock;
+
     type Error<Db: Database + DatabaseCommit> = Error<Db>;
 
     fn block(&self) -> &Self::Block {
-        &self.block
+        &NoopBlock
     }
 
+    /// Loops through the transactions in the block and runs them, accepting the state at the end
+    /// if it was successful and returning and erroring out otherwise.
     fn run_txns<'a, Db: Database + DatabaseCommit>(
         &mut self,
         mut trevm: trevm::EvmNeedsTx<'a, Ext, Db>,
     ) -> trevm::RunTxResult<'a, Ext, Db, Self> {
-        for tx in self.transactions.iter() {
-            if tx.0.recover_signer().is_ok() {
-                let sim_tx = SimTxEnvelope(tx.0.clone());
+        for tx in self.transactions().iter() {
+            if tx.recover_signer().is_ok() {
+                let sim_tx = SimTxEnvelope(tx.clone());
                 let t = match trevm.run_tx(&sim_tx) {
-                    Ok(t) => {
-                        print!(
-                            "successfully ran transaction - gas used {}",
-                            t.result_and_state().result.gas_used()
-                        );
-                        t
-                    }
+                    Ok(t) => t,
                     Err(e) => {
                         if e.is_transaction_error() {
                             return Ok(e.discard_error());

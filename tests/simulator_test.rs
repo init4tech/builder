@@ -6,7 +6,7 @@ use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
 use alloy::transports::http::{Client, Http};
-use builder::tasks::simulator::{SimBundle, SimTxEnvelope, SimulatorFactory};
+use builder::tasks::simulator::{SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
 use std::str::FromStr;
@@ -22,7 +22,7 @@ async fn test_spawn() {
 
     // Plumb the transaction pipeline
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<SimTxEnvelope>>();
-    let (_bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Arc<SimBundle>>();
+    let (_bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Arc<Vec<SimTxEnvelope>>>();
     let deadline = Instant::now() + Duration::from_secs(2);
 
     // Create a provider
@@ -56,7 +56,10 @@ async fn test_spawn() {
 
     // Check the result
     assert!(best.is_some());
-    assert_ne!(best.unwrap().score, U256::from(0));
+    let result = best.unwrap();
+    assert_ne!(result.score, U256::from(0));
+    
+    println!("Best: {:?}", result.score);
 }
 
 /// An example of a simple evaluator function for use in testing
@@ -72,7 +75,8 @@ fn test_evaluator(state: &ResultAndState) -> U256 {
     let target_addr = Address::from_str("0x0000000000000000000000000000000000000000").unwrap();
     let default_account = Account::default();
     let target_account = state.state.get(&target_addr).unwrap_or(&default_account);
-    println!("target account balance: {:?}", target_account.info.balance);
+    tracing::info!(balance = ?target_account.info.balance, "target account balance");
+
     target_account.info.balance
 }
 

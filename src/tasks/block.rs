@@ -114,6 +114,11 @@ impl InProgressBlock {
         coder.ingest(self.encode_raw());
         coder
     }
+
+    /// Returns the current set of transactions in the block.
+    pub fn transactions(&self) -> &Vec<TxEnvelope> {
+        &self.transactions
+    }
 }
 
 /// BlockBuilder is a task that periodically builds a block then sends it for signing and submission.
