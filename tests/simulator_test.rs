@@ -30,23 +30,24 @@ async fn test_spawn() {
         new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
     let latest = root_provider.get_block_number().await.unwrap();
 
-    let db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
-    let alloy_db = Arc::new(db);
+    // Create an alloyDB from the provider at the latest height
+    let alloy_db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
+    let db = CacheDB::new(Arc::new(alloy_db));
 
+    // Define trevm extension, if any
     let ext = ();
 
     // Define the evaluator function
     let evaluator = Arc::new(test_evaluator);
 
-    // Create a simulation factory
-    let sim_factory = SimulatorFactory::new(CacheDB::new(alloy_db), ext);
+    // Create a simulation factory with the provided DB
+    let sim_factory = SimulatorFactory::new(db, ext);
     let handle =
         sim_factory.spawn::<SimTxEnvelope, _>(tx_receiver, bundle_receiver, evaluator, deadline);
 
     // Send some transactions
     for _ in 0..5 {
         let test_tx = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
-        // println!("dispatching tx {:?}", test_tx.0);
         tx_sender.send(test_tx).unwrap();
     }
 

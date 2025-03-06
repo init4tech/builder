@@ -6,7 +6,7 @@ use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
 
 use trevm::{
     self,
-    db::sync::{ConcurrentState, ConcurrentStateInfo},
+    db::sync::{Child, ConcurrentState, ConcurrentStateInfo},
     revm::{
         primitives::{EVMError, ResultAndState},
         Database, DatabaseCommit, EvmBuilder,
@@ -32,7 +32,8 @@ pub struct SimulatorFactory<Db, Ext> {
 
 impl<'a, Db, Ext> SimulatorFactory<Db, Ext>
 where
-    Db: Database + DatabaseRef + DatabaseCommit + Clone + Send + Sync + 'static,
+    Ext: Send + Sync + Clone + 'static,
+    Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
 {
     pub fn new(db: Db, ext: Ext) -> Self {
         Self { db, ext }
@@ -49,9 +50,6 @@ where
     where
         T: Tx,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-        Ext: Send + Sync + Clone + 'static,
-        Db: Database,
-        <Db as DatabaseRef>::Error: Send,
     {
         let jh = tokio::spawn(async move {
             let mut best: Option<Best<SimTxEnvelope>> = None;
@@ -63,23 +61,33 @@ where
             loop {
                 select! {
                     _ = &mut sleep => break,
+                    // Handle incoming 
                     tx = inbound_tx.recv() => {
                         if let Some(inbound_tx) = tx {
-                            let eval = evaluator.clone();
+                            // Setup the simulation environment
                             let sim = self.clone();
+                            let eval = evaluator.clone();
+                            let mut parent_db = Arc::new(sim.connect().unwrap());
 
-                            let parent_db =
-                                Arc::new(ConcurrentState::new(self.db.clone(), ConcurrentStateInfo::default()));
-
+                            // Kick off the work in a new thread 
                             join_set.spawn(async move {
-                                sim.simulate_tx(inbound_tx, eval, parent_db)
+                                let result = sim.simulate_tx(inbound_tx, eval, parent_db.child());
+                                if let Some((best, db)) = result {
+                                    if let Ok(()) = parent_db.can_merge(&db) {
+                                        if let Ok(()) = parent_db.merge_child(db) {
+                                            println!("merged db");
+                                        }
+                                    }
+                                    Some(best)
+                                } else {
+                                    None
+                                }
                             });
                         }
                     }
                     Some(Ok(Some(candidate))) = join_set.join_next() => {
-                        tracing::debug!(score = ?candidate.0.score, "job finished");
-                        let (candidate, _) = candidate;
-
+                        println!("job finished");
+                        tracing::debug!(score = ?candidate.score, "job finished");
                         if candidate.score > best.as_ref().map(|b| b.score).unwrap_or_default() {
                             println!("best score found: {}", candidate.score);
                             best = Some(candidate);
@@ -100,12 +108,13 @@ where
         self,
         tx: Arc<SimTxEnvelope>,
         evaluator: Arc<F>,
-        parent_db: Arc<ConcurrentState<Db>>,
-    ) -> Option<(Best<SimTxEnvelope>, ConcurrentState<Arc<ConcurrentState<Db>>>)>
+        child_db: Child<Db>,
+    ) -> Option<(Best<SimTxEnvelope>, Child<Db>)>
     where
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+        Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
     {
-        let child_db = parent_db.child();
+        // take the first child, which must be resolved before this function ends
         let trevm_instance = EvmBuilder::default().with_db(child_db).build_trevm();
 
         let result = trevm_instance
@@ -115,11 +124,20 @@ where
             .run();
 
         match result {
-            Ok(success) => {
-                let score = evaluator(success.result_and_state());
-                let result_and_state = success.result_and_state().clone();
-                let updated_db = success.into_db();
-                Some((Best { tx, result: result_and_state, score }, updated_db))
+            Ok(t) => {
+                // run the evaluation against the result and state
+                let res = t.result_and_state();
+                let score = evaluator(res);
+                let result_and_state = res.clone();
+                println!("gas used: {}", result_and_state.result.gas_used());
+
+                // accept and return the updated_db with the execution score
+                let t = t.accept();
+                println!("execution logs: {:?} ", t.0.into_logs());
+
+                let db = t.1.into_db();
+
+                Some((Best { tx, result: result_and_state, score }, db))
             }
             Err(e) => {
                 tracing::error!("Failed to run transaction: {:?}", e);
@@ -129,46 +147,48 @@ where
     }
 
     /// Simulates an inbound bundle and applies its state if it's successfully simulated
-    pub fn simulate_bundle<T: Tx, F, D>(
+    pub fn simulate_bundle<T, F>(
         &self,
         _bundle: Arc<Vec<T>>,
         _evaluator: Arc<F>,
-        _trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Db>>>,
-    ) -> Option<Best<SimBundle>> {
-        println!("received tx");
-        todo!("implement bundle simulation")
+        _trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Arc<Db>>>>,
+    ) -> Option<Best<SimBundle>>
+    where
+        T: Tx + Send + Sync + 'static,
+        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
+    {
+        todo!("implement bundle handling")
     }
 }
 
-// Wraps a Db into an EvmFactory compatible [`Database`]
+/// Wraps a Db into an EvmFactory compatible [`Database`]
 impl<'a, Db, Ext> DbConnect<'a> for SimulatorFactory<Db, Ext>
 where
-    Db: Database + DatabaseRef + DatabaseCommit + Clone + Sync + Send + 'static,
+    Db: Database + DatabaseRef + DatabaseCommit + Sync + Send + Clone + 'static,
     Ext: Sync + Clone,
 {
-    type Database = ConcurrentState<CacheDB<Db>>;
+    type Database = ConcurrentState<Db>;
     type Error = Infallible;
 
     fn connect(&'a self) -> Result<Self::Database, Self::Error> {
-        let cache: CacheDB<Db> = CacheDB::new(self.db.clone());
-        let concurrent_db = ConcurrentState::new(cache, ConcurrentStateInfo::default());
-        Ok(concurrent_db)
+        let inner = ConcurrentState::new(self.db.clone(), ConcurrentStateInfo::default());
+        Ok(inner)
     }
 }
 
+/// Makes a SimulatorFactory capable of creating and configuring trevm instances
 impl<'a, Db, Ext> EvmFactory<'a> for SimulatorFactory<Db, Ext>
 where
-    Db: Database + DatabaseRef + DatabaseCommit + Clone + Sync + Send + 'static,
+    Db: Database + DatabaseRef + DatabaseCommit + Sync + Send + Clone + 'static,
     Ext: Sync + Clone,
 {
     type Ext = ();
 
     /// Create makes a [`ConcurrentState`] database by calling connect
     fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
-        let concurrent_db = self.connect()?;
-        let trevm_instance =
-            trevm::revm::EvmBuilder::default().with_db(concurrent_db).build_trevm();
-        Ok(trevm_instance)
+        let db = self.connect()?;
+        let trevm = trevm::revm::EvmBuilder::default().with_db(db).build_trevm();
+        Ok(trevm)
     }
 }
 
@@ -176,7 +196,7 @@ where
 /// Extractor
 ///
 
-/// A trait for extracting transactions from a block.
+/// A trait for extracting transactions from
 pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'static {
     type Driver: BlockDriver<Ext, Error<Db>: core::error::Error>;
 

@@ -181,6 +181,7 @@ impl SubmitTask {
         self.send_transaction(resp, tx).await
     }
 
+    /// Send the transaction to the network
     async fn send_transaction(
         &self,
         resp: &SignResponse,
