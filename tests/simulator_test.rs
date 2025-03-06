@@ -58,7 +58,7 @@ async fn test_spawn() {
     assert!(best.is_some());
     let result = best.unwrap();
     assert_ne!(result.score, U256::from(0));
-    
+
     println!("Best: {:?}", result.score);
 }
 

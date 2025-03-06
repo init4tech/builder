@@ -130,14 +130,14 @@ where
             Ok(t) => {
                 let hash = tx.0.tx_hash();
                 tracing::info!(hash = ?hash, "simulated transaction");
-                
+
                 let res = t.result_and_state();
                 let score = evaluator(res);
                 tracing::debug!(score = ?score, "evaluated transaction score");
 
                 let result_and_state = res.clone();
                 tracing::debug!(gas_used = result_and_state.result.gas_used(), "gas consumed");
-                
+
                 // accept and return the updated_db with the execution score
                 let t = t.accept();
 
