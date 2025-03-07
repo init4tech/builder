@@ -1,10 +1,10 @@
 use std::{fmt::Debug, net::SocketAddr};
 
 use axum::{
+    Router,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use tracing::{Instrument, Span};
 

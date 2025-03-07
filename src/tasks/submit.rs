@@ -5,7 +5,7 @@ use crate::{
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::{constants::GWEI_TO_WEI, SimpleCoder},
+    consensus::{SimpleCoder, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{FixedBytes, TxHash, U256},

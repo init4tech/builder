@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use crate::config::BuilderConfig;
 use oauth2::{
+    AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
     basic::{BasicClient, BasicTokenType},
     reqwest::async_http_client,
-    AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 

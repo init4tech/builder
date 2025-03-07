@@ -3,11 +3,11 @@ use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
     providers::{
+        Identity, ProviderBuilder, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
             WalletFiller,
         },
-        Identity, ProviderBuilder, RootProvider,
     },
     transports::BoxTransport,
 };

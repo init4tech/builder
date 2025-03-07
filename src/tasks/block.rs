@@ -5,15 +5,15 @@ use crate::config::{BuilderConfig, WalletlessProvider};
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
-    primitives::{keccak256, Bytes, B256},
+    primitives::{B256, Bytes, keccak256},
     providers::Provider as _,
     rlp::Buf,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, info, trace, Instrument};
-use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
+use tracing::{Instrument, debug, error, info, trace};
+use zenith_types::{Alloy2718Coder, ZenithEthBundle, encode_txns};
 
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
@@ -267,7 +267,7 @@ mod tests {
     use alloy::{
         eips::eip2718::Encodable2718,
         network::{EthereumWallet, TransactionBuilder},
-        rpc::types::{mev::EthSendBundle, TransactionRequest},
+        rpc::types::{TransactionRequest, mev::EthSendBundle},
         signers::local::PrivateKeySigner,
     };
     use zenith_types::ZenithEthBundle;

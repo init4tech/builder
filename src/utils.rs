@@ -1,4 +1,4 @@
-use alloy::primitives::{PrimitiveSignature, B256};
+use alloy::primitives::{B256, PrimitiveSignature};
 
 /// Extracts the components of a signature.
 /// Currently alloy has no function for extracting the components of a signature.
