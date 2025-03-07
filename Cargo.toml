@@ -3,8 +3,8 @@ name = "zenith-builder-example"
 version = "0.1.1"
 description = "Zenith Builder Example"
 
-edition = "2021"
-rust-version = "1.82"
+edition = "2024"
+rust-version = "1.85"
 authors = ["init4"]
 license = "Apache-2.0 OR MIT"
 homepage = "https://github.com/init4tech/builder"
