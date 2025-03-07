@@ -86,11 +86,7 @@ impl BundlePoller {
             .iter()
             .filter_map(
                 |(key, expiry)| {
-                    if expiry.elapsed().is_zero() {
-                        Some(key.clone())
-                    } else {
-                        None
-                    }
+                    if expiry.elapsed().is_zero() { Some(key.clone()) } else { None }
                 },
             )
             .collect();
