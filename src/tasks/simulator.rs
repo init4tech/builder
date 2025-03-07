@@ -72,11 +72,15 @@ where
                             // Setup the simulation environment
                             let sim = self.clone();
                             let eval = evaluator.clone();
-                            let mut parent_db = Arc::new(sim.connect().unwrap());
+
+                            let mut parent_db =
+                                Arc::new(ConcurrentState::new(self.db.clone(), ConcurrentStateInfo::default()));
+
+                            let child = parent_db.child();
 
                             // Kick off the work in a new thread
                             join_set.spawn(async move {
-                                let result = sim.simulate_tx(inbound_tx, eval, parent_db.child());
+                                let result = sim.simulate_tx(inbound_tx, eval, child);
                                 if let Some((best, db)) = result {
                                     if let Ok(()) = parent_db.can_merge(&db) {
                                         if let Ok(()) = parent_db.merge_child(db) {
@@ -112,15 +116,15 @@ where
         self,
         tx: Arc<SimTxEnvelope>,
         evaluator: Arc<F>,
-        child_db: Child<Db>,
-    ) -> Option<(Best<SimTxEnvelope>, Child<Db>)>
+        db: ConcurrentState<Arc<ConcurrentState<Db>>>,
+    ) -> Option<(Best<SimTxEnvelope>, ConcurrentState<Arc<ConcurrentState<Db>>>)>
     where
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
         Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
     {
-        let trevm_instance = EvmBuilder::default().with_db(child_db).build_trevm();
+        let trevm = EvmBuilder::default().with_db(db).build_trevm();
 
-        let result = trevm_instance
+        let result = trevm
             .fill_cfg(&NoopCfg)
             .fill_block(&NoopBlock)
             .fill_tx(tx.as_ref()) // Use as_ref() to get &SimTxEnvelope from Arc
@@ -130,10 +134,12 @@ where
             Ok(t) => {
                 let hash = tx.0.tx_hash();
                 tracing::info!(hash = ?hash, "simulated transaction");
+                println!("simulate tx - hash {}", hash);
 
                 let res = t.result_and_state();
                 let score = evaluator(res);
                 tracing::debug!(score = ?score, "evaluated transaction score");
+                println!("evaluated transaction score {}", score);
 
                 let result_and_state = res.clone();
                 tracing::debug!(gas_used = result_and_state.result.gas_used(), "gas consumed");
@@ -287,18 +293,22 @@ impl<Ext> BlockDriver<Ext> for InProgressBlock {
         mut trevm: trevm::EvmNeedsTx<'a, Ext, Db>,
     ) -> trevm::RunTxResult<'a, Ext, Db, Self> {
         for tx in self.transactions().iter() {
+            println!("driving tx: {}", tx.tx_hash());
             if tx.recover_signer().is_ok() {
                 let sim_tx = SimTxEnvelope(tx.clone());
                 let t = match trevm.run_tx(&sim_tx) {
                     Ok(t) => t,
                     Err(e) => {
                         if e.is_transaction_error() {
+                            println!("### hit a transaction n error");
                             return Ok(e.discard_error());
                         } else {
+                            println!("### hit other type of error");
                             return Err(e.err_into());
                         }
                     }
                 };
+                println!("accepting trevm state");
                 (_, trevm) = t.accept();
             }
         }

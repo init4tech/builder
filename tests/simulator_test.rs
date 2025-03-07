@@ -6,14 +6,18 @@ use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync as _;
 use alloy::transports::http::{Client, Http};
+use builder::tasks::block::InProgressBlock;
 use builder::tasks::simulator::{SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
+use revm::EvmBuilder;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
+use trevm::db::sync::{ConcurrentState, ConcurrentStateInfo};
 use trevm::revm::primitives::{Account, ExecutionResult, ResultAndState};
+use trevm::{BlockDriver, NoopBlock, NoopCfg, TrevmBuilder};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
@@ -60,6 +64,97 @@ async fn test_spawn() {
     assert_ne!(result.score, U256::from(0));
 
     println!("Best: {:?}", result.score);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_simulator_invalidates_dupe() {
+    // Create test identity
+    let test_wallet = PrivateKeySigner::random();
+
+    // Create a provider
+    let root_provider =
+        new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
+    let latest = root_provider.get_block_number().await.unwrap();
+
+    // Create an alloyDB from the provider at the latest height
+    let alloy_db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
+    let db = CacheDB::new(Arc::new(alloy_db));
+
+    // Define trevm extension, if any
+    let ext = ();
+
+    // Define the evaluator function
+    let evaluator = Arc::new(test_evaluator);
+
+    // Create a simulation factory with the provided DB
+    let sim_factory = SimulatorFactory::new(db, ext);
+
+    let test_tx_1 = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
+
+    let mut parent_db =
+        Arc::new(ConcurrentState::new(sim_factory.db.clone(), ConcurrentStateInfo::default()));
+
+    let child_db = parent_db.child();
+
+    let result = sim_factory.clone().simulate_tx(test_tx_1.clone(), evaluator.clone(), child_db);
+    let (best, db) = result.unwrap();
+    println!("test success - best returned {}", best.score);
+
+    parent_db.merge_child(db).unwrap();
+
+    let child_2 = parent_db.child();
+    let result = sim_factory.simulate_tx(test_tx_1, evaluator, child_2);
+    let (best, db) = result.unwrap();
+
+    parent_db.merge_child(db).unwrap();
+    println!("test success ?? - best returned {}", best.score);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_block_driver() {
+    // Create test identity
+    let test_wallet = PrivateKeySigner::random();
+
+    // Create a provider
+    let root_provider =
+        new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
+    let latest = root_provider.get_block_number().await.unwrap();
+
+    // Create an alloyDB from the provider at the latest height
+    let alloy_db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
+    let db = CacheDB::new(Arc::new(alloy_db));
+
+    // Create two test transactions that are identical
+    let test_tx_1 = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
+
+    // Create a new block and ingest the transaction
+    let mut block = InProgressBlock::new();
+    block.ingest_tx(&test_tx_1.0);
+
+    // Intentionally ingest it a second time to create a dupe
+    block.ingest_tx(&test_tx_1.0);
+    assert_eq!(block.len(), 2);
+
+    let trevm = EvmBuilder::default()
+        .with_db(ConcurrentState::new(db, ConcurrentStateInfo::default()))
+        .build_trevm()
+        .fill_cfg(&NoopCfg)
+        .fill_block(&NoopBlock);
+
+    let result = block.run_txns(trevm);
+    let _trevm = result.unwrap();
+
+    // NB: Bring this up at Friday eng office hours re: James 
+    // 
+    // NB: Figure out why I am not seeing a Trevm error on the second transaction here.
+    // I've tried with and without concurrent state.
+    // I've tried nesting up or down in Arcs.
+    // I've tried with the child and parent pattern.
+    // I've tried it with just raw concurrent states.
+    // None of these error or are rejected from what I have seen, and this case _should_ be rejected.
+    // The transactions are identical and they both have nonce = 1.
+
+    println!("didn't trip on the dupe :( ")
 }
 
 /// An example of a simple evaluator function for use in testing
