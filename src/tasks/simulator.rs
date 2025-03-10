@@ -3,6 +3,7 @@ use crate::tasks::block::InProgressBlock;
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use eyre::Result;
+use revm::primitives::address;
 use revm::{db::CacheDB, DatabaseRef};
 use std::{convert::Infallible, sync::Arc};
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
@@ -254,7 +255,7 @@ pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'sta
     fn extract(&mut self, bytes: &[u8]) -> Self::Driver;
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SimTxEnvelope(pub TxEnvelope);
 
 impl From<&[u8]> for SimTxEnvelope {
@@ -295,9 +296,29 @@ impl<Ext> BlockDriver<Ext> for InProgressBlock {
         for tx in self.transactions().iter() {
             println!("driving tx: {}", tx.tx_hash());
             if tx.recover_signer().is_ok() {
+                let sender = tx.recover_signer().unwrap();
+                println!("tx sender: {}", sender);
+
                 let sim_tx = SimTxEnvelope(tx.clone());
+                println!("sim tx: {:?}", &sim_tx);
+
                 let t = match trevm.run_tx(&sim_tx) {
-                    Ok(t) => t,
+                    Ok(mut t) => {
+                        println!("### t is okay");
+                        println!("state - keys {:?}", t.state().keys());
+                        println!("state len {:?}", t.state().len());
+
+                        let result = t.try_read_account(address!("0x0000000000000000000000000000000000000000"));
+                        match result {
+                            Ok(maybe_account) => {
+                                if let Some(account) = maybe_account {
+                                    println!("run_txns: address 0x0 account info: {:?}", account);
+                                }
+                            },
+                            Err(_) => todo!(),
+                        }
+                        t
+                    },
                     Err(e) => {
                         if e.is_transaction_error() {
                             println!("### hit a transaction n error");

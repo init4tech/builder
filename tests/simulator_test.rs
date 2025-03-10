@@ -112,18 +112,26 @@ async fn test_simulator_invalidates_dupe() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_block_driver() {
-    // Create test identity
-    let test_wallet = PrivateKeySigner::random();
+    let anvil =
+        alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
+    let keys = anvil.keys();
+    
+    let anvil_provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
+    let latest = anvil_provider.get_block_number().await.unwrap();
 
-    // Create a provider
-    let root_provider =
-        new_rpc_provider("https://sepolia.gateway.tenderly.co".to_string()).unwrap();
-    let latest = root_provider.get_block_number().await.unwrap();
+    let addresses = anvil.addresses();
+    println!("addresses - {:?}", addresses);
+    for addr in addresses {
+        let balance = anvil_provider.get_balance(*addr).await.unwrap();
+        println!("{} - {}", addr, balance);
+    }
 
     // Create an alloyDB from the provider at the latest height
-    let alloy_db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::from(latest)).unwrap();
+    let alloy_db = AlloyDB::new(Arc::new(anvil_provider.clone()), BlockId::from(latest)).unwrap();
     let db = CacheDB::new(Arc::new(alloy_db));
 
+    let cred = &keys[0];
+    let test_wallet = PrivateKeySigner::from_signing_key(cred.into());
     // Create two test transactions that are identical
     let test_tx_1 = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
 
@@ -135,14 +143,24 @@ async fn test_block_driver() {
     block.ingest_tx(&test_tx_1.0);
     assert_eq!(block.len(), 2);
 
+    let test_db = ConcurrentState::new(db, ConcurrentStateInfo::default());
+
     let trevm = EvmBuilder::default()
-        .with_db(ConcurrentState::new(db, ConcurrentStateInfo::default()))
+        .with_db(test_db)
         .build_trevm()
         .fill_cfg(&NoopCfg)
         .fill_block(&NoopBlock);
 
     let result = block.run_txns(trevm);
-    let _trevm = result.unwrap();
+    let mut _trevm = result.unwrap();
+    let result = _trevm.try_read_account(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()).unwrap();
+    match result {
+        Some(account) => println!("test_block_driver: account: {:?}", account),
+        None => {
+            println!("none account found");
+        }
+    }
+
 
     // NB: Bring this up at Friday eng office hours re: James 
     // 
@@ -153,6 +171,13 @@ async fn test_block_driver() {
     // I've tried it with just raw concurrent states.
     // None of these error or are rejected from what I have seen, and this case _should_ be rejected.
     // The transactions are identical and they both have nonce = 1.
+
+    let addresses = anvil.addresses();
+    println!("addresses - {:?}", addresses);
+    for addr in addresses {
+        let balance = anvil_provider.get_balance(*addr).await.unwrap();
+        println!("{} - {}", addr, balance);
+    }
 
     println!("didn't trip on the dupe :( ")
 }
@@ -198,9 +223,10 @@ pub fn new_rpc_provider(url: String) -> eyre::Result<RootProvider<Http<Client>>>
 }
 
 /// Returns a provider based on a local Anvil instance that it creates
-pub fn new_anvil_provider() -> eyre::Result<RootProvider<Http<Client>>> {
+pub fn new_anvil_provider() -> eyre::Result<(RootProvider<Http<Client>>, Vec<Address>)> {
     let anvil =
         alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
+    let addresses = anvil.addresses();
     let root_provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
-    Ok(root_provider)
+    Ok((root_provider, addresses.into()))
 }
