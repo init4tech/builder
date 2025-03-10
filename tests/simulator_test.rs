@@ -11,6 +11,7 @@ use builder::tasks::simulator::{SimTxEnvelope, SimulatorFactory};
 use revm::db::{AlloyDB, CacheDB};
 use revm::primitives::{Address, TxKind};
 use revm::EvmBuilder;
+use core::panic;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -115,23 +116,17 @@ async fn test_block_driver() {
     let anvil =
         alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
     let keys = anvil.keys();
-    
+    let cred = &keys[0];
+    let test_wallet = PrivateKeySigner::from_signing_key(cred.into());
+
+    // setup anvil provider
     let anvil_provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
     let latest = anvil_provider.get_block_number().await.unwrap();
-
-    let addresses = anvil.addresses();
-    println!("addresses - {:?}", addresses);
-    for addr in addresses {
-        let balance = anvil_provider.get_balance(*addr).await.unwrap();
-        println!("{} - {}", addr, balance);
-    }
 
     // Create an alloyDB from the provider at the latest height
     let alloy_db = AlloyDB::new(Arc::new(anvil_provider.clone()), BlockId::from(latest)).unwrap();
     let db = CacheDB::new(Arc::new(alloy_db));
 
-    let cred = &keys[0];
-    let test_wallet = PrivateKeySigner::from_signing_key(cred.into());
     // Create two test transactions that are identical
     let test_tx_1 = Arc::new(SimTxEnvelope(new_test_tx(&test_wallet).unwrap()));
 
@@ -145,25 +140,63 @@ async fn test_block_driver() {
 
     let test_db = ConcurrentState::new(db, ConcurrentStateInfo::default());
 
-    let trevm = EvmBuilder::default()
+    let mut trevm = EvmBuilder::default()
         .with_db(test_db)
         .build_trevm()
         .fill_cfg(&NoopCfg)
         .fill_block(&NoopBlock);
 
-    let result = block.run_txns(trevm);
-    let mut _trevm = result.unwrap();
-    let result = _trevm.try_read_account(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()).unwrap();
-    match result {
-        Some(account) => println!("test_block_driver: account: {:?}", account),
+    // get state of sender before
+    let acct = match trevm.try_read_account(test_wallet.address()).unwrap() {
+        Some(account) => account,
+        None => panic!("no account found"),
+    };
+    println!("test_block_driver: sender BEFORE: {:?}", acct);
+    let _sender_balance_before = acct.balance;
+
+    // print state of recipient before
+    match trevm
+        .try_read_account(Address::from_str("0x0000000000000000000000000000000000000000").unwrap())
+        .unwrap()
+    {
+        Some(account) => println!("test_block_driver: recipient BEFORE: {:?}", account),
         None => {
-            println!("none account found");
+            println!("no account found");
         }
     }
 
+    let result = block.run_txns(trevm);
+    let mut _trevm = result.unwrap();
 
-    // NB: Bring this up at Friday eng office hours re: James 
-    // 
+    // print state of sender after
+    match _trevm.try_read_account(test_wallet.address()).unwrap() {
+        Some(account) => {
+            println!("test_block_driver: sender AFTER: {:?}", account);
+            assert!(account.nonce == 1);
+            // TODO: also need to subtract gas payment from this expected balance
+            // assert!(account.balance == (sender_balance_before - U256::from(1_f64)));
+        },
+        None => {
+            println!("no account found");
+        }
+    }
+    // print state of recipient after
+    match _trevm
+        .try_read_account(Address::from_str("0x0000000000000000000000000000000000000000").unwrap())
+        .unwrap()
+    {
+        Some(account) => {
+            println!("test_block_driver: recipient AFTER: {:?}", account);
+            assert!(account.nonce == 0);
+            assert!(account.balance == U256::from(1_f64));
+        },
+        None => {
+            println!("no account found");
+        }
+    }
+
+    // NB: Bring this up at Friday eng office hours re: James
+    //
     // NB: Figure out why I am not seeing a Trevm error on the second transaction here.
     // I've tried with and without concurrent state.
     // I've tried nesting up or down in Arcs.
@@ -171,13 +204,6 @@ async fn test_block_driver() {
     // I've tried it with just raw concurrent states.
     // None of these error or are rejected from what I have seen, and this case _should_ be rejected.
     // The transactions are identical and they both have nonce = 1.
-
-    let addresses = anvil.addresses();
-    println!("addresses - {:?}", addresses);
-    for addr in addresses {
-        let balance = anvil_provider.get_balance(*addr).await.unwrap();
-        println!("{} - {}", addr, balance);
-    }
 
     println!("didn't trip on the dupe :( ")
 }
@@ -204,7 +230,7 @@ fn test_evaluator(state: &ResultAndState) -> U256 {
 fn new_test_tx(wallet: &PrivateKeySigner) -> eyre::Result<TxEnvelope> {
     let tx = TxEip1559 {
         chain_id: 17001,
-        nonce: 1,
+        nonce: 0,
         gas_limit: 50000,
         to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value: U256::from(1_f64),

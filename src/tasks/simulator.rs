@@ -308,17 +308,19 @@ impl<Ext> BlockDriver<Ext> for InProgressBlock {
                         println!("state - keys {:?}", t.state().keys());
                         println!("state len {:?}", t.state().len());
 
-                        let result = t.try_read_account(address!("0x0000000000000000000000000000000000000000"));
+                        let result = t.try_read_account(address!(
+                            "0x0000000000000000000000000000000000000000"
+                        ));
                         match result {
                             Ok(maybe_account) => {
                                 if let Some(account) = maybe_account {
                                     println!("run_txns: address 0x0 account info: {:?}", account);
                                 }
-                            },
+                            }
                             Err(_) => todo!(),
                         }
                         t
-                    },
+                    }
                     Err(e) => {
                         if e.is_transaction_error() {
                             println!("### hit a transaction n error");
