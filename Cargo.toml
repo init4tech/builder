@@ -38,6 +38,13 @@ alloy = { version = "0.12.6", features = [
     "serde",
 ] }
 
+trevm = { version = "0.19.12", features = [ "concurrent-db" ]}
+revm = { version = "19.5.0", features = [ "alloydb" ]} 
+
+# HACK: Update these to use main alloy package 
+alloy-provider = { version = "0.7.3" }
+alloy-eips = { version = "0.7.3" }
+
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
 
