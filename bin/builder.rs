@@ -7,6 +7,7 @@ use builder::tasks::metrics::MetricsTask;
 use builder::tasks::oauth::Authenticator;
 use builder::tasks::submit::SubmitTask;
 
+use builder::tasks::tx_poller;
 use tokio::select;
 
 #[tokio::main]

@@ -2,6 +2,7 @@ use super::bundler::{Bundle, BundlePoller};
 use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
+use crate::tasks::simulator::SimulatorFactory;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
@@ -9,6 +10,8 @@ use alloy::{
     providers::Provider as _,
     rlp::Buf,
 };
+use revm::db::{AlloyDB, CacheDB};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -238,13 +241,29 @@ impl BlockBuilder {
                     tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
                     info!("beginning block build cycle");
 
-                    // Build a block
-                    let mut in_progress = InProgressBlock::default();
-                    self.get_transactions(&mut in_progress).await;
-                    self.get_bundles(&mut in_progress).await;
+                    // Setup a simulator factory
+                    let ru_provider = self.ru_provider.clone();
+                    let latest = ru_provider.get_block_number().await.unwrap();
+                    let db = AlloyDB::new(
+                        ru_provider.into(),
+                        alloy_eips::BlockId::Number(latest.into()),
+                    );
 
-                    // Filter confirmed transactions from the block
-                    self.filter_transactions(&mut in_progress).await;
+                    // Calculate the simulation deadline
+                    let deadline = self.secs_to_next_target();
+
+                    // Create a simulator instance
+                    if let Some(db) = db {
+                        let cache_db = CacheDB::new(Arc::new(db));
+                        let sim = SimulatorFactory::new(cache_db, ());
+
+                        // TODO: Plumb the
+                        let in_progress =
+                            sim.spawn(inbound_tx, inbound_bundle, evaluator, deadline).await;
+                        outbound.send(in_progress);
+                    } else {
+                        todo!("handle failure to get a db")
+                    }
 
                     // submit the block if it has transactions
                     if !in_progress.is_empty() {

@@ -4,7 +4,7 @@ use alloy::primitives::U256;
 use eyre::Result;
 use revm::{db::CacheDB, primitives::CfgEnv, DatabaseRef};
 use std::{convert::Infallible, sync::Arc};
-use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
+use tokio::{select, sync::mpsc::{Receiver, UnboundedReceiver}, task::JoinSet};
 use trevm::{
     db::sync::{ConcurrentState, ConcurrentStateInfo},
     revm::{
@@ -56,8 +56,8 @@ where
     /// * This function always returns whatever the latest finished in progress block is.
     pub fn spawn<T, F>(
         self,
-        mut inbound_tx: UnboundedReceiver<Arc<TxEnvelope>>,
-        _inbound_bundle: UnboundedReceiver<Arc<Vec<TxEnvelope>>>,
+        mut inbound_tx: Receiver<Arc<TxEnvelope>>,
+        _inbound_bundle: Receiver<Arc<Vec<TxEnvelope>>>,
         evaluator: Arc<F>,
         deadline: tokio::time::Instant,
     ) -> tokio::task::JoinHandle<InProgressBlock>
