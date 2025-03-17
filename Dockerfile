@@ -21,8 +21,6 @@ RUN cargo chef prepare
 FROM chef as builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN apt-get update && apt-get -y upgrade && apt-get install -y gcc libclang-dev pkg-config libssl-dev
-RUN rustup target add x86_64-unknown-linux-gnu 
-RUN rustup toolchain install stable-x86_64-unknown-linux-gnu
 
 RUN --mount=type=ssh cargo chef cook --release --recipe-path recipe.json --bin zenith-builder-example 
 COPY --exclude=target . .
