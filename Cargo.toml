@@ -24,9 +24,9 @@ path = "bin/submit_transaction.rs"
 [dependencies]
 init4-bin-base = "0.1.0"
 
-zenith-types = "0.13"
+zenith-types = "0.15"
 
-alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
+alloy = { version = "=0.11.1", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp", "node-bindings"] }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
@@ -48,3 +48,5 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
+metrics = "0.24.1"
+metrics-exporter-prometheus = "0.16.0"
