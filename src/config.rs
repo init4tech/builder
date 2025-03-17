@@ -125,7 +125,7 @@ impl ConfigError {
     }
 }
 
-/// Defines a full provider
+/// Defines a full provider.
 pub type Provider = FillProvider<
     JoinFill<
         JoinFill<
@@ -138,7 +138,7 @@ pub type Provider = FillProvider<
     Ethereum,
 >;
 
-/// Defines a read-only wallet
+/// Defines a provider type used to read-only.
 pub type WalletlessProvider = FillProvider<
     JoinFill<
         Identity,
@@ -149,7 +149,7 @@ pub type WalletlessProvider = FillProvider<
 >;
 
 /// Defines a [`Zenith`] instance that is generic over [`Provider`]
-pub type ZenithInstance = Zenith::ZenithInstance<(), Provider, alloy::network::Ethereum>;
+pub type ZenithInstance<P = Provider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
@@ -226,7 +226,7 @@ impl BuilderConfig {
         Ok(provider)
     }
 
-    /// Connect additionally configured non-host providers to broadcast transactions to.
+    /// Connect additional broadcast providers.
     pub async fn connect_additional_broadcast(
         &self,
     ) -> Result<Vec<WalletlessProvider>, ConfigError> {

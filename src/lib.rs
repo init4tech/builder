@@ -28,6 +28,4 @@ pub mod tasks;
 pub mod utils;
 
 /// Anonymous crate dependency imports.
-use metrics as _;
-use metrics_exporter_prometheus as _;
 use openssl as _;
