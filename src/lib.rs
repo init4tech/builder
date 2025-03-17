@@ -27,5 +27,7 @@ pub mod tasks;
 /// Utilities.
 pub mod utils;
 
+use alloy_eips as _;
+use alloy_provider as _;
 /// Anonymous crate dependency imports.
 use openssl as _;

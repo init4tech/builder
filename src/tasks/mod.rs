@@ -15,3 +15,6 @@ pub mod submit;
 
 /// Tx polling task
 pub mod tx_poller;
+
+/// Tx and bundle simulation task
+pub mod simulator;
