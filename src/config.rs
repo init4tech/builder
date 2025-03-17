@@ -9,9 +9,9 @@ use alloy::{
             WalletFiller,
         },
     },
-    transports::BoxTransport,
 };
 use std::{borrow::Cow, env, num, str::FromStr};
+
 use zenith_types::Zenith;
 
 // Keys for .env variables that need to be set to configure the builder.
@@ -125,7 +125,7 @@ impl ConfigError {
     }
 }
 
-/// Provider type used to read & write.
+/// Defines a full provider
 pub type Provider = FillProvider<
     JoinFill<
         JoinFill<
@@ -134,26 +134,22 @@ pub type Provider = FillProvider<
         >,
         WalletFiller<EthereumWallet>,
     >,
-    RootProvider<BoxTransport>,
-    BoxTransport,
+    RootProvider,
     Ethereum,
 >;
 
-/// Provider type used to read-only.
+/// Defines a read-only wallet
 pub type WalletlessProvider = FillProvider<
     JoinFill<
         Identity,
         JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
     >,
-    RootProvider<BoxTransport>,
-    BoxTransport,
+    RootProvider,
     Ethereum,
 >;
 
-/// A Zenith contract instance, using some provider `P` (defaults to
-/// [`Provider`]).
-pub type ZenithInstance<P = Provider> =
-    Zenith::ZenithInstance<BoxTransport, P, alloy::network::Ethereum>;
+/// Defines a [`Zenith`] instance that is generic over [`Provider`]
+pub type ZenithInstance = Zenith::ZenithInstance<(), Provider, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
@@ -210,32 +206,36 @@ impl BuilderConfig {
 
     /// Connect to the Rollup rpc provider.
     pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
-        ProviderBuilder::new()
-            .with_recommended_fillers()
+        let provider = ProviderBuilder::new()
             .on_builtin(&self.ru_rpc_url)
             .await
-            .map_err(Into::into)
+            .map_err(ConfigError::Provider)?;
+
+        Ok(provider)
     }
 
     /// Connect to the Host rpc provider.
     pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
         let builder_signer = self.connect_builder_signer().await?;
-        ProviderBuilder::new()
-            .with_recommended_fillers()
+        let provider = ProviderBuilder::new()
             .wallet(EthereumWallet::from(builder_signer))
             .on_builtin(&self.host_rpc_url)
             .await
-            .map_err(Into::into)
+            .map_err(ConfigError::Provider)?;
+
+        Ok(provider)
     }
 
-    /// Connect additional broadcast providers.
+    /// Connect additionally configured non-host providers to broadcast transactions to.
     pub async fn connect_additional_broadcast(
         &self,
-    ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
-        let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
+    ) -> Result<Vec<WalletlessProvider>, ConfigError> {
+        let mut providers: Vec<WalletlessProvider> =
+            Vec::with_capacity(self.tx_broadcast_urls.len());
         for url in self.tx_broadcast_urls.iter() {
             let provider =
-                ProviderBuilder::new().on_builtin(url).await.map_err(Into::<ConfigError>::into)?;
+                ProviderBuilder::new().on_builtin(url).await.map_err(ConfigError::Provider)?;
+
             providers.push(provider);
         }
         Ok(providers)
@@ -278,5 +278,6 @@ pub fn load_url(key: &str) -> Result<Cow<'static, str>, ConfigError> {
 /// Load an address from an environment variable.
 pub fn load_address(key: &str) -> Result<Address, ConfigError> {
     let address = load_string(key)?;
-    Address::from_str(&address).map_err(Into::into)
+    Address::from_str(&address)
+        .map_err(|_| ConfigError::Var(format!("Invalid address format for {}", key)))
 }
