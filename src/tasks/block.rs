@@ -1,20 +1,23 @@
-use super::bundler::{Bundle, BundlePoller};
-use super::oauth::Authenticator;
-use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
-use crate::tasks::simulator::SimulatorFactory;
+use crate::tasks::bundler::{Bundle, BundlePoller};
+use crate::tasks::oauth::Authenticator;
+use crate::tasks::simulator::{eval_fn, SimulatorFactory};
+use crate::tasks::tx_poller::TxPoller;
 use alloy::{
     consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
     eips::eip2718::Decodable2718,
+    network::Ethereum,
     primitives::{keccak256, Bytes, B256},
-    providers::Provider as _,
+    providers::Provider,
     rlp::Buf,
 };
-use revm::db::{AlloyDB, CacheDB};
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{sync::OnceLock, time::Duration};
-use tokio::{sync::mpsc, task::JoinHandle};
+use revm::database::AlloyDB;
+use std::{
+    sync::{Arc, OnceLock},
+    time::Duration,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tokio::{sync::mpsc, task::JoinHandle, time::Instant};
 use tracing::{debug, error, info, trace, Instrument};
 use zenith_types::{encode_txns, Alloy2718Coder, ZenithEthBundle};
 
@@ -171,26 +174,7 @@ impl BlockBuilder {
         }
     }
 
-    /// Fetches bundles from the cache and ingests them into the in progress block
-    async fn get_bundles(&mut self, in_progress: &mut InProgressBlock) {
-        trace!("query bundles from cache");
-        let bundles = self.bundle_poller.check_bundle_cache().await;
-        match bundles {
-            Ok(bundles) => {
-                for bundle in bundles {
-                    match self.simulate_bundle(&bundle.bundle).await {
-                        Ok(()) => in_progress.ingest_bundle(bundle.clone()),
-                        Err(e) => error!(error = %e, id = ?bundle.id, "bundle simulation failed"),
-                    }
-                }
-            }
-            Err(e) => {
-                error!(error = %e, "error polling bundles");
-            }
-        }
-    }
-
-    /// Simulates a Zenith bundle against the rollup state
+    /// Simulates a Zenith bundle against the rollup state.
     async fn simulate_bundle(&mut self, bundle: &ZenithEthBundle) -> eyre::Result<()> {
         // TODO: Simulate bundles with the Simulation Engine
         // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
@@ -233,48 +217,51 @@ impl BlockBuilder {
 
     /// Spawn the block builder task, returning the inbound channel to it, and
     /// a handle to the running task.
-    pub fn spawn(mut self, outbound: mpsc::UnboundedSender<InProgressBlock>) -> JoinHandle<()> {
+    pub fn spawn<E>(
+        mut self,
+        inbound_tx: mpsc::UnboundedReceiver<TxEnvelope>,
+        inbound_bundle: mpsc::UnboundedReceiver<()>,
+        outbound: mpsc::UnboundedSender<InProgressBlock>,
+    ) -> JoinHandle<()> {
         tokio::spawn(
             async move {
                 loop {
-                    // sleep the buffer time
+                    // Sleep the buffer time during block wake up
                     tokio::time::sleep(Duration::from_secs(self.secs_to_next_target())).await;
                     info!("beginning block build cycle");
 
                     // Setup a simulator factory
                     let ru_provider = self.ru_provider.clone();
                     let latest = ru_provider.get_block_number().await.unwrap();
-                    let db = AlloyDB::new(
+                    let db: AlloyDB<Ethereum, WalletlessProvider> = AlloyDB::new(
                         ru_provider.into(),
-                        alloy_eips::BlockId::Number(latest.into()),
+                        alloy::eips::BlockId::Number(latest.into()),
                     );
+                    let sim = SimulatorFactory::new(db, ());
 
-                    // Calculate the simulation deadline
-                    let deadline = self.secs_to_next_target();
+                    // Calculate the deadline
+                    let time_to_next_slot = self.secs_to_next_slot();
+                    let now = Instant::now();
+                    let deadline = now.checked_add(Duration::from_secs(time_to_next_slot)).unwrap();
 
-                    // Create a simulator instance
-                    if let Some(db) = db {
-                        let cache_db = CacheDB::new(Arc::new(db));
-                        let sim = SimulatorFactory::new(cache_db, ());
+                    // Run the simulation until the deadline
+                    let sim_result =
+                        sim.spawn(inbound_tx, inbound_bundle, Arc::new(eval_fn), deadline).await;
 
-                        // TODO: Plumb the
-                        let in_progress =
-                            sim.spawn(inbound_tx, inbound_bundle, evaluator, deadline).await;
-                        outbound.send(in_progress);
-                    } else {
-                        todo!("handle failure to get a db")
-                    }
+                    // Handle simulation results
+                    if let Ok(in_progress) = sim_result {
+                        if !in_progress.is_empty() {
+                            debug!(txns = in_progress.len(), "sending block to submit task");
+                            let in_progress_block = std::mem::take(&mut in_progress);
 
-                    // submit the block if it has transactions
-                    if !in_progress.is_empty() {
-                        debug!(txns = in_progress.len(), "sending block to submit task");
-                        let in_progress_block = std::mem::take(&mut in_progress);
-                        if outbound.send(in_progress_block).is_err() {
-                            error!("downstream task gone");
-                            break;
+                            // Send the received block and error if there's an issue
+                            if outbound.send(in_progress_block).is_err() {
+                                error!("downstream task gone");
+                                break;
+                            }
+                        } else {
+                            debug!("no transactions, skipping block submission");
                         }
-                    } else {
-                        debug!("no transactions, skipping block submission");
                     }
                 }
             }

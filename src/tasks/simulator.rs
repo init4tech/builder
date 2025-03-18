@@ -2,14 +2,15 @@ use crate::tasks::block::InProgressBlock;
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use eyre::Result;
-use revm::{db::CacheDB, primitives::CfgEnv, DatabaseRef};
+use revm::primitives::address;
 use std::{convert::Infallible, sync::Arc};
-use tokio::{select, sync::mpsc::{Receiver, UnboundedReceiver}, task::JoinSet};
+use tokio::{select, sync::mpsc::Receiver, task::JoinSet};
+use tracing::debug;
 use trevm::{
     db::sync::{ConcurrentState, ConcurrentStateInfo},
     revm::{
-        primitives::{EVMError, ResultAndState},
-        Database, DatabaseCommit, EvmBuilder,
+        primitives::{Account, CfgEnv, EVMError, ExecutionResult, ResultAndState},
+        Database, DatabaseCommit, DatabaseRef, EvmBuilder,
     },
     BlockDriver, Cfg, DbConnect, EvmFactory, NoopBlock, TrevmBuilder, Tx,
 };
@@ -56,8 +57,8 @@ where
     /// * This function always returns whatever the latest finished in progress block is.
     pub fn spawn<T, F>(
         self,
-        mut inbound_tx: Receiver<Arc<TxEnvelope>>,
-        _inbound_bundle: Receiver<Arc<Vec<TxEnvelope>>>,
+        mut inbound_tx: Receiver<TxEnvelope>,
+        _inbound_bundle: Receiver<()>,
         evaluator: Arc<F>,
         deadline: tokio::time::Instant,
     ) -> tokio::task::JoinHandle<InProgressBlock>
@@ -84,12 +85,12 @@ where
                         if let Some(inbound_tx) = tx {
                             // Setup the simulation environment
                             let sim = self.clone();
-                            let eval = evaluator.clone();
                             let mut parent_db = Arc::new(sim.connect().unwrap());
+                            let eval_fn = evaluator.clone();
 
                             // Kick off the work in a new thread
                             join_set.spawn(async move {
-                                let result = sim.simulate_tx(inbound_tx, eval, parent_db.child());
+                                let result = sim.simulate_tx(inbound_tx, eval_fn, parent_db.child());
 
                                 if let Some((best, db)) = result {
                                     if let Ok(()) = parent_db.merge_child(db) {
@@ -134,7 +135,7 @@ where
     /// Simulates an inbound tx and applies its state if it's successfully simualted
     pub fn simulate_tx<F>(
         self,
-        tx: Arc<TxEnvelope>,
+        tx: TxEnvelope,
         evaluator: Arc<F>,
         db: ConcurrentState<Arc<ConcurrentState<Db>>>,
     ) -> SimResult<Db>
@@ -147,7 +148,7 @@ where
         let result = trevm_instance
             .fill_cfg(&PecorinoCfg)
             .fill_block(&NoopBlock)
-            .fill_tx(tx.as_ref()) // Use as_ref() to get &SimTxEnvelope from Arc
+            .fill_tx(&tx) // Use as_ref() to get &SimTxEnvelope from Arc
             .run();
 
         match result {
@@ -164,7 +165,7 @@ where
                 let db = t.1.into_db();
 
                 // return the updated db with the candidate applied to its state
-                Some((Best { tx, result, score }, db))
+                Some((Best { tx: tx.into(), result, score }, db))
             }
             Err(e) => {
                 // if this transaction fails to run, log the error and return None
@@ -173,20 +174,24 @@ where
             }
         }
     }
+}
 
-    /// Simulates an inbound bundle and applies its state if it's successfully simulated
-    pub fn simulate_bundle<T, F>(
-        &self,
-        _bundle: Arc<Vec<T>>,
-        _evaluator: Arc<F>,
-        _trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Arc<Db>>>>,
-    ) -> Option<Best<Vec<T>>>
-    where
-        T: Tx + Send + Sync + 'static,
-        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-    {
-        todo!("implement bundle handling")
+/// Simple evaluation function for builder scoring.
+pub fn eval_fn(state: &ResultAndState) -> U256 {
+    // log the transaction results
+    match &state.result {
+        ExecutionResult::Success { .. } => debug!("execution successful"),
+        ExecutionResult::Revert { .. } => debug!("execution reverted"),
+        ExecutionResult::Halt { .. } => debug!("execution halted"),
     }
+
+    // return the target account balance
+    let target_addr = address!("0x0000000000000000000000000000000000000000");
+    let default_account = Account::default();
+    let target_account = state.state.get(&target_addr).unwrap_or(&default_account);
+    tracing::info!(balance = ?target_account.info.balance, "target account balance");
+
+    target_account.info.balance
 }
 
 /// Wraps a Db into an EvmFactory compatible [`Database`]

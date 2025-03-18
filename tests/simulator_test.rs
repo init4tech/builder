@@ -1,25 +1,26 @@
-use alloy::consensus::{SignableTransaction as _, TxEip1559, TxEnvelope};
-use alloy::primitives::U256;
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::SignerSync as _;
+use alloy::{
+    consensus::{TxEnvelope, TxEip1559, SignableTransaction},
+    eips::BlockId,
+    primitives::U256,
+    providers::{Provider, ProviderBuilder},
+    signers::local::PrivateKeySigner,
+    signers::SignerSync as _,
+};
 use builder::tasks::simulator::SimulatorFactory;
-use revm::db::{AlloyDB, CacheDB};
-use revm::primitives::{address, TxKind};
+use revm::{
+    database::{AlloyDB, CacheDB},
+    primitives::{address, TxKind},
+};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 use trevm::revm::primitives::{Account, ExecutionResult, ResultAndState};
 
-// HACK: These have to be pinned to 0.7.3 because of revm version issues.
-// Once revm is updated, use the main alloy package again.
-use alloy_eips::BlockId;
-use alloy_provider::{Provider, ProviderBuilder};
-
 #[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
     // Setup transaction pipeline plumbing
-    let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<Arc<TxEnvelope>>();
-    let (_bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Arc<Vec<TxEnvelope>>>();
+    let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<TxEnvelope>();
+    let (_bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Vec<TxEnvelope>>();
     let deadline = Instant::now() + Duration::from_secs(2);
 
     // Create a new anvil instance
@@ -35,8 +36,7 @@ async fn test_spawn() {
     let latest = root_provider.get_block_number().await.unwrap();
 
     // Create an alloyDB from the provider at the latest height
-    let alloy_db =
-        AlloyDB::new(Arc::new(root_provider.clone()), BlockId::Number(latest.into())).unwrap();
+    let alloy_db = AlloyDB::new(Arc::new(root_provider.clone()), BlockId::Number(latest.into()));
     let db = CacheDB::new(Arc::new(alloy_db));
 
     // Define trevm extension, if any
