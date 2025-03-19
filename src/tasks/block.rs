@@ -42,6 +42,11 @@ impl InProgressBlock {
         self.transactions.is_empty()
     }
 
+    /// Returns the current list of transactions included in this block
+    pub fn transactions(&self) -> Vec<TxEnvelope> {
+        self.transactions.clone()
+    }
+
     /// Unseal the block
     fn unseal(&mut self) {
         self.raw_encoding.take();
