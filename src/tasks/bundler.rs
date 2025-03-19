@@ -43,7 +43,11 @@ impl BundlePoller {
     }
 
     /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.
-    pub fn new_with_poll_interval_ms(config: &BuilderConfig, authenticator: Authenticator, poll_interval_ms: u64) -> Self {
+    pub fn new_with_poll_interval_ms(
+        config: &BuilderConfig,
+        authenticator: Authenticator,
+        poll_interval_ms: u64,
+    ) -> Self {
         Self { config: config.clone(), authenticator, poll_interval_ms }
     }
 
