@@ -22,11 +22,11 @@ name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
-init4-bin-base = { path = "../bin-base" }
+init4-bin-base = { git = "https://github.com/init4tech/bin-base.git" }
 
-signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/update-trevm" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/update-trevm" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/update-trevm" }
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 
 alloy = { version = "0.12.6", features = [
     "full",
