@@ -18,14 +18,14 @@ use alloy::{
 use eyre::{bail, eyre};
 use init4_bin_base::deps::metrics::{counter, histogram};
 use oauth2::TokenResponse;
+use signet_types::{SignRequest, SignResponse};
+use signet_zenith::{
+    BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
+    Zenith::IncorrectHostBlock,
+};
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, error, instrument, trace};
-use zenith_types::{
-    BundleHelper::{self, FillPermit2},
-    SignRequest, SignResponse,
-    Zenith::IncorrectHostBlock,
-};
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -127,7 +127,7 @@ impl SubmitTask {
         s: FixedBytes<32>,
         in_progress: &InProgressBlock,
     ) -> eyre::Result<TransactionRequest> {
-        let data = zenith_types::BundleHelper::submitCall { fills, header, v, r, s }.abi_encode();
+        let data = submitCall { fills, header, v, r, s }.abi_encode();
 
         let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
         Ok(TransactionRequest::default()
@@ -151,7 +151,7 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let (v, r, s) = extract_signature_components(&resp.sig);
 
-        let header = zenith_types::BundleHelper::BlockHeader {
+        let header = BlockHeader {
             hostBlockNumber: resp.req.host_block_number,
             rollupChainId: U256::from(self.config.ru_chain_id),
             gasLimit: resp.req.gas_limit,
@@ -167,7 +167,7 @@ impl SubmitTask {
             .with_gas_limit(1_000_000);
 
         if let Err(TransportError::ErrorResp(e)) =
-            self.host_provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+            self.host_provider.call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
         {
             error!(
                 code = e.code,

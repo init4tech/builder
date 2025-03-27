@@ -16,7 +16,7 @@ pub struct Bundle {
     /// Cache identifier for the bundle
     pub id: String,
     /// The Zenith bundle for this bundle
-    pub bundle: ZenithEthBundle,
+    pub bundle: SignetEthBundle,
 }
 
 /// Response from the tx-pool containing a list of bundles.

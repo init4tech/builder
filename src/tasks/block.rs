@@ -3,7 +3,7 @@ use super::oauth::Authenticator;
 use super::tx_poller::TxPoller;
 use crate::config::{BuilderConfig, WalletlessProvider};
 use alloy::{
-    consensus::{SidecarBuilder, SidecarCoder, TxEnvelope},
+    consensus::{SidecarBuilder, SidecarCoder, transaction::TxEnvelope},
     eips::eip2718::Decodable2718,
     primitives::{B256, Bytes, keccak256},
     providers::Provider as _,
@@ -13,7 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, error, info, trace};
-use zenith_types::{Alloy2718Coder, ZenithEthBundle, encode_txns};
+use signet_zenith::{Alloy2718Coder, encode_txns};
+use signet_bundle::SignetEthBundle;
 
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
@@ -183,7 +184,7 @@ impl BlockBuilder {
     }
 
     /// Simulates a Zenith bundle against the rollup state
-    async fn simulate_bundle(&mut self, bundle: &ZenithEthBundle) -> eyre::Result<()> {
+    async fn simulate_bundle(&mut self, bundle: &SignetEthBundle) -> eyre::Result<()> {
         // TODO: Simulate bundles with the Simulation Engine
         // [ENG-672](https://linear.app/initiates/issue/ENG-672/add-support-for-bundles)
         debug!(hash = ?bundle.bundle.bundle_hash(), block_number = ?bundle.block_number(), "bundle simulations is not implemented yet - skipping simulation");
@@ -269,7 +270,7 @@ mod tests {
         rpc::types::{TransactionRequest, mev::EthSendBundle},
         signers::local::PrivateKeySigner,
     };
-    use zenith_types::ZenithEthBundle;
+    use signet_bundle::SignetEthBundle;
 
     /// Create a mock bundle for testing with a single transaction
     async fn create_mock_bundle(wallet: &EthereumWallet) -> Bundle {
@@ -294,7 +295,7 @@ mod tests {
             replacement_uuid: Some("replacement_uuid".to_owned()),
         };
 
-        let zenith_bundle = ZenithEthBundle { bundle: eth_bundle, host_fills: None };
+        let zenith_bundle = SignetEthBundle { bundle: eth_bundle, host_fills: None };
 
         Bundle { id: "mock_bundle".to_owned(), bundle: zenith_bundle }
     }

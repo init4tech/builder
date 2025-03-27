@@ -22,11 +22,21 @@ name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
-init4-bin-base = "0.1.0"
+init4-bin-base = { path = "../bin-base" }
 
-zenith-types = "0.15"
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/update-trevm" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/update-trevm" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/update-trevm" }
 
-alloy = { version = "=0.11.1", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp", "node-bindings"] }
+alloy = { version = "0.12.6", features = [
+    "full",
+    "json-rpc",
+    "signer-aws",
+    "rpc-types-mev",
+    "rlp",
+    "node-bindings",
+    "serde",
+] }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
