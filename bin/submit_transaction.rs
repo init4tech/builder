@@ -83,7 +83,7 @@ async fn connect_from_config() -> (Provider, Address, u64) {
 
     let provider = ProviderBuilder::new()
         .wallet(EthereumWallet::from(signer))
-        .on_builtin(&rpc_url)
+        .connect(&rpc_url)
         .await
         .unwrap();
 

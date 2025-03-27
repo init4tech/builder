@@ -6,7 +6,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use tokio::task::JoinHandle;
-use zenith_types::ZenithEthBundle;
+use signet_bundle::SignetEthBundle;
 
 /// Holds a bundle from the cache with a unique ID and a Zenith bundle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,7 +14,7 @@ pub struct Bundle {
     /// Cache identifier for the bundle
     pub id: String,
     /// The Zenith bundle for this bundle
-    pub bundle: ZenithEthBundle,
+    pub bundle: SignetEthBundle,
 }
 
 /// Response from the tx-pool containing a list of bundles.

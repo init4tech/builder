@@ -12,7 +12,7 @@ use alloy::{
 };
 use std::{borrow::Cow, env, num, str::FromStr};
 
-use zenith_types::Zenith;
+use signet_zenith::Zenith;
 
 // Keys for .env variables that need to be set to configure the builder.
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
@@ -207,7 +207,7 @@ impl BuilderConfig {
     /// Connect to the Rollup rpc provider.
     pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
         let provider = ProviderBuilder::new()
-            .on_builtin(&self.ru_rpc_url)
+            .connect(&self.ru_rpc_url)
             .await
             .map_err(ConfigError::Provider)?;
 
@@ -219,7 +219,7 @@ impl BuilderConfig {
         let builder_signer = self.connect_builder_signer().await?;
         let provider = ProviderBuilder::new()
             .wallet(EthereumWallet::from(builder_signer))
-            .on_builtin(&self.host_rpc_url)
+            .connect(&self.host_rpc_url)
             .await
             .map_err(ConfigError::Provider)?;
 
@@ -234,7 +234,7 @@ impl BuilderConfig {
             Vec::with_capacity(self.tx_broadcast_urls.len());
         for url in self.tx_broadcast_urls.iter() {
             let provider =
-                ProviderBuilder::new().on_builtin(url).await.map_err(ConfigError::Provider)?;
+                ProviderBuilder::new().connect(url).await.map_err(ConfigError::Provider)?;
 
             providers.push(provider);
         }
