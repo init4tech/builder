@@ -28,6 +28,8 @@ signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "mai
 signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 
+trevm = { version = "0.20.4", features = [ "concurrent-db" ]}
+
 alloy = { version = "0.12.6", features = [
     "full",
     "json-rpc",
@@ -37,13 +39,6 @@ alloy = { version = "0.12.6", features = [
     "node-bindings",
     "serde",
 ] }
-
-trevm = { version = "0.19.12", features = [ "concurrent-db" ]}
-revm = { version = "19.5.0", features = [ "alloydb" ]} 
-
-# HACK: Update these to use main alloy package 
-alloy-provider = { version = "0.7.3" }
-alloy-eips = { version = "0.7.3" }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
