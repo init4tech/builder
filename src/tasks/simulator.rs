@@ -2,16 +2,14 @@ use crate::tasks::block::InProgressBlock;
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use eyre::Result;
-use revm::{db::CacheDB, primitives::{address, Account, CfgEnv, ExecutionResult}, DatabaseRef};
-use std::{convert::Infallible, sync::Arc};
+use std::sync::Arc;
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
 use trevm::{
-    db::sync::{ConcurrentState, ConcurrentStateInfo},
-    revm::{
-        primitives::{EVMError, ResultAndState},
-        Database, DatabaseCommit, EvmBuilder,
-    },
-    BlockDriver, Cfg, DbConnect, EvmFactory, NoopBlock, TrevmBuilder, Tx,
+    db::sync::{ConcurrentState, ConcurrentStateInfo}, helpers::Ctx, revm::{
+        context::{
+            result::{EVMError, ExecutionResult, ResultAndState}, CfgEnv
+        }, inspector::inspectors::GasInspector, primitives::address, state::Account, Database, DatabaseCommit, DatabaseRef, Inspector
+    }, BlockDriver, Cfg, DbConnect, EvmFactory, NoopBlock, Trevm, TrevmBuilder, TrevmBuilderError, Tx
 };
 
 /// Tracks the EVM state, score, and result of an EVM execution.
@@ -29,47 +27,43 @@ pub struct Best<T, S: PartialOrd + Ord = U256> {
 
 /// Binds a database and an extension together.
 #[derive(Debug, Clone)]
-pub struct SimulatorFactory<Db, Ext> {
+pub struct SimulatorFactory<Db, Insp> {
     /// The database state the execution is carried out on.
     pub db: Db,
-    /// The extension, if any, provided to the trevm instance.
-    pub ext: Ext,
+    /// The inspector
+    pub inspector: Insp,
 }
 
 /// SimResult is an [`Option`] type that holds a tuple of a transaction and its associated
 /// state as a [`Db`] type updates if it was successfully executed.
-type SimResult<Db> = Option<(Best<TxEnvelope>, ConcurrentState<Arc<ConcurrentState<Db>>>)>;
+type SimResult<Db> = Result<Option<(Best<TxEnvelope>, ConcurrentState<Arc<ConcurrentState<Db>>>)>>;
 
-impl<Db, Ext> SimulatorFactory<Db, Ext>
+impl<Db, Insp> SimulatorFactory<Db, Insp>
 where
-    Ext: Send + Sync + Clone + 'static,
+    Insp: Inspector<Ctx<ConcurrentState<Db>>> + Send + Sync + Clone + 'static,
     Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
 {
     /// Creates a new Simulator factory out of the database and extension.
-    pub const fn new(db: Db, ext: Ext) -> Self {
-        Self { db, ext }
+    pub const fn new(db: Db, inspector: Insp) -> Self {
+        Self { db, inspector }
     }
 
     /// Spawns a trevm simulator that runs until `deadline` is hit.
     /// * Spawn does not guarantee that a thread is finished before the deadline.
     /// * This is intentional, so that it can maximize simulation time before the deadline.
     /// * This function always returns whatever the latest finished in progress block is.
-    pub fn spawn<T, F>(
+    pub fn spawn<F>(
         self,
         mut inbound_tx: UnboundedReceiver<TxEnvelope>,
         evaluator: Arc<F>,
         deadline: tokio::time::Instant,
     ) -> tokio::task::JoinHandle<InProgressBlock>
     where
-        T: Tx,
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
     {
         tokio::spawn(async move {
-            // Spawn a join set to track all simulation threads
             let mut join_set = JoinSet::new();
-
             let mut best: Option<Best<TxEnvelope>> = None;
-
             let mut block = InProgressBlock::new();
 
             let sleep = tokio::time::sleep_until(deadline);
@@ -84,13 +78,13 @@ where
                             // Setup the simulation environment
                             let sim = self.clone();
                             let eval = evaluator.clone();
-                            let mut parent_db = Arc::new(sim.connect().unwrap());
+                            let db = self.connect().expect("must connect db");
+                            let mut parent_db = Arc::new(db);
 
-                            // Kick off the work in a new thread
                             join_set.spawn(async move {
                                 let result = sim.simulate_tx(inbound_tx, eval, parent_db.child());
 
-                                if let Some((best, db)) = result {
+                                if let Ok(Some((best, db))) = result {
                                     if let Ok(()) = parent_db.merge_child(db) {
                                         tracing::debug!("merging updated simulation state");
                                         return Some(best)
@@ -141,34 +135,22 @@ where
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
         Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
     {
-        let trevm_instance = EvmBuilder::default().with_db(db).build_trevm();
+        let t = TrevmBuilder::new().with_db(db).with_insp(self.inspector.clone()).build_trevm()?;
 
-        let result = trevm_instance
-            .fill_cfg(&PecorinoCfg)
-            .fill_block(&NoopBlock)
-            .fill_tx(&tx) // Use as_ref() to get &SimTxEnvelope from Arc
-            .run();
+        let result = t.fill_cfg(&PecorinoCfg).fill_block(&NoopBlock).fill_tx(&tx).run();
 
         match result {
             Ok(t) => {
-                // log and evaluate simulation results
-                tracing::info!(tx_hash = ?tx.clone().tx_hash(), "transaction simulated");
                 let result = t.result_and_state().clone();
-                tracing::debug!(gas_used = &result.result.gas_used(), "gas consumed");
+                let db = t.into_db();
                 let score = evaluator(&result);
-                tracing::debug!(score = ?score, "transaction evaluated");
+                let best = Best { tx: Arc::new(tx), result, score };
 
-                // accept results
-                let t = t.accept();
-                let db = t.1.into_db();
-
-                // return the updated db with the candidate applied to its state
-                Some((Best { tx: Arc::new(tx), result, score }, db))
+                Ok(Some((best, db)))
             }
-            Err(e) => {
-                // if this transaction fails to run, log the error and return None
-                tracing::error!(err = ?e.as_transaction_error(), "failed to simulate tx");
-                None
+            Err(terr) => {
+                tracing::error!(err = ?terr.error(), "transaction simulation error");
+                Ok(None)
             }
         }
     }
@@ -178,7 +160,7 @@ where
         &self,
         _bundle: Arc<Vec<T>>,
         _evaluator: Arc<F>,
-        _trevm_instance: trevm::EvmNeedsCfg<'_, (), ConcurrentState<CacheDB<Arc<Db>>>>,
+        _db: ConcurrentState<Arc<ConcurrentState<Db>>>,
     ) -> Option<Best<Vec<T>>>
     where
         T: Tx + Send + Sync + 'static,
@@ -188,44 +170,51 @@ where
     }
 }
 
-/// Wraps a Db into an EvmFactory compatible [`Database`]
-impl<'a, Db, Ext> DbConnect<'a> for SimulatorFactory<Db, Ext>
+impl<Db, Insp> DbConnect for SimulatorFactory<Db, Insp>
 where
     Db: Database + DatabaseRef + DatabaseCommit + Sync + Send + Clone + 'static,
-    Ext: Sync + Clone,
+    Insp: Inspector<Ctx<ConcurrentState<Db>>> + Sync + Send + Clone,
 {
     type Database = ConcurrentState<Db>;
-    type Error = Infallible;
+    type Error = TrevmBuilderError;
 
-    fn connect(&'a self) -> Result<Self::Database, Self::Error> {
+    fn connect(&self) -> Result<Self::Database, Self::Error> {
         let inner = ConcurrentState::new(self.db.clone(), ConcurrentStateInfo::default());
         Ok(inner)
     }
 }
 
 /// Makes a SimulatorFactory capable of creating and configuring trevm instances
-impl<'a, Db, Ext> EvmFactory<'a> for SimulatorFactory<Db, Ext>
+impl<Db, Insp> EvmFactory for SimulatorFactory<Db, Insp>
 where
     Db: Database + DatabaseRef + DatabaseCommit + Sync + Send + Clone + 'static,
-    Ext: Sync + Clone,
+    Insp: Inspector<Ctx<ConcurrentState<Db>>> + Sync + Send + Clone,
 {
-    type Ext = ();
+    type Insp = Insp;
 
-    /// Create makes a [`ConcurrentState`] database by calling connect
-    fn create(&'a self) -> Result<trevm::EvmNeedsCfg<'a, Self::Ext, Self::Database>, Self::Error> {
+    fn create(
+        &self,
+    ) -> std::result::Result<trevm::EvmNeedsCfg<Self::Database, Self::Insp>, Self::Error> {
         let db = self.connect()?;
-        let trevm = trevm::revm::EvmBuilder::default().with_db(db).build_trevm();
-        Ok(trevm)
+        let result =
+            TrevmBuilder::new().with_db(db).with_insp(self.inspector.clone()).build_trevm();
+        match result {
+            Ok(t) => Ok(t),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
-/// A trait for extracting transactions from
-pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'static {
+pub trait BlockExtractor<Insp, Db>
+where
+    Db: Database + DatabaseCommit,
+    Insp: Inspector<Ctx<Db>>,
+{
     /// BlockDriver runs the transactions over the provided trevm instance.
-    type Driver: BlockDriver<Ext, Error<Db>: core::error::Error>;
+    type Driver: BlockDriver<Insp, Error<Db>: core::error::Error>;
 
     /// Instantiate an configure a new [`trevm`] instance.
-    fn trevm(&self, db: Db) -> trevm::EvmNeedsBlock<'static, Ext, Db>;
+    fn trevm(&self, db: Db) -> trevm::EvmNeedsBlock<Db, Insp>;
 
     /// Extracts transactions from the source.
     ///
@@ -233,7 +222,7 @@ pub trait BlockExtractor<Ext, Db: Database + DatabaseCommit>: Send + Sync + 'sta
     fn extract(&mut self, bytes: &[u8]) -> Self::Driver;
 }
 
-impl<Ext> BlockDriver<Ext> for InProgressBlock {
+impl<Insp> BlockDriver<Insp> for InProgressBlock {
     type Block = NoopBlock;
 
     type Error<Db: Database + DatabaseCommit> = Error<Db>;
@@ -244,10 +233,13 @@ impl<Ext> BlockDriver<Ext> for InProgressBlock {
 
     /// Loops through the transactions in the block and runs them, accepting the state at the end
     /// if it was successful and returning and erroring out otherwise.
-    fn run_txns<'a, Db: Database + DatabaseCommit>(
+    fn run_txns<Db: Database + DatabaseCommit>(
         &mut self,
-        mut trevm: trevm::EvmNeedsTx<'a, Ext, Db>,
-    ) -> trevm::RunTxResult<'a, Ext, Db, Self> {
+        mut trevm: trevm::EvmNeedsTx<Db, Insp>,
+    ) -> trevm::RunTxResult<Db, Insp, Self>
+    where
+        Insp: Inspector<Ctx<Db>>,
+    {
         for tx in self.transactions().iter() {
             if tx.recover_signer().is_ok() {
                 let sender = tx.recover_signer().unwrap();
@@ -272,8 +264,11 @@ impl<Ext> BlockDriver<Ext> for InProgressBlock {
 
     fn post_block<Db: Database + DatabaseCommit>(
         &mut self,
-        _trevm: &trevm::EvmNeedsBlock<'_, Ext, Db>,
-    ) -> Result<(), Self::Error<Db>> {
+        _trevm: &trevm::EvmNeedsBlock<Db, Insp>,
+    ) -> Result<(), Self::Error<Db>>
+    where
+        Insp: Inspector<Ctx<Db>>,
+    {
         Ok(())
     }
 }
