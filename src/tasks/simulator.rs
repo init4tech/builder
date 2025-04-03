@@ -5,11 +5,11 @@ use eyre::Result;
 use std::sync::Arc;
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
 use trevm::{
-    db::sync::{ConcurrentState, ConcurrentStateInfo}, helpers::Ctx, revm::{
+    db::{cow::CacheOnWrite, sync::{ConcurrentState, ConcurrentStateInfo}}, helpers::Ctx, revm::{
         context::{
             result::{EVMError, ExecutionResult, ResultAndState}, CfgEnv
-        }, inspector::inspectors::GasInspector, primitives::address, state::Account, Database, DatabaseCommit, DatabaseRef, Inspector
-    }, BlockDriver, Cfg, DbConnect, EvmFactory, NoopBlock, Trevm, TrevmBuilder, TrevmBuilderError, Tx
+        }, primitives::address, state::Account, Database, DatabaseCommit, DatabaseRef, Inspector
+    }, BlockDriver, Cfg, DbConnect, EvmFactory, NoopBlock, TrevmBuilder, TrevmBuilderError, Tx
 };
 
 /// Tracks the EVM state, score, and result of an EVM execution.
@@ -25,7 +25,7 @@ pub struct Best<T, S: PartialOrd + Ord = U256> {
     pub score: S,
 }
 
-/// Binds a database and an extension together.
+/// Binds a database and an inspector together for simulation.
 #[derive(Debug, Clone)]
 pub struct SimulatorFactory<Db, Insp> {
     /// The database state the execution is carried out on.
@@ -40,10 +40,15 @@ type SimResult<Db> = Result<Option<(Best<TxEnvelope>, ConcurrentState<Arc<Concur
 
 impl<Db, Insp> SimulatorFactory<Db, Insp>
 where
-    Insp: Inspector<Ctx<ConcurrentState<Db>>> + Send + Sync + Clone + 'static,
+    Insp: Inspector<Ctx<ConcurrentState<Db>>>
+        + Inspector<Ctx<ConcurrentState<Arc<ConcurrentState<Db>>>>>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
     Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
 {
-    /// Creates a new Simulator factory out of the database and extension.
+    /// Creates a new Simulator factory from the provided database and inspector.
     pub const fn new(db: Db, inspector: Insp) -> Self {
         Self { db, inspector }
     }

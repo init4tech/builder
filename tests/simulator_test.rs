@@ -1,19 +1,34 @@
-use alloy::consensus::{SignableTransaction as _, TxEip1559, TxEnvelope};
-use alloy::network::Ethereum;
-use alloy::primitives::U256;
-use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::SignerSync as _;
-use alloy::transports::http::{Client, Http};
-use builder::config::WalletlessProvider;
-use builder::tasks::simulator::SimulatorFactory;
-use trevm::revm::database::{AlloyDB, CacheDB};
-use trevm::revm::primitives::{address, TxKind};
+use alloy::{
+    consensus::{SignableTransaction as _, TxEip1559, TxEnvelope},
+    eips::BlockId,
+    network::Ethereum,
+    primitives::U256,
+    providers::{Provider, ProviderBuilder},
+    signers::SignerSync as _,
+    signers::local::PrivateKeySigner,
+};
+use builder::{config::WalletlessProvider, tasks::simulator::SimulatorFactory};
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tokio::time::{Duration, Instant};
-use trevm::revm::primitives::{Account, ExecutionResult, ResultAndState};
-use alloy::eips::BlockId;
-use alloy::providers::{Provider, ProviderBuilder};
+use tokio::{
+    sync::mpsc,
+    time::{Duration, Instant},
+};
+use trevm::{
+    db::{
+        cow::CacheOnWrite,
+        sync::{ConcurrentState, ConcurrentStateInfo},
+    },
+    revm::{
+        context::result::{ExecutionResult, ResultAndState},
+        database::{CacheDB, Database, DatabaseCommit, DatabaseRef, AlloyDB, WrapDatabaseAsync},
+        primitives::{TxKind, address},
+        inspector::NoOpInspector,
+        state::Account,
+    },
+};
+
+// Define a type alias for the database used with SimulatorFactory.
+type Db = WrapDatabaseAsync<AlloyDB<Ethereum, WalletlessProvider>>;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
@@ -24,7 +39,7 @@ async fn test_spawn() {
 
     // Create a new anvil instance
     let anvil =
-        alloy::node_bindings::Anvil::new().block_time(1).chain_id(17003).try_spawn().unwrap();
+        alloy::node_bindings::Anvil::new().block_time(1).chain_id(14174).try_spawn().unwrap();
 
     // Create a test wallet from the anvil keys
     let keys = anvil.keys();
@@ -35,20 +50,19 @@ async fn test_spawn() {
     let latest = root_provider.get_block_number().await.unwrap();
 
     // Create an alloyDB from the provider at the latest height
-    let alloy_db: AlloyDB<Http<Client>, Ethereum, Arc<WalletlessProvider>> =
-        AlloyDB::new(Arc::new(root_provider.clone()), BlockId::Number(latest.into())).unwrap();
-    let db = CacheDB::new(Arc::new(alloy_db));
+    let alloy_db: AlloyDB<Ethereum, WalletlessProvider> =
+        AlloyDB::new(root_provider.clone(), BlockId::from(latest));
 
-    // Define trevm extension, if any
-    let ext = ();
-
+    let wrapped_db = WrapDatabaseAsync::new(alloy_db).unwrap();
+    let concurrent_db = ConcurrentState::new(wrapped_db, ConcurrentStateInfo::default());
+    
     // Define the evaluator function
     let evaluator = Arc::new(test_evaluator);
 
     // Create a simulation factory with the provided DB
-    let sim_factory = SimulatorFactory::new(db, ext);
-    let handle =
-        sim_factory.spawn::<TxEnvelope, _>(tx_receiver, evaluator, deadline);
+    let sim_factory = SimulatorFactory::new(concurrent_db, NoOpInspector);
+
+    let handle = sim_factory.spawn(tx_receiver, evaluator, deadline);
 
     // Send some transactions
     for count in 0..2 {
