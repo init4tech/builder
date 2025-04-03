@@ -5,11 +5,21 @@ use eyre::Result;
 use std::sync::Arc;
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::JoinSet};
 use trevm::{
-    db::{cow::CacheOnWrite, sync::{ConcurrentState, ConcurrentStateInfo}}, helpers::Ctx, revm::{
+    Cfg, DbConnect, NoopBlock, TrevmBuilder, TrevmBuilderError, Tx,
+    db::{
+        cow::CacheOnWrite,
+        sync::{ConcurrentState, ConcurrentStateInfo},
+    },
+    helpers::Ctx,
+    revm::{
+        Database, DatabaseCommit, DatabaseRef, Inspector,
         context::{
-            result::{EVMError, ExecutionResult, ResultAndState}, CfgEnv
-        }, primitives::address, state::Account, Database, DatabaseCommit, DatabaseRef, Inspector
-    }, BlockDriver, Cfg, DbConnect, EvmFactory, NoopBlock, TrevmBuilder, TrevmBuilderError, Tx
+            CfgEnv,
+            result::{EVMError, ExecutionResult, ResultAndState},
+        },
+        primitives::address,
+        state::Account,
+    },
 };
 
 /// Tracks the EVM state, score, and result of an EVM execution.
@@ -28,29 +38,33 @@ pub struct Best<T, S: PartialOrd + Ord = U256> {
 /// Binds a database and an inspector together for simulation.
 #[derive(Debug, Clone)]
 pub struct SimulatorFactory<Db, Insp> {
-    /// The database state the execution is carried out on.
-    pub db: Db,
     /// The inspector
     pub inspector: Insp,
+    /// A CacheOnWrite that is cloneable
+    pub cow: MakeCow<Db>,
 }
 
 /// SimResult is an [`Option`] type that holds a tuple of a transaction and its associated
 /// state as a [`Db`] type updates if it was successfully executed.
-type SimResult<Db> = Result<Option<(Best<TxEnvelope>, ConcurrentState<Arc<ConcurrentState<Db>>>)>>;
+type SimResult<Db> = Result<Option<(Best<TxEnvelope>, CacheOnWrite<Arc<ConcurrentState<Db>>>)>>;
 
 impl<Db, Insp> SimulatorFactory<Db, Insp>
 where
-    Insp: Inspector<Ctx<ConcurrentState<Db>>>
-        + Inspector<Ctx<ConcurrentState<Arc<ConcurrentState<Db>>>>>
+    Insp: Inspector<Ctx<CacheOnWrite<CacheOnWrite<Arc<ConcurrentState<Db>>>>>>
         + Send
         + Sync
         + Clone
         + 'static,
     Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
+    MakeCow<Db>: DbConnect<Database = CacheOnWrite<Arc<ConcurrentState<Db>>>>,
 {
     /// Creates a new Simulator factory from the provided database and inspector.
-    pub const fn new(db: Db, inspector: Insp) -> Self {
-        Self { db, inspector }
+    pub fn new(db: Db, inspector: Insp) -> Self {
+        let cdb = ConcurrentState::new(db, ConcurrentStateInfo::default());
+        let cdb = Arc::new(cdb);
+        let cow = MakeCow::new(cdb);
+
+        Self { inspector, cow }
     }
 
     /// Spawns a trevm simulator that runs until `deadline` is hit.
@@ -68,7 +82,6 @@ where
     {
         tokio::spawn(async move {
             let mut join_set = JoinSet::new();
-            let mut best: Option<Best<TxEnvelope>> = None;
             let mut block = InProgressBlock::new();
 
             let sleep = tokio::time::sleep_until(deadline);
@@ -76,52 +89,55 @@ where
 
             loop {
                 select! {
-                    _ = &mut sleep => break,
-                    // Handle incoming
+                    _ = &mut sleep => {
+                        tracing::debug!("deadline reached, stopping simulation");
+                        break;
+                    },
                     tx = inbound_tx.recv() => {
+                        tracing::debug!("#### received transaction");
                         if let Some(inbound_tx) = tx {
-                            // Setup the simulation environment
-                            let sim = self.clone();
                             let eval = evaluator.clone();
-                            let db = self.connect().expect("must connect db");
-                            let mut parent_db = Arc::new(db);
+                            let sim = self.clone();
+                            let db = self.cow.connect().unwrap();
 
                             join_set.spawn(async move {
-                                let result = sim.simulate_tx(inbound_tx, eval, parent_db.child());
-
-                                if let Ok(Some((best, db))) = result {
-                                    if let Ok(()) = parent_db.merge_child(db) {
-                                        tracing::debug!("merging updated simulation state");
-                                        return Some(best)
+                                let result = sim.simulate_tx(inbound_tx, eval, db.nest());
+                                match result {
+                                    Ok(Some((best, new_db))) => {
+                                        tracing::debug!("simulation completed, attempting to update state");
+                                        // TODO: call cow.flatten on the nest instead
+                                        tracing::debug!("successfully merged simulation state");
+                                        return Some(best);
                                     }
-                                    tracing::error!("failed to update simulation state");
-                                    None
-                                } else {
-                                    None
+                                    Ok(None) => {
+                                        tracing::debug!("simulation returned no result");
+                                        return None;
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(e = ?e, "failed to simulate transaction");
+                                        return None;
+                                    }
                                 }
                             });
                         }
                     }
                     Some(result) = join_set.join_next() => {
+                        println!("join_set result");
                         match result {
-                            Ok(Some(candidate)) => {
-                                tracing::info!(tx_hash = ?candidate.tx.tx_hash(), "ingesting transaction");
-                                block.ingest_tx(candidate.tx.as_ref());
-
-                                if candidate.score > best.as_ref().map(|b| b.score).unwrap_or_default() {
-                                    tracing::info!(score = ?candidate.score, "new best candidate found");
-                                    best = Some(candidate);
-                                }
-                            }
+                            Ok(Some(best)) => {
+                                println!("simulation completed");
+                                block.ingest_tx(best.tx.as_ref());
+                            },
                             Ok(None) => {
+                                println!("simulation returned no result");
                                 tracing::debug!("simulation returned no result");
                             }
                             Err(e) => {
-                                tracing::error!("simulation task failed: {}", e);
+                                println!("simulation returned an error: {}", e);
+                                tracing::error!(e = ?e, "failed to simulate transaction");
                             }
                         }
                     }
-                    else => break,
                 }
             }
 
@@ -131,10 +147,10 @@ where
 
     /// Simulates an inbound tx and applies its state if it's successfully simualted
     pub fn simulate_tx<F>(
-        self,
+        &self,
         tx: TxEnvelope,
         evaluator: Arc<F>,
-        db: ConcurrentState<Arc<ConcurrentState<Db>>>,
+        db: CacheOnWrite<CacheOnWrite<Arc<ConcurrentState<Db>>>>,
     ) -> SimResult<Db>
     where
         F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
@@ -150,6 +166,9 @@ where
                 let db = t.into_db();
                 let score = evaluator(&result);
                 let best = Best { tx: Arc::new(tx), result, score };
+
+                // Flatten to save the result to the parent and return it
+                let db = db.flatten();
 
                 Ok(Some((best, db)))
             }
@@ -175,106 +194,31 @@ where
     }
 }
 
-impl<Db, Insp> DbConnect for SimulatorFactory<Db, Insp>
+/// MakeCow wraps a ConcurrentState database in an Arc to allow for cloning.
+#[derive(Debug, Clone)]
+pub struct MakeCow<Db>(Arc<ConcurrentState<Db>>);
+
+impl<Db> MakeCow<Db>
+where
+    Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + 'static,
+{
+    /// Returns a new CoW Db that implements Clone for use in DbConnect
+    pub fn new(db: Arc<ConcurrentState<Db>>) -> Self {
+        Self(db)
+    }
+}
+
+impl<Db> DbConnect for MakeCow<Db>
 where
     Db: Database + DatabaseRef + DatabaseCommit + Sync + Send + Clone + 'static,
-    Insp: Inspector<Ctx<ConcurrentState<Db>>> + Sync + Send + Clone,
 {
-    type Database = ConcurrentState<Db>;
+    type Database = CacheOnWrite<Arc<ConcurrentState<Db>>>;
     type Error = TrevmBuilderError;
 
+    /// Connects to the database and returns a CacheOnWrite instance
     fn connect(&self) -> Result<Self::Database, Self::Error> {
-        let inner = ConcurrentState::new(self.db.clone(), ConcurrentStateInfo::default());
-        Ok(inner)
-    }
-}
-
-/// Makes a SimulatorFactory capable of creating and configuring trevm instances
-impl<Db, Insp> EvmFactory for SimulatorFactory<Db, Insp>
-where
-    Db: Database + DatabaseRef + DatabaseCommit + Sync + Send + Clone + 'static,
-    Insp: Inspector<Ctx<ConcurrentState<Db>>> + Sync + Send + Clone,
-{
-    type Insp = Insp;
-
-    fn create(
-        &self,
-    ) -> std::result::Result<trevm::EvmNeedsCfg<Self::Database, Self::Insp>, Self::Error> {
-        let db = self.connect()?;
-        let result =
-            TrevmBuilder::new().with_db(db).with_insp(self.inspector.clone()).build_trevm();
-        match result {
-            Ok(t) => Ok(t),
-            Err(e) => Err(e.into()),
-        }
-    }
-}
-
-pub trait BlockExtractor<Insp, Db>
-where
-    Db: Database + DatabaseCommit,
-    Insp: Inspector<Ctx<Db>>,
-{
-    /// BlockDriver runs the transactions over the provided trevm instance.
-    type Driver: BlockDriver<Insp, Error<Db>: core::error::Error>;
-
-    /// Instantiate an configure a new [`trevm`] instance.
-    fn trevm(&self, db: Db) -> trevm::EvmNeedsBlock<Db, Insp>;
-
-    /// Extracts transactions from the source.
-    ///
-    /// Extraction is infallible. Worst case it should return a no-op driver.
-    fn extract(&mut self, bytes: &[u8]) -> Self::Driver;
-}
-
-impl<Insp> BlockDriver<Insp> for InProgressBlock {
-    type Block = NoopBlock;
-
-    type Error<Db: Database + DatabaseCommit> = Error<Db>;
-
-    fn block(&self) -> &Self::Block {
-        &NoopBlock
-    }
-
-    /// Loops through the transactions in the block and runs them, accepting the state at the end
-    /// if it was successful and returning and erroring out otherwise.
-    fn run_txns<Db: Database + DatabaseCommit>(
-        &mut self,
-        mut trevm: trevm::EvmNeedsTx<Db, Insp>,
-    ) -> trevm::RunTxResult<Db, Insp, Self>
-    where
-        Insp: Inspector<Ctx<Db>>,
-    {
-        for tx in self.transactions().iter() {
-            if tx.recover_signer().is_ok() {
-                let sender = tx.recover_signer().unwrap();
-                tracing::info!(sender = ?sender, tx_hash = ?tx.tx_hash(), "simulating transaction");
-
-                let t = match trevm.run_tx(tx) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        if e.is_transaction_error() {
-                            return Ok(e.discard_error());
-                        } else {
-                            return Err(e.err_into());
-                        }
-                    }
-                };
-
-                (_, trevm) = t.accept();
-            }
-        }
-        Ok(trevm)
-    }
-
-    fn post_block<Db: Database + DatabaseCommit>(
-        &mut self,
-        _trevm: &trevm::EvmNeedsBlock<Db, Insp>,
-    ) -> Result<(), Self::Error<Db>>
-    where
-        Insp: Inspector<Ctx<Db>>,
-    {
-        Ok(())
+        let db: CacheOnWrite<Arc<ConcurrentState<Db>>> = CacheOnWrite::new(self.0.clone());
+        Ok(db)
     }
 }
 
