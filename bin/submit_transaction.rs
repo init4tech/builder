@@ -82,9 +82,8 @@ async fn connect_from_config() -> (Provider, Address, u64) {
     let signer = AwsSigner::new(client, kms_key_id.to_string(), Some(chain_id)).await.unwrap();
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
         .wallet(EthereumWallet::from(signer))
-        .on_builtin(&rpc_url)
+        .connect(&rpc_url)
         .await
         .unwrap();
 
