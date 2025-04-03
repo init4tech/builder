@@ -1,70 +1,49 @@
 use alloy::{
     consensus::{SignableTransaction as _, TxEip1559, TxEnvelope},
-    eips::BlockId,
-    network::Ethereum,
     primitives::U256,
-    providers::{Provider, ProviderBuilder},
     signers::SignerSync as _,
     signers::local::PrivateKeySigner,
 };
-use builder::{config::WalletlessProvider, tasks::simulator::SimulatorFactory};
+use builder::tasks::simulator::SimulatorFactory;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc,
     time::{Duration, Instant},
 };
-use trevm::{
-    db::{
-        cow::CacheOnWrite,
-        sync::{ConcurrentState, ConcurrentStateInfo},
-    },
-    revm::{
-        context::result::{ExecutionResult, ResultAndState},
-        database::{CacheDB, Database, DatabaseCommit, DatabaseRef, AlloyDB, WrapDatabaseAsync},
-        primitives::{TxKind, address},
-        inspector::NoOpInspector,
-        state::Account,
-    },
+use trevm::revm::{
+    context::result::{ExecutionResult, ResultAndState},
+    database::{CacheDB, InMemoryDB},
+    inspector::NoOpInspector,
+    primitives::{TxKind, address},
+    state::Account,
 };
-
-// Define a type alias for the database used with SimulatorFactory.
-type Db = WrapDatabaseAsync<AlloyDB<Ethereum, WalletlessProvider>>;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
     // Setup transaction pipeline plumbing
     let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<TxEnvelope>();
-    let (_bundle_sender, bundle_receiver) = mpsc::unbounded_channel::<Vec<TxEnvelope>>();
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let (_bundle_sender, _bundle_receiver) = mpsc::unbounded_channel::<Vec<TxEnvelope>>();
+    let deadline = Instant::now() + Duration::from_secs(5);
 
-    // Create a new anvil instance
+    // Create a new anvil instance and test wallets
     let anvil =
         alloy::node_bindings::Anvil::new().block_time(1).chain_id(14174).try_spawn().unwrap();
-
-    // Create a test wallet from the anvil keys
     let keys = anvil.keys();
     let test_wallet = &PrivateKeySigner::from(keys[0].clone());
 
-    // Create a root provider on that anvil instance
-    let root_provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
-    let latest = root_provider.get_block_number().await.unwrap();
-
-    // Create an alloyDB from the provider at the latest height
-    let alloy_db: AlloyDB<Ethereum, WalletlessProvider> =
-        AlloyDB::new(root_provider.clone(), BlockId::from(latest));
-
-    let wrapped_db = WrapDatabaseAsync::new(alloy_db).unwrap();
-    let concurrent_db = ConcurrentState::new(wrapped_db, ConcurrentStateInfo::default());
-    
-    // Define the evaluator function
+    // Create a evaluator
     let evaluator = Arc::new(test_evaluator);
 
-    // Create a simulation factory with the provided DB
-    let sim_factory = SimulatorFactory::new(concurrent_db, NoOpInspector);
+    // Make a CoW database
+    let db = CacheDB::new(InMemoryDB::default());
 
+    // Create a new simulator factory with the given database and inspector
+    let sim_factory = SimulatorFactory::new(db, NoOpInspector);
+
+    // Spawn the simulator actor
     let handle = sim_factory.spawn(tx_receiver, evaluator, deadline);
 
-    // Send some transactions
+    // Send transactions to the simulator
     for count in 0..2 {
         let test_tx = new_test_tx(test_wallet, count).unwrap();
         tx_sender.send(test_tx).unwrap();
