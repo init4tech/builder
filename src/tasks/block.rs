@@ -9,12 +9,12 @@ use alloy::{
     providers::Provider as _,
     rlp::Buf,
 };
+use signet_bundle::SignetEthBundle;
+use signet_zenith::{Alloy2718Coder, encode_txns};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::OnceLock, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, error, info, trace};
-use signet_zenith::{Alloy2718Coder, encode_txns};
-use signet_bundle::SignetEthBundle;
 
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;

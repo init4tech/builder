@@ -8,8 +8,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::{Instrument, debug, trace};
-use zenith_types::ZenithEthBundle;
-
+use signet_bundle::SignetEthBundle;
 /// Holds a bundle from the cache with a unique ID and a Zenith bundle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
