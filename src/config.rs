@@ -10,9 +10,8 @@ use alloy::{
         },
     },
 };
-use std::{borrow::Cow, env, num, str::FromStr};
-
 use signet_zenith::Zenith;
+use std::{borrow::Cow, env, num, str::FromStr};
 
 // Keys for .env variables that need to be set to configure the builder.
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
@@ -125,7 +124,7 @@ impl ConfigError {
     }
 }
 
-/// Defines a full provider.
+/// Type alias for the provider used in the builder.
 pub type Provider = FillProvider<
     JoinFill<
         JoinFill<
@@ -138,7 +137,7 @@ pub type Provider = FillProvider<
     Ethereum,
 >;
 
-/// Defines a provider type used to read-only.
+/// Type alias for the provider used in the builder, without a wallet.
 pub type WalletlessProvider = FillProvider<
     JoinFill<
         Identity,
@@ -148,7 +147,7 @@ pub type WalletlessProvider = FillProvider<
     Ethereum,
 >;
 
-/// Defines a [`Zenith`] instance that is generic over [`Provider`]
+/// A [`Zenith`] contract instance using [`Provider`] as the provider.
 pub type ZenithInstance<P = Provider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
 
 impl BuilderConfig {

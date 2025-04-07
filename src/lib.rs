@@ -27,5 +27,5 @@ pub mod tasks;
 /// Utilities.
 pub mod utils;
 
-/// Anonymous crate dependency imports.
+// Anonymous import suppresses warnings about unused imports.
 use openssl as _;
