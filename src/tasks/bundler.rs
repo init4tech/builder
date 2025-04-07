@@ -89,11 +89,3 @@ impl BundlePoller {
         (inbound, jh)
     }
 }
-
-impl PartialEq for Bundle {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for Bundle {}
