@@ -94,7 +94,7 @@ where
                         break;
                     },
                     tx = inbound_tx.recv() => {
-                        tracing::debug!("#### received transaction");
+                        tracing::debug!(tx = ?tx, "received transaction");
                         if let Some(inbound_tx) = tx {
                             let eval = evaluator.clone();
                             let sim = self.clone();

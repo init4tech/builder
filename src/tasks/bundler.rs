@@ -4,11 +4,11 @@ use crate::tasks::oauth::Authenticator;
 use oauth2::TokenResponse;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use signet_bundle::SignetEthBundle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::{Instrument, debug, trace};
-use signet_bundle::SignetEthBundle;
 /// Holds a bundle from the cache with a unique ID and a Zenith bundle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {

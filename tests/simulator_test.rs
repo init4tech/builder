@@ -1,8 +1,10 @@
 use alloy::{
     consensus::{SignableTransaction as _, TxEip1559, TxEnvelope},
     primitives::U256,
-    signers::SignerSync as _,
-    signers::local::PrivateKeySigner,
+    signers::{
+        SignerSync as _,
+        local::{LocalSigner, PrivateKeySigner},
+    },
 };
 use builder::tasks::simulator::SimulatorFactory;
 use std::sync::Arc;
@@ -15,13 +17,14 @@ use trevm::revm::{
     database::{CacheDB, InMemoryDB},
     inspector::NoOpInspector,
     primitives::{TxKind, address},
-    state::Account,
+    state::{Account, AccountInfo},
 };
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_spawn() {
     // Setup transaction pipeline plumbing
-    let (tx_sender, tx_receiver) = mpsc::unbounded_channel::<TxEnvelope>();
+    let unbounded_channel = mpsc::unbounded_channel::<TxEnvelope>();
+    let (tx_sender, tx_receiver) = unbounded_channel;
     let (_bundle_sender, _bundle_receiver) = mpsc::unbounded_channel::<Vec<TxEnvelope>>();
     let deadline = Instant::now() + Duration::from_secs(5);
 
@@ -34,8 +37,8 @@ async fn test_spawn() {
     // Create a evaluator
     let evaluator = Arc::new(test_evaluator);
 
-    // Make a CoW database
-    let db = CacheDB::new(InMemoryDB::default());
+    // Make a database and seed it with some starting account state
+    let db = seed_database(CacheDB::new(InMemoryDB::default()), test_wallet);
 
     // Create a new simulator factory with the given database and inspector
     let sim_factory = SimulatorFactory::new(db, NoOpInspector);
@@ -87,4 +90,13 @@ fn new_test_tx(wallet: &PrivateKeySigner, nonce: u64) -> eyre::Result<TxEnvelope
     };
     let signature = wallet.sign_hash_sync(&tx.signature_hash())?;
     Ok(TxEnvelope::Eip1559(tx.into_signed(signature)))
+}
+
+// Adds a balance to the given wallet address in the database for simple simulation unit tests
+fn seed_database(mut db: CacheDB<InMemoryDB>, wallet: &PrivateKeySigner) -> CacheDB<InMemoryDB> {
+    let mut info = AccountInfo::default();
+    info.balance = U256::from(10000);
+    db.insert_account_info(wallet.address(), info);
+
+    db
 }
