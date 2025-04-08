@@ -180,7 +180,6 @@ impl BlockBuilder {
                 error!(error = %e, "error polling bundles");
             }
         }
-        self.bundle_poller.evict();
     }
 
     /// Simulates a Zenith bundle against the rollup state
