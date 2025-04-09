@@ -9,22 +9,32 @@ use trevm::{
     Block, Cfg, DbConnect, EvmFactory, Tx,
     db::cow::CacheOnWrite,
     helpers::Ctx,
+    inspectors::{Layered, TimeLimit},
     revm::{DatabaseRef, Inspector, context::result::ResultAndState, inspector::NoOpInspector},
 };
 
 /// Factory for creating simulation tasks.
 #[derive(Debug, Clone)]
 pub struct SimFactory<Db, Insp = NoOpInspector> {
+    /// The database to use for the simulation.
     db: Db,
+    /// The system constants for the Signet network.
     constants: SignetSystemConstants,
+
+    /// The max time to spend on any simulation.
+    execution_timeout: std::time::Duration,
 
     _pd: PhantomData<fn() -> Insp>,
 }
 
 impl<Db, Insp> SimFactory<Db, Insp> {
     /// Creates a new `SimFactory` instance.
-    pub fn new(db: Db, constants: SignetSystemConstants) -> Self {
-        Self { db, constants, _pd: PhantomData }
+    pub fn new(
+        db: Db,
+        constants: SignetSystemConstants,
+        execution_timeout: std::time::Duration,
+    ) -> Self {
+        Self { db, constants, execution_timeout, _pd: PhantomData }
     }
 }
 
@@ -47,11 +57,13 @@ where
     Db: DatabaseRef + Clone + Sync,
     Insp: Inspector<Ctx<CacheOnWrite<Db>>> + Default + Sync,
 {
-    type Insp = SignetLayered<Insp>;
+    type Insp = SignetLayered<Layered<TimeLimit, Insp>>;
 
     fn create(&self) -> Result<trevm::EvmNeedsCfg<Self::Database, Self::Insp>, Self::Error> {
         let db = self.connect().unwrap();
-        let inspector = Insp::default();
+
+        let inspector = Layered::new(TimeLimit::new(self.execution_timeout), Insp::default());
+
         Ok(signet_evm::signet_evm_with_inspector(db, inspector, self.constants.clone()))
     }
 }
@@ -59,6 +71,7 @@ where
 impl<Db, Insp> SimFactory<Db, Insp>
 where
     Db: DatabaseRef + Clone + Sync,
+    Db::Error: Send,
     Insp: Inspector<Ctx<CacheOnWrite<Db>>> + Default + Sync,
 {
     /// Simulates a transaction in the context of a block.
@@ -70,32 +83,22 @@ where
         cfg: &C,
         block: &B,
         transaction: T,
-        deadline: std::time::Instant,
         eval: impl Fn(&ResultAndState) -> U256 + Send + Sync,
     ) -> Option<Best<T, ResultAndState>> {
-        let (sender, mut rx) = tokio::sync::mpsc::channel(1);
-
         std::thread::scope(|s| {
-            // timeout thread
-            s.spawn(|| {
-                std::thread::sleep(deadline - std::time::Instant::now());
-                let _ = sender.blocking_send(None);
-            });
-
             // simulation thread
-            s.spawn(|| {
-                let Ok(result) = self.run(cfg, block, &transaction) else {
-                    let _ = sender.blocking_send(None);
-                    return;
+            let jh = s.spawn(|| {
+                let result = match self.run(cfg, block, &transaction) {
+                    Ok(result) => result,
+                    Err(e) => return Err(e),
                 };
 
-                let best = Best::new(transaction, result, &eval);
-
-                let _ = sender.blocking_send(Some(best));
+                Ok(Best::new(transaction, result, &eval))
             });
-
-            rx.blocking_recv().flatten()
+            jh.join()
         })
+        .unwrap() // propagate inner panics
+        .ok()
     }
 
     fn simulate_bundle<C, B, T>(

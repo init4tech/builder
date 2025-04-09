@@ -31,10 +31,6 @@ pub struct SimulatorFactory<Db, Insp> {
     pub cow: MakeCow<Db>,
 }
 
-/// SimResult is an [`Option`] type that holds a tuple of a transaction and its associated
-/// state as a [`Db`] type updates if it was successfully executed.
-type SimResult<Db> = Result<Option<(Best<TxEnvelope>, CacheOnWrite<Arc<ConcurrentState<Db>>>)>>;
-
 impl<Db, Insp> SimulatorFactory<Db, Insp>
 where
     Insp: Inspector<Ctx<CacheOnWrite<CacheOnWrite<Arc<ConcurrentState<Db>>>>>>
