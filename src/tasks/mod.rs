@@ -18,3 +18,6 @@ pub mod tx_poller;
 
 /// Tx and bundle simulation task
 pub mod simulator;
+
+/// Simulation logic
+pub mod sim;

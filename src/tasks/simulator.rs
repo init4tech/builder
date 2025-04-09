@@ -1,4 +1,4 @@
-use crate::tasks::block::InProgressBlock;
+use crate::tasks::{block::InProgressBlock, sim::Best};
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::U256;
 use eyre::Result;
@@ -21,19 +21,6 @@ use trevm::{
         state::Account,
     },
 };
-
-/// Tracks the EVM state, score, and result of an EVM execution.
-/// Scores are assigned by the evaluation function, and are Ord
-/// or PartialOrd to allow for sorting.
-#[derive(Debug, Clone)]
-pub struct Best<T, S: PartialOrd + Ord = U256> {
-    /// The transaction being executed.
-    pub tx: Arc<T>,
-    /// The result and state of the execution.
-    pub result: ResultAndState,
-    /// The score calculated by the evaluation function.
-    pub score: S,
-}
 
 /// Binds a database and an inspector together for simulation.
 #[derive(Debug, Clone)]
@@ -126,7 +113,7 @@ where
                         match result {
                             Ok(Some(best)) => {
                                 println!("simulation completed");
-                                block.ingest_tx(best.tx.as_ref());
+                                block.ingest_tx(best.tx().as_ref());
                             },
                             Ok(None) => {
                                 println!("simulation returned no result");
@@ -143,54 +130,6 @@ where
 
             block
         })
-    }
-
-    /// Simulates an inbound tx and applies its state if it's successfully simualted
-    pub fn simulate_tx<F>(
-        &self,
-        tx: TxEnvelope,
-        evaluator: Arc<F>,
-        db: CacheOnWrite<CacheOnWrite<Arc<ConcurrentState<Db>>>>,
-    ) -> SimResult<Db>
-    where
-        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-        Db: Database + DatabaseRef + DatabaseCommit + Send + Sync + Clone + 'static,
-    {
-        let t = TrevmBuilder::new().with_db(db).with_insp(self.inspector.clone()).build_trevm()?;
-
-        let result = t.fill_cfg(&PecorinoCfg).fill_block(&NoopBlock).fill_tx(&tx).run();
-
-        match result {
-            Ok(t) => {
-                let result = t.result_and_state().clone();
-                let db = t.into_db();
-                let score = evaluator(&result);
-                let best = Best { tx: Arc::new(tx), result, score };
-
-                // Flatten to save the result to the parent and return it
-                let db = db.flatten();
-
-                Ok(Some((best, db)))
-            }
-            Err(terr) => {
-                tracing::error!(err = ?terr.error(), "transaction simulation error");
-                Ok(None)
-            }
-        }
-    }
-
-    /// Simulates an inbound bundle and applies its state if it's successfully simulated
-    pub fn simulate_bundle<T, F>(
-        &self,
-        _bundle: Arc<Vec<T>>,
-        _evaluator: Arc<F>,
-        _db: ConcurrentState<Arc<ConcurrentState<Db>>>,
-    ) -> Option<Best<Vec<T>>>
-    where
-        T: Tx + Send + Sync + 'static,
-        F: Fn(&ResultAndState) -> U256 + Send + Sync + 'static,
-    {
-        todo!("implement bundle handling")
     }
 }
 
