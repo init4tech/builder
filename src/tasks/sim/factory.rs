@@ -1,12 +1,11 @@
 use crate::tasks::sim::Best;
 use alloy::primitives::U256;
-use signet_bundle::SignetEthBundle;
+use signet_bundle::{SignetEthBundle, SignetEthBundleDriver};
 use signet_evm::SignetLayered;
 use signet_types::config::SignetSystemConstants;
-use std::{borrow::Borrow, convert::Infallible, marker::PhantomData, sync::Arc};
-use tokio::select;
+use std::{convert::Infallible, marker::PhantomData, thread};
 use trevm::{
-    Block, Cfg, DbConnect, EvmFactory, Tx,
+    Block, BundleDriver, Cfg, DbConnect, EvmFactory, EvmNeedsTx, Tx,
     db::cow::CacheOnWrite,
     helpers::Ctx,
     inspectors::{Layered, TimeLimit},
@@ -18,6 +17,7 @@ use trevm::{
 pub struct SimFactory<Db, Insp = NoOpInspector> {
     /// The database to use for the simulation.
     db: Db,
+
     /// The system constants for the Signet network.
     constants: SignetSystemConstants,
 
@@ -85,7 +85,7 @@ where
         transaction: T,
         eval: impl Fn(&ResultAndState) -> U256 + Send + Sync,
     ) -> Option<Best<T, ResultAndState>> {
-        std::thread::scope(|s| {
+        thread::scope(|s| {
             // simulation thread
             let jh = s.spawn(|| {
                 let result = match self.run(cfg, block, &transaction) {
@@ -107,8 +107,37 @@ where
         block: &B,
         bundle: SignetEthBundle,
         deadline: std::time::Instant,
-        eval: impl FnOnce(&ResultAndState) -> U256,
-    ) -> Option<Best<SignetEthBundle, ()>> {
-        todo!()
+        eval: impl FnOnce(
+            &EvmNeedsTx<<Self as DbConnect>::Database, <Self as EvmFactory>::Insp>,
+        ) -> U256,
+    ) -> Option<Best<SignetEthBundle, ()>>
+    where
+        C: Cfg,
+        B: Block,
+        Insp: Inspector<Ctx<CacheOnWrite<Db>>> + Default + Sync,
+    {
+        thread::scope(|s| {
+            let jh = s.spawn(|| {
+                let mut driver = SignetEthBundleDriver::new(
+                    &bundle,
+                    std::time::Instant::now() + self.execution_timeout,
+                );
+                let trevm = self.create_with_block(cfg, block).unwrap();
+
+                // run the bundle
+                match driver.run_bundle(trevm) {
+                    Ok(result) => result,
+                    Err(e) => return Err(e.into_error()),
+                };
+
+                // evaluate the result
+                let score = U256::ZERO;
+
+                Ok(Best::new_unchecked(bundle, (), score))
+            });
+            jh.join()
+        })
+        .unwrap() // propagate inner panics
+        .ok()
     }
 }
