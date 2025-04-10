@@ -1,16 +1,15 @@
 use crate::tasks::sim::SimOutcome;
-use alloy::primitives::U256;
 use signet_bundle::{SignetEthBundle, SignetEthBundleDriver, SignetEthBundleError};
 use signet_evm::SignetLayered;
 use signet_types::config::SignetSystemConstants;
 use std::{convert::Infallible, marker::PhantomData};
 use trevm::{
     Block, BundleDriver, Cfg, DbConnect, EvmFactory, Tx,
-    db::cow::CacheOnWrite,
+    db::{TryCachingDb, cow::CacheOnWrite},
     helpers::Ctx,
     inspectors::{Layered, TimeLimit},
     revm::{
-        DatabaseRef, Inspector, context::result::ResultAndState, database::Cache,
+        DatabaseRef, Inspector, context::result::EVMError, database::Cache,
         inspector::NoOpInspector,
     },
 };
@@ -94,16 +93,36 @@ where
     ///
     /// This function runs the simulation in a separate thread and waits for
     /// the result or the deadline to expire.
-    pub fn simulate<T>(
+    pub fn simulate<'a, T>(
         &self,
-        transaction: T,
-        eval: impl Fn(&ResultAndState) -> U256 + Send + Sync,
-    ) -> Result<SimOutcome<T, ResultAndState>, SignetEthBundleError<CacheOnWrite<Db>>>
+        transaction: &'a T,
+    ) -> Result<SimOutcome<&'a T, Cache>, SignetEthBundleError<CacheOnWrite<Db>>>
     where
         T: Tx,
     {
-        let result = self.run(&self.cfg, &self.block, &transaction)?;
-        Ok(SimOutcome::new(transaction, result, &eval))
+        let trevm = self.create_with_block(&self.cfg, &self.block).unwrap();
+
+        // Get the initial beneficiary balance
+        let beneificiary = trevm.beneficiary();
+        let initial_beneficiary_balance =
+            trevm.try_read_balance_ref(beneificiary).map_err(EVMError::Database)?;
+
+        // If succesful, take the cache. If failed, return the error.
+        match trevm.run_tx(transaction) {
+            Ok(trevm) => {
+                // Get the beneficiary balance after the transaction and calculate the
+                // increase
+                let beneficiary_balance =
+                    trevm.try_read_balance_ref(beneificiary).map_err(EVMError::Database)?;
+                let increase = beneficiary_balance.saturating_sub(initial_beneficiary_balance);
+
+                let cache = trevm.accept_state().into_db().into_cache();
+
+                // Create the outcome
+                Ok(SimOutcome::new_unchecked(transaction, cache, increase))
+            }
+            Err(e) => Err(SignetEthBundleError::from(e.into_error())),
+        }
     }
 
     /// Simulates a bundle in the context of a block.
@@ -131,5 +150,17 @@ where
         let cache = db.into_cache();
 
         Ok(SimOutcome::new_unchecked(bundle, cache, score))
+    }
+}
+
+impl<Db, C, B, Insp> SimEnv<Db, C, B, Insp>
+where
+    Db: TryCachingDb + DatabaseRef + Clone + Sync,
+    C: Cfg + Sync,
+    B: Block + Sync,
+    Insp: Inspector<Ctx<CacheOnWrite<Db>>> + Default + Sync,
+{
+    pub fn accept_cache(&mut self) {
+        todo!()
     }
 }
