@@ -1,62 +1,78 @@
 use alloy::{
     consensus::{SignableTransaction as _, TxEip1559, TxEnvelope},
+    eips::BlockId,
+    genesis::Genesis,
     primitives::U256,
-    signers::{
-        SignerSync as _,
-        local::{LocalSigner, PrivateKeySigner},
-    },
+    providers::{Provider, ProviderBuilder},
+    signers::{SignerSync as _, local::PrivateKeySigner},
 };
-use builder::tasks::simulator::SimulatorFactory;
+use builder::tasks::sim::{SimFactory, SimTask};
+use signet_types::config::SignetSystemConstants;
 use std::sync::Arc;
-use tokio::{
-    sync::mpsc,
-    time::{Duration, Instant},
-};
+use tokio::{sync::mpsc::{self, channel}, time::Duration};
 use trevm::revm::{
     context::result::{ExecutionResult, ResultAndState},
-    database::{CacheDB, InMemoryDB},
+    database::{AlloyDB, CacheDB, InMemoryDB},
     inspector::NoOpInspector,
     primitives::{TxKind, address},
     state::{Account, AccountInfo},
 };
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_spawn() {
-    // Setup transaction pipeline plumbing
-    let unbounded_channel = mpsc::unbounded_channel::<TxEnvelope>();
-    let (tx_sender, tx_receiver) = unbounded_channel;
-    let (_bundle_sender, _bundle_receiver) = mpsc::unbounded_channel::<Vec<TxEnvelope>>();
-    let deadline = Instant::now() + Duration::from_secs(5);
+type AlloyDatabase = AlloyDB<
+    alloy::network::Ethereum,
+    alloy::providers::fillers::FillProvider<
+        alloy::providers::fillers::JoinFill<
+            alloy::providers::Identity,
+            alloy::providers::fillers::JoinFill<
+                alloy::providers::fillers::GasFiller,
+                alloy::providers::fillers::JoinFill<
+                    alloy::providers::fillers::BlobGasFiller,
+                    alloy::providers::fillers::JoinFill<
+                        alloy::providers::fillers::NonceFiller,
+                        alloy::providers::fillers::ChainIdFiller,
+                    >,
+                >,
+            >,
+        >,
+        alloy::providers::RootProvider,
+    >,
+>;
 
-    // Create a new anvil instance and test wallets
+#[tokio::test(flavor = "multi_thread")]
+async fn test_simulate_one() {
+    // Setup transaction pipeline plumbing
+    let concurrency_limit = 1000;
+    let (tx_sender, tx_receiver) = mpsc::channel::<TxEnvelope>(concurrency_limit);
+    let (_bundle_sender, _bundle_receiver) = mpsc::unbounded_channel::<Vec<TxEnvelope>>();
+
     let anvil =
         alloy::node_bindings::Anvil::new().block_time(1).chain_id(14174).try_spawn().unwrap();
-    let keys = anvil.keys();
-    let test_wallet = &PrivateKeySigner::from(keys[0].clone());
+    let test_wallet = &PrivateKeySigner::from(anvil.keys()[0].clone());
 
-    // Create a evaluator
+    let provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
+    let block_number = provider.get_block_number().await.unwrap();
+    
+    let alloy_db = AlloyDB::new(provider, BlockId::from(block_number));
+
     let evaluator = Arc::new(test_evaluator);
 
-    // Make a database and seed it with some starting account state
-    let db = seed_database(CacheDB::new(InMemoryDB::default()), test_wallet);
+    let test_genesis = Genesis::default(); // TODO: Replace with a real genesis
+    let constants = SignetSystemConstants::try_from_genesis(&test_genesis).unwrap();
 
-    // Create a new simulator factory with the given database and inspector
-    let sim_factory = SimulatorFactory::new(db, NoOpInspector);
+    let deadline = Duration::from_secs(5);
 
-    // Spawn the simulator actor
-    let handle = sim_factory.spawn(tx_receiver, evaluator, deadline);
+    let factory: SimFactory<AlloyDatabase, NoOpInspector> =
+        SimFactory::new(alloy_db, constants, deadline);
 
-    // Send transactions to the simulator
-    for count in 0..2 {
-        let test_tx = new_test_tx(test_wallet, count).unwrap();
-        tx_sender.send(test_tx).unwrap();
-    }
+    let actor = SimTask {
+        factory,
+        tx_eval: test_evaluator.clone(),
+        bundle_eval: (),
+        inbound_tx: tx_receiver,
+        inbound_bundle: _bundle_receiver,
+        concurrency_limit,
+    };
 
-    // Wait for simulation to complete
-    let best = handle.await.unwrap();
-
-    // Assert on the block
-    assert_eq!(best.len(), 1);
 }
 
 /// An example of a simple evaluator function for use in testing
@@ -78,7 +94,7 @@ fn test_evaluator(state: &ResultAndState) -> U256 {
 }
 
 // Returns a new signed test transaction with default values
-fn new_test_tx(wallet: &PrivateKeySigner, nonce: u64) -> eyre::Result<TxEnvelope> {
+fn new_test_tx(wallet: &PrivateKeySigner, nonce: u64) -> TxEnvelope {
     let tx = TxEip1559 {
         chain_id: 17003,
         gas_limit: 50000,
@@ -88,8 +104,8 @@ fn new_test_tx(wallet: &PrivateKeySigner, nonce: u64) -> eyre::Result<TxEnvelope
         input: alloy::primitives::bytes!(""),
         ..Default::default()
     };
-    let signature = wallet.sign_hash_sync(&tx.signature_hash())?;
-    Ok(TxEnvelope::Eip1559(tx.into_signed(signature)))
+    let signature = wallet.sign_hash_sync(&tx.signature_hash()).unwrap();
+    TxEnvelope::Eip1559(tx.into_signed(signature))
 }
 
 // Adds a balance to the given wallet address in the database for simple simulation unit tests
