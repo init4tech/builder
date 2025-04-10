@@ -11,8 +11,10 @@ use trevm::{
 /// A task that simulates a transaction in the context of a block.
 #[derive(Debug)]
 pub struct SimTask<Db, C, B, Insp = NoOpInspector> {
-    factory: SimEnv<Db, C, B, Insp>,
-    concurrency_limit: usize,
+    /// The environment the simulator runs against
+    pub factory: SimEnv<Db, C, B, Insp>,
+    /// The maximum number of bundles to simulate in parallel.
+    pub concurrency_limit: usize,
 }
 
 impl<Db, C, B, Insp> SimTask<Db, C, B, Insp>

@@ -6,17 +6,17 @@ use alloy::{
     providers::{Provider, ProviderBuilder},
     signers::{SignerSync as _, local::PrivateKeySigner},
 };
-use builder::tasks::sim::{SimFactory, SimTask};
+use builder::tasks::sim::{SimEnv, SimTask};
 use signet_types::config::SignetSystemConstants;
 use std::sync::Arc;
 use tokio::{sync::mpsc::{self, channel}, time::Duration};
-use trevm::revm::{
+use trevm::{revm::{
     context::result::{ExecutionResult, ResultAndState},
     database::{AlloyDB, CacheDB, InMemoryDB},
     inspector::NoOpInspector,
-    primitives::{TxKind, address},
+    primitives::{address, TxKind},
     state::{Account, AccountInfo},
-};
+}, Cfg, NoopBlock, NoopCfg};
 
 type AlloyDatabase = AlloyDB<
     alloy::network::Ethereum,
@@ -61,15 +61,12 @@ async fn test_simulate_one() {
 
     let deadline = Duration::from_secs(5);
 
-    let factory: SimFactory<AlloyDatabase, NoOpInspector> =
-        SimFactory::new(alloy_db, constants, deadline);
+    // TODO remove noops
+    let env: SimEnv<AlloyDatabase, _, _, NoOpInspector> = SimEnv::new(alloy_db, constants, &NoopCfg, &NoopBlock, deadline);
 
-    let actor = SimTask {
-        factory,
-        tx_eval: test_evaluator.clone(),
-        bundle_eval: (),
-        inbound_tx: tx_receiver,
-        inbound_bundle: _bundle_receiver,
+    // Spawn off the actor 
+    let actor: SimTask<AlloyDatabase, _, _, _> = SimTask {
+        factory: env,
         concurrency_limit,
     };
 
