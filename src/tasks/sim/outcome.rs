@@ -1,8 +1,8 @@
 use alloy::primitives::U256;
 
-/// An evalutated EVM transaction with a particular score.
+/// An evaluated EVM transaction with a particular score.
 #[derive(Debug, Clone)]
-pub struct Best<In, Out, S = U256> {
+pub struct SimOutcome<In, Out, S = U256> {
     /// The transaction or bundle being executed.
     input: In,
     /// The result of the tx/bundle execution.
@@ -11,7 +11,7 @@ pub struct Best<In, Out, S = U256> {
     score: S,
 }
 
-impl<In, Out, S> Best<In, Out, S> {
+impl<In, Out, S> SimOutcome<In, Out, S> {
     /// Creates a new `Best` instance.
     pub fn new(input: In, output: Out, evaluator: impl FnOnce(&Out) -> S) -> Self {
         let score = evaluator(&output);

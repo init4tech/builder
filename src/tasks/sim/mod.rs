@@ -1,8 +1,8 @@
-mod best;
-pub use best::Best;
+mod outcome;
+pub use outcome::SimOutcome;
 
-mod factory;
-pub use factory::SimFactory;
+mod env;
+pub use env::SimEnv;
 
 mod task;
 pub use task::SimTask;
