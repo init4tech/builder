@@ -24,6 +24,7 @@ path = "bin/submit_transaction.rs"
 [dependencies]
 init4-bin-base = { git = "https://github.com/init4tech/bin-base.git" }
 
+signet-evm = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
@@ -60,3 +61,4 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
+futures-util = "0.3.31"
