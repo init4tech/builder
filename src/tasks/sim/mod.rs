@@ -6,3 +6,6 @@ pub use env::SimEnv;
 
 mod task;
 pub use task::SimTask;
+
+mod item;
+pub use item::BundleOrTx;

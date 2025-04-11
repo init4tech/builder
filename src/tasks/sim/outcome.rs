@@ -31,7 +31,6 @@ impl<In, Out, S> SimOutcome<In, Out, S> {
     /// Transform the input type to a new type using a closure.
     pub fn map_in<In2, F>(self, f: F) -> SimOutcome<In2, Out, S>
     where
-        In2: From<In>,
         F: FnOnce(In) -> In2,
     {
         let input = f(self.input);
@@ -56,5 +55,15 @@ impl<In, Out, S> SimOutcome<In, Out, S> {
     /// Get a reference to the score.
     pub fn score(&self) -> &S {
         &self.score
+    }
+
+    /// Deconstruct the `SimOutcome` into its parts.
+    pub fn into_parts(self) -> (In, Out, S) {
+        (self.input, self.output, self.score)
+    }
+
+    /// Deconstruct the `SimOutcome` into its output.
+    pub fn into_output(self) -> Out {
+        self.output
     }
 }

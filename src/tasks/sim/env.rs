@@ -14,6 +14,8 @@ use trevm::{
     },
 };
 
+use super::BundleOrTx;
+
 /// Factory for creating simulation tasks.
 #[derive(Debug, Clone)]
 pub struct SimEnv<Db, C, B, Insp = NoOpInspector> {
@@ -45,6 +47,46 @@ impl<Db, C, B, Insp> SimEnv<Db, C, B, Insp> {
         execution_timeout: std::time::Duration,
     ) -> Self {
         Self { db, constants, cfg, block, execution_timeout, _pd: PhantomData }
+    }
+
+    /// Get a reference to the database.
+    pub fn db_mut(&mut self) -> &mut Db {
+        &mut self.db
+    }
+
+    /// Get a reference to the system constants.
+    pub fn constants(&self) -> &SignetSystemConstants {
+        &self.constants
+    }
+
+    /// Get a reference to the chain cfg.
+    pub fn cfg(&self) -> &C {
+        &self.cfg
+    }
+
+    /// Get a mutable reference to the chain cfg.
+    pub fn cfg_mut(&mut self) -> &mut C {
+        &mut self.cfg
+    }
+
+    /// Get a reference to the block.
+    pub fn block(&self) -> &B {
+        &self.block
+    }
+
+    /// Get a mutable reference to the block.
+    pub fn block_mut(&mut self) -> &mut B {
+        &mut self.block
+    }
+
+    /// Get the exectuion timeout.
+    pub fn execution_timeout(&self) -> std::time::Duration {
+        self.execution_timeout
+    }
+
+    /// Set the execution timeout.
+    pub fn set_execution_timeout(&mut self, timeout: std::time::Duration) {
+        self.execution_timeout = timeout;
     }
 }
 
@@ -93,7 +135,7 @@ where
     ///
     /// This function runs the simulation in a separate thread and waits for
     /// the result or the deadline to expire.
-    pub fn simulate<'a, T>(
+    fn simulate_tx<'a, T>(
         &self,
         transaction: &'a T,
     ) -> Result<SimOutcome<&'a T, Cache>, SignetEthBundleError<CacheOnWrite<Db>>>
@@ -126,7 +168,7 @@ where
     }
 
     /// Simulates a bundle in the context of a block.
-    pub fn simulate_bundle<'a>(
+    fn simulate_bundle<'a>(
         &self,
         bundle: &'a SignetEthBundle,
     ) -> Result<SimOutcome<&'a SignetEthBundle, Cache>, SignetEthBundleError<CacheOnWrite<Db>>>
@@ -151,6 +193,20 @@ where
 
         Ok(SimOutcome::new_unchecked(bundle, cache, score))
     }
+
+    /// Simulate a [`BundleOrTx`], containing either a [`SignetEthBundle`] or a
+    /// [`TxEnvelope`]
+    pub fn simulate<'a, 'b: 'a>(
+        &self,
+        item: &'a BundleOrTx<'b>,
+    ) -> Result<SimOutcome<&'a BundleOrTx<'b>>, SignetEthBundleError<CacheOnWrite<Db>>> {
+        match item {
+            BundleOrTx::Bundle(bundle) => {
+                Ok(self.simulate_bundle(bundle.as_ref())?.map_in(|_| item))
+            }
+            BundleOrTx::Tx(tx) => Ok(self.simulate_tx(tx.as_ref())?.map_in(|_| item)),
+        }
+    }
 }
 
 impl<Db, C, B, Insp> SimEnv<Db, C, B, Insp>
@@ -160,7 +216,8 @@ where
     B: Block + Sync,
     Insp: Inspector<Ctx<CacheOnWrite<Db>>> + Default + Sync,
 {
-    pub fn accept_cache(&mut self) {
-        todo!()
+    /// Accepts a cache from the simulation and extends the database with it.
+    pub fn accept_cache(&mut self, cache: Cache) -> Result<(), <Db as TryCachingDb>::Error> {
+        self.db_mut().try_extend(cache)
     }
 }
