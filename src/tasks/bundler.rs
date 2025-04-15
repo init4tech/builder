@@ -12,9 +12,9 @@ use tracing::{Instrument, debug, trace};
 /// Holds a bundle from the cache with a unique ID and a Zenith bundle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
-    /// Cache identifier for the bundle
+    /// Cache identifier for the bundle.
     pub id: String,
-    /// The Zenith bundle for this bundle
+    /// The corresponding Signet bundle.
     pub bundle: SignetEthBundle,
 }
 
