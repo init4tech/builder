@@ -1,12 +1,11 @@
-#![allow(dead_code)]
-
-use builder::config::BuilderConfig;
-use builder::service::serve_builder_with_span;
-use builder::tasks::block::BlockBuilder;
-use builder::tasks::metrics::MetricsTask;
-use builder::tasks::oauth::Authenticator;
-use builder::tasks::submit::SubmitTask;
-
+use builder::{
+    config::BuilderConfig,
+    service::serve_builder_with_span,
+    tasks::{
+        block::BlockBuilder, bundler, metrics::MetricsTask, oauth::Authenticator,
+        submit::SubmitTask, tx_poller,
+    },
+};
 use tokio::select;
 
 #[tokio::main]
@@ -39,14 +38,28 @@ async fn main() -> eyre::Result<()> {
         outbound_tx_channel: tx_channel,
     };
 
+    let tx_poller = tx_poller::TxPoller::new(&config);
+    let (tx_receiver, tx_poller_jh) = tx_poller.spawn();
+
+    let bundle_poller = bundler::BundlePoller::new(&config, authenticator.clone());
+    let (bundle_receiver, bundle_poller_jh) = bundle_poller.spawn();
+
     let authenticator_jh = authenticator.spawn();
+
     let (submit_channel, submit_jh) = submit.spawn();
-    let build_jh = builder.spawn(submit_channel);
+
+    let build_jh = builder.spawn(ru_provider, tx_receiver, bundle_receiver, submit_channel);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
 
     select! {
+        _ = tx_poller_jh => {
+            tracing::info!("tx_poller finished");
+        },
+        _ = bundle_poller_jh => {
+            tracing::info!("bundle_poller finished");
+        },
         _ = submit_jh => {
             tracing::info!("submit finished");
         },

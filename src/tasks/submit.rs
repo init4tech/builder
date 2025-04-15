@@ -1,9 +1,9 @@
 use crate::{
     config::{Provider, ZenithInstance},
     signer::LocalOrAws,
-    tasks::block::InProgressBlock,
     utils::extract_signature_components,
 };
+use signet_sim::BuiltBlock;
 use alloy::{
     consensus::{SimpleCoder, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
@@ -103,7 +103,7 @@ impl SubmitTask {
     /// Constructs the signing request from the in-progress block passed to it and assigns the
     /// correct height, chain ID, gas limit, and rollup reward address.
     #[instrument(skip_all)]
-    async fn construct_sig_request(&self, contents: &InProgressBlock) -> eyre::Result<SignRequest> {
+    async fn construct_sig_request(&self, contents: &BuiltBlock) -> eyre::Result<SignRequest> {
         let ru_chain_id = U256::from(self.config.ru_chain_id);
         let next_block_height = self.next_host_block_height().await?;
 
@@ -125,7 +125,7 @@ impl SubmitTask {
         v: u8,
         r: FixedBytes<32>,
         s: FixedBytes<32>,
-        in_progress: &InProgressBlock,
+        in_progress: &BuiltBlock,
     ) -> eyre::Result<TransactionRequest> {
         let data = submitCall { fills, header, v, r, s }.abi_encode();
 
@@ -147,7 +147,7 @@ impl SubmitTask {
     async fn submit_transaction(
         &self,
         resp: &SignResponse,
-        in_progress: &InProgressBlock,
+        in_progress: &BuiltBlock,
     ) -> eyre::Result<ControlFlow> {
         let (v, r, s) = extract_signature_components(&resp.sig);
 
@@ -233,9 +233,9 @@ impl SubmitTask {
     }
 
     #[instrument(skip_all, err)]
-    async fn handle_inbound(&self, in_progress: &InProgressBlock) -> eyre::Result<ControlFlow> {
-        tracing::info!(txns = in_progress.len(), "handling inbound block");
-        let sig_request = match self.construct_sig_request(in_progress).await {
+    async fn handle_inbound(&self, block: &BuiltBlock) -> eyre::Result<ControlFlow> {
+        tracing::info!(txns = block.tx_count(), "handling inbound block");
+        let sig_request = match self.construct_sig_request(block).await {
             Ok(sig_request) => sig_request,
             Err(e) => {
                 tracing::error!(error = %e, "error constructing signature request");
@@ -274,11 +274,11 @@ impl SubmitTask {
             resp
         };
 
-        self.submit_transaction(&signed, in_progress).await
+        self.submit_transaction(&signed, block).await
     }
 
     /// Spawns the in progress block building task
-    pub fn spawn(self) -> (mpsc::UnboundedSender<InProgressBlock>, JoinHandle<()>) {
+    pub fn spawn(self) -> (mpsc::UnboundedSender<BuiltBlock>, JoinHandle<()>) {
         let (sender, mut inbound) = mpsc::unbounded_channel();
         let handle = tokio::spawn(async move {
             loop {
