@@ -1,6 +1,10 @@
 use crate::{
     config::{BuilderConfig, WalletlessProvider},
-    tasks::{bundler::{BundlePoller, Bundle}, oauth::Authenticator, tx_poller::TxPoller},
+    tasks::{
+        bundler::{Bundle, BundlePoller},
+        oauth::Authenticator,
+        tx_poller::TxPoller,
+    },
 };
 use alloy::{consensus::TxEnvelope, eips::BlockId, genesis::Genesis};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};

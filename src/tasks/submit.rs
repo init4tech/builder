@@ -3,7 +3,6 @@ use crate::{
     signer::LocalOrAws,
     utils::extract_signature_components,
 };
-use signet_sim::BuiltBlock;
 use alloy::{
     consensus::{SimpleCoder, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
@@ -18,6 +17,7 @@ use alloy::{
 use eyre::{bail, eyre};
 use init4_bin_base::deps::metrics::{counter, histogram};
 use oauth2::TokenResponse;
+use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::{
     BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
