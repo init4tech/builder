@@ -168,6 +168,7 @@ mod tests {
             tx_broadcast_urls: vec!["http://localhost:9000".into()],
             oauth_token_refresh_interval: 300, // 5 minutes
             builder_helper_address: Address::default(),
+            concurrency_limit: 1000,
         };
         Ok(config)
     }

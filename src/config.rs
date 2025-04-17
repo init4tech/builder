@@ -1,7 +1,7 @@
 use crate::signer::{LocalOrAws, SignerError};
 use alloy::{
     network::{Ethereum, EthereumWallet},
-    primitives::Address,
+    primitives::{Address, address},
     providers::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{
@@ -10,6 +10,8 @@ use alloy::{
         },
     },
 };
+use eyre::Result;
+use signet_types::config::{HostConfig, PredeployTokens, RollupConfig, SignetSystemConstants};
 use signet_zenith::Zenith;
 use std::{borrow::Cow, env, num, str::FromStr};
 
@@ -37,6 +39,7 @@ const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
+const CONCURRENCY_LIMIT: &str = "CONCURRENCY_LIMIT";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
@@ -92,6 +95,8 @@ pub struct BuilderConfig {
     pub oauth_token_url: String,
     /// The oauth token refresh interval in seconds.
     pub oauth_token_refresh_interval: u64,
+    /// The max number of simultaneous block simulations to run.
+    pub concurrency_limit: usize,
 }
 
 /// Error loading the configuration.
@@ -115,6 +120,9 @@ pub enum ConfigError {
     /// Error connecting to the signer
     #[error("failed to connect to signer: {0}")]
     Signer(#[from] SignerError),
+    /// Error parsing the provided genesis file
+    #[error("failed")]
+    Genesis(String),
 }
 
 impl ConfigError {
@@ -184,6 +192,7 @@ impl BuilderConfig {
             oauth_authenticate_url: load_string(OAUTH_AUTHENTICATE_URL)?,
             oauth_token_url: load_string(OAUTH_TOKEN_URL)?,
             oauth_token_refresh_interval: load_u64(AUTH_TOKEN_REFRESH_INTERVAL)?,
+            concurrency_limit: load_u64(CONCURRENCY_LIMIT).map(|v| v as usize).unwrap_or(1000),
         })
     }
 
@@ -243,6 +252,36 @@ impl BuilderConfig {
     /// Connect to the Zenith instance, using the specified provider.
     pub const fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
+    }
+
+    /// Loads the Signet system constants for Pecorino.
+    pub fn load_pecorino_constants(&self) -> SignetSystemConstants {
+        let host = HostConfig::new(
+            self.host_chain_id,
+            149984,
+            self.zenith_address,
+            address!("0x4E8cC181805aFC307C83298242271142b8e2f249"),
+            address!("0xd553C4CA4792Af71F4B61231409eaB321c1Dd2Ce"),
+            address!("0x1af3A16857C28917Ab2C4c78Be099fF251669200"),
+            PredeployTokens::new(
+                address!("0x885F8DB528dC8a38aA3DDad9D3F619746B4a6A81"),
+                address!("0x7970D259D4a96764Fa9B23FF0715A35f06f52D1A"),
+                address!("0x7970D259D4a96764Fa9B23FF0715A35f06f52D1A"),
+            ),
+        );
+        let rollup = RollupConfig::new(
+            self.ru_chain_id,
+            address!("0x4E8cC181805aFC307C83298242271142b8e2f249"),
+            address!("0xd553C4CA4792Af71F4B61231409eaB321c1Dd2Ce"),
+            address!("0xe0eDA3701D44511ce419344A4CeD30B52c9Ba231"),
+            PredeployTokens::new(
+                address!("0x0B8BC5e60EE10957E0d1A0d95598fA63E65605e2"),
+                address!("0xF34326d3521F1b07d1aa63729cB14A372f8A737C"),
+                address!("0xE3d7066115f7d6b65F88Dff86288dB4756a7D733"),
+            ),
+        );
+
+        SignetSystemConstants::new(host, rollup)
     }
 }
 

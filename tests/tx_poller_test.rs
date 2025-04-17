@@ -88,6 +88,7 @@ mod tests {
             oauth_token_url: "http://localhost:8080".into(),
             oauth_token_refresh_interval: 300, // 5 minutes
             builder_helper_address: Address::default(),
+            concurrency_limit: 1000,
         };
         Ok(config)
     }

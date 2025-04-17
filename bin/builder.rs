@@ -15,13 +15,14 @@ async fn main() -> eyre::Result<()> {
     let span = tracing::info_span!("zenith-builder");
 
     let config = BuilderConfig::load_from_env()?.clone();
-    let host_provider = config.connect_host_provider().await?;
-    let ru_provider = config.connect_ru_provider().await?;
+    let constants = config.load_pecorino_constants();
     let authenticator = Authenticator::new(&config);
 
-    tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
+    let host_provider = config.connect_host_provider().await?;
+    let ru_provider = config.connect_ru_provider().await?;
 
     let sequencer_signer = config.connect_sequencer_signer().await?;
+
     let zenith = config.connect_zenith(host_provider.clone());
 
     let metrics = MetricsTask { host_provider: host_provider.clone() };
@@ -48,7 +49,8 @@ async fn main() -> eyre::Result<()> {
 
     let (submit_channel, submit_jh) = submit.spawn();
 
-    let build_jh = builder.spawn(ru_provider, tx_receiver, bundle_receiver, submit_channel);
+    let build_jh =
+        builder.spawn(constants, ru_provider, tx_receiver, bundle_receiver, submit_channel);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
