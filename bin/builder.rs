@@ -6,6 +6,7 @@ use builder::{
         submit::SubmitTask, tx_poller,
     },
 };
+use signet_sim::SimCache;
 use tokio::select;
 
 #[tokio::main]
@@ -47,10 +48,12 @@ async fn main() -> eyre::Result<()> {
 
     let authenticator_jh = authenticator.spawn();
 
-    let (submit_channel, submit_jh) = submit.spawn();
+    let (_submit_channel, submit_jh) = submit.spawn();
 
-    let build_jh =
-        builder.spawn(constants, ru_provider, tx_receiver, bundle_receiver, submit_channel);
+    let sim_items = SimCache::new();
+    let sim_cache_jh = builder.spawn_cache_task(tx_receiver, bundle_receiver, sim_items.clone());
+
+    let build_jh = builder.handle_build(constants, ru_provider, sim_items.clone());
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
@@ -62,6 +65,9 @@ async fn main() -> eyre::Result<()> {
         _ = bundle_poller_jh => {
             tracing::info!("bundle_poller finished");
         },
+        _ = sim_cache_jh => {
+            tracing::info!("sim cache task finished");
+        }
         _ = submit_jh => {
             tracing::info!("submit finished");
         },

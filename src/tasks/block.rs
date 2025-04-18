@@ -9,23 +9,25 @@ use crate::{
 use alloy::{consensus::TxEnvelope, eips::BlockId, providers::Provider};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache, SimItem};
 use signet_types::config::SignetSystemConstants;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::{
     select,
-    sync::mpsc::{self, UnboundedReceiver},
-    task::JoinHandle,
+    sync::mpsc::{self},
 };
-use tracing::{Instrument, info};
 use trevm::{
-    NoopBlock, NoopCfg,
+    NoopBlock,
     revm::{
+        context::CfgEnv,
         database::{AlloyDB, WrapDatabaseAsync},
         inspector::NoOpInspector,
+        primitives::hardfork::SpecId,
     },
 };
 
 /// Ethereum's slot time in seconds.
 pub const ETHEREUM_SLOT_TIME: u64 = 12;
+
+/// Pecorino Chain ID
+pub const PECORINO_CHAIN_ID: u64 = 14174;
 
 /// BlockBuilder is a task that periodically builds a block then sends it for
 /// signing and submission.
@@ -56,155 +58,65 @@ impl BlockBuilder {
         }
     }
 
-    // calculate the duration in seconds until the beginning of the next block slot.
-    fn secs_to_next_slot(&self) -> u64 {
-        let curr_timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let current_slot_time = (curr_timestamp - self.config.chain_offset) % ETHEREUM_SLOT_TIME;
-        (ETHEREUM_SLOT_TIME - current_slot_time) % ETHEREUM_SLOT_TIME
-    }
-
-    // add a buffer to the beginning of the block slot.
-    fn secs_to_next_target(&self) -> u64 {
-        self.secs_to_next_slot() + self.config.target_slot_time
-    }
-
     /// Spawn the block builder task, returning the inbound channel to it, and
     /// a handle to the running task.
-    pub fn spawn(
-        self,
+    pub async fn handle_build(
+        &self,
         constants: SignetSystemConstants,
         ru_provider: WalletlessProvider,
-        mut tx_receiver: UnboundedReceiver<TxEnvelope>,
+        sim_items: SimCache,
+    ) -> Result<BuiltBlock, mpsc::error::SendError<BuiltBlock>> {
+        let db = create_db(ru_provider).await.unwrap();
+
+        // TODO: add real slot calculator
+        let finish_by = std::time::Instant::now() + std::time::Duration::from_millis(200);
+
+        dbg!(sim_items.read_best(2));
+        dbg!(sim_items.len());
+
+        let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
+            db,
+            constants,
+            PecorinoCfg {},
+            NoopBlock,
+            finish_by,
+            self.config.concurrency_limit,
+            sim_items,
+            self.config.rollup_block_gas_limit,
+        );
+
+        let block = block_build.build().await;
+
+        Ok(block)
+    }
+
+    /// Spawns a task that receives transactions and bundles from the pollers and
+    /// adds them to the shared cache.
+    pub async fn spawn_cache_task(
+        &self,
+        mut tx_receiver: mpsc::UnboundedReceiver<TxEnvelope>,
         mut bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
-        block_sender: mpsc::UnboundedSender<BuiltBlock>,
-    ) -> JoinHandle<()> {
-        println!("GOT HERE 0");
-        tokio::spawn(
-            async move {
-                // Create a sim item handler
-                let sim_items = SimCache::new();
-                println!("got here 1");
-
-                tokio::spawn({
-                    let sim_items = sim_items.clone();
-                    async move {
-                        println!("starting up the receiver");
-                        loop {
-                            select! {
-                                tx = tx_receiver.recv() => {
-                                    if let Some(tx) = tx {
-                                        println!("received transaction {}", tx.hash());
-                                        sim_items.add_item(signet_sim::SimItem::Tx(tx.into()));
-                                    }
-                                }
-                                bundle = bundle_receiver.recv() => {
-                                    if let Some(bundle) = bundle {
-                                        println!("received bundle {}", bundle.id);
-                                        sim_items.add_item(SimItem::Bundle(bundle.bundle));
-                                    }
-                                }
-                            }
-                        }
+        cache: SimCache,
+    ) {
+        loop {
+            select! {
+                maybe_tx = tx_receiver.recv() => {
+                    if let Some(tx) = maybe_tx {
+                        cache.add_item(SimItem::Tx(tx));
                     }
-                });
-
-                println!("starting the block builder loop");
-
-                loop {
-                    println!("STARTING 1");
-                    // Calculate the next wake up
-                    let buffer = self.secs_to_next_target();
-                    let deadline = Instant::now().checked_add(Duration::from_secs(buffer)).unwrap();
-                    println!("DEADLINE {:?}", deadline.clone());
-
-                    tokio::time::sleep(Duration::from_secs(buffer)).await;
-
-                    // Fetch latest block number from the rollup
-                    let db = match create_db(&ru_provider).await {
-                        Some(value) => value,
-                        None => {
-                            println!("failed to get a database - check runtime type");
-                            continue;
-                        }
-                    };
-
-                    println!("SIM ITEMS LEN {}", sim_items.len());
-
-                    tokio::spawn({
-                        let outbound = block_sender.clone();
-                        let sim_items = sim_items.clone();
-
-                        async move {
-                            let block_builder: BlockBuild<_, NoOpInspector> = BlockBuild::new(
-                                db,
-                                constants,
-                                NoopCfg,
-                                NoopBlock,
-                                deadline,
-                                self.config.concurrency_limit.clone(),
-                                sim_items.clone(),
-                                self.config.rollup_block_gas_limit.clone(),
-                            );
-
-                            let block = block_builder.build().await;
-                            println!("GOT BLOCK {}", block.contents_hash());
-
-                            if let Err(e) = outbound.send(block) {
-                                println!("failed to send built block: {}", e);
-                                tracing::error!(error = %e, "failed to send built block");
-                            } else {
-                                info!("block build cycle complete");
-                            }
-                        }
-                    });
+                }
+                maybe_bundle = bundle_receiver.recv() => {
+                    if let Some(bundle) = maybe_bundle {
+                        cache.add_item(SimItem::Bundle(bundle.bundle));
+                    }
                 }
             }
-            .in_current_span(),
-        )
+        }
     }
 }
 
 /// Creates an AlloyDB from a rollup provider
-async fn create_db(
-    ru_provider: &alloy::providers::fillers::FillProvider<
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::Identity,
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::GasFiller,
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::BlobGasFiller,
-                    alloy::providers::fillers::JoinFill<
-                        alloy::providers::fillers::NonceFiller,
-                        alloy::providers::fillers::ChainIdFiller,
-                    >,
-                >,
-            >,
-        >,
-        alloy::providers::RootProvider,
-    >,
-) -> Option<
-    WrapDatabaseAsync<
-        AlloyDB<
-            alloy::network::Ethereum,
-            alloy::providers::fillers::FillProvider<
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::Identity,
-                    alloy::providers::fillers::JoinFill<
-                        alloy::providers::fillers::GasFiller,
-                        alloy::providers::fillers::JoinFill<
-                            alloy::providers::fillers::BlobGasFiller,
-                            alloy::providers::fillers::JoinFill<
-                                alloy::providers::fillers::NonceFiller,
-                                alloy::providers::fillers::ChainIdFiller,
-                            >,
-                        >,
-                    >,
-                >,
-                alloy::providers::RootProvider,
-            >,
-        >,
-    >,
-> {
+async fn create_db(ru_provider: WalletlessProvider) -> Option<WrapAlloyDatabaseAsync> {
     let latest = match ru_provider.get_block_number().await {
         Ok(block_number) => block_number,
         Err(e) => {
@@ -219,4 +131,42 @@ async fn create_db(
         panic!("failed to acquire async alloy_db; check which runtime you're using")
     });
     Some(wrapped_db)
+}
+
+/// The wrapped alloy database type that is compatible with Db + DatabaseRef
+type WrapAlloyDatabaseAsync = WrapDatabaseAsync<
+    AlloyDB<
+        alloy::network::Ethereum,
+        alloy::providers::fillers::FillProvider<
+            alloy::providers::fillers::JoinFill<
+                alloy::providers::Identity,
+                alloy::providers::fillers::JoinFill<
+                    alloy::providers::fillers::GasFiller,
+                    alloy::providers::fillers::JoinFill<
+                        alloy::providers::fillers::BlobGasFiller,
+                        alloy::providers::fillers::JoinFill<
+                            alloy::providers::fillers::NonceFiller,
+                            alloy::providers::fillers::ChainIdFiller,
+                        >,
+                    >,
+                >,
+            >,
+            alloy::providers::RootProvider,
+        >,
+    >,
+>;
+
+/// Configuration struct for Pecorino network values
+#[derive(Debug, Clone)]
+pub struct PecorinoCfg {}
+
+impl Copy for PecorinoCfg {}
+
+impl trevm::Cfg for PecorinoCfg {
+    fn fill_cfg_env(&self, cfg_env: &mut CfgEnv) {
+        let CfgEnv { chain_id, spec, .. } = cfg_env;
+
+        *chain_id = PECORINO_CHAIN_ID;
+        *spec = SpecId::default();
+    }
 }

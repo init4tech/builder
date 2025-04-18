@@ -29,3 +29,4 @@ pub mod utils;
 
 // Anonymous import suppresses warnings about unused imports.
 use openssl as _;
+use tracing_subscriber as _;
