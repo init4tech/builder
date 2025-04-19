@@ -52,8 +52,7 @@ async fn main() -> eyre::Result<()> {
     let (submit_channel, submit_jh) = submit.spawn();
 
     let sim_items = SimCache::new();
-
-    let slot_calculator = SlotCalculator::pecorino();
+    let slot_calculator = SlotCalculator::new(config.start_timestamp, config.chain_offset, config.target_slot_time);
     let builder = Arc::new(BlockBuilder::new(&config, ru_provider.clone(), slot_calculator));
 
     let sim_cache_jh =

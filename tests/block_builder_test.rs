@@ -1,3 +1,4 @@
+//! Tests for the block building task.
 #[cfg(test)]
 mod tests {
     use alloy::{
@@ -17,6 +18,11 @@ mod tests {
     };
     use tokio::{sync::mpsc::unbounded_channel, time::timeout};
 
+    /// Tests the `handle_build` method of the `BlockBuilder`.
+    ///
+    /// This test sets up a simulated environment using Anvil, creates a block builder,
+    /// and verifies that the block builder can successfully build a block containing
+    /// transactions from multiple senders.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_handle_build() {
         setup_logging();
@@ -65,7 +71,11 @@ mod tests {
         assert!(got.unwrap().tx_count() == 2);
     }
 
-    /// Tests the full block builder loop
+    /// Tests the full block builder loop, including transaction ingestion and block simulation.
+    ///
+    /// This test sets up a simulated environment using Anvil, creates a block builder,
+    /// and verifies that the builder can process incoming transactions and produce a block
+    /// within a specified timeout.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_spawn() {
         setup_logging();
@@ -96,16 +106,18 @@ mod tests {
             config.chain_offset,
             config.target_slot_time,
         );
-        let sim_cache = SimCache::new();
         let builder = Arc::new(BlockBuilder::new(&config, ru_provider.clone(), slot_calculator));
 
+        // Create a shared sim cache
+        let sim_cache = SimCache::new();
+
         // Create a sim cache and start filling it with items
-        let _ =
-            builder.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_cache.clone());
+        builder.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_cache.clone());
 
         // Finally, Kick off the block builder task.
-        let _ = builder.clone().spawn_builder_task(constants, sim_cache.clone(), block_sender);
+        builder.clone().spawn_builder_task(constants, sim_cache.clone(), block_sender);
 
+        // Feed in transactions to the tx_sender and wait for the block to be simulated
         let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();
         let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
         tx_sender.send(tx_1).unwrap();
@@ -114,8 +126,9 @@ mod tests {
         // Wait for a block with timeout
         let result = timeout(Duration::from_secs(5), block_receiver.recv()).await;
         assert!(result.is_ok(), "Did not receive block within 5 seconds");
+
+        // Assert on the block
         let block = result.unwrap();
-        dbg!(&block);
         assert!(block.is_some(), "Block channel closed without receiving a block");
         assert!(block.unwrap().tx_count() == 2); // TODO: Why is this failing? I'm seeing EVM errors but haven't tracked them down yet. 
     }

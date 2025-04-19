@@ -259,7 +259,7 @@ impl BuilderConfig {
     }
 
     /// Loads the Signet system constants for Pecorino.
-    pub fn load_pecorino_constants(&self) -> SignetSystemConstants {
+    pub const fn load_pecorino_constants(&self) -> SignetSystemConstants {
         let host = HostConfig::new(
             self.host_chain_id,
             149984,

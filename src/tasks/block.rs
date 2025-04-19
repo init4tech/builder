@@ -24,23 +24,30 @@ use trevm::{
     },
 };
 
-/// Pecorino Chain ID
+/// Pecorino Chain ID used for the Pecorino network.
 pub const PECORINO_CHAIN_ID: u64 = 14174;
 
-/// BlockBuilder is a task that periodically builds a block then sends it for
-/// signing and submission.
+/// `BlockBuilder` is responsible for periodically building blocks and submitting them for signing and inclusion in the blockchain.
 #[derive(Debug)]
 pub struct BlockBuilder {
-    /// Configuration.
+    /// Configuration for the builder.
     pub config: BuilderConfig,
-    /// A provider that cannot sign transactions.
+    /// A provider that cannot sign transactions, used for interacting with the rollup.
     pub ru_provider: WalletlessProvider,
-    /// The slot calculator for waking up and sleeping the builder correctly
+    /// The slot calculator for determining when to wake up and build blocks.
     pub slot_calculator: SlotCalculator,
 }
 
 impl BlockBuilder {
-    /// Creates a new block builder that builds blocks based on the given provider.
+    /// Creates a new `BlockBuilder` instance.
+    ///
+    /// # Arguments
+    /// - `config`: The configuration for the builder.
+    /// - `ru_provider`: A provider for interacting with the rollup.
+    /// - `slot_calculator`: A slot calculator for managing block timing.
+    ///
+    /// # Returns
+    /// A new `BlockBuilder` instance.
     pub fn new(
         config: &BuilderConfig,
         ru_provider: WalletlessProvider,
@@ -50,6 +57,14 @@ impl BlockBuilder {
     }
 
     /// Handles building a single block.
+    ///
+    /// # Arguments
+    /// - `constants`: The system constants for the rollup.
+    /// - `sim_items`: The simulation cache containing transactions and bundles.
+    /// - `finish_by`: The deadline by which the block must be built.
+    ///
+    /// # Returns
+    /// A `Result` containing the built block or an error.
     pub async fn handle_build(
         &self,
         constants: SignetSystemConstants,
@@ -74,14 +89,22 @@ impl BlockBuilder {
         Ok(block)
     }
 
-    /// Scans the tx and bundle receivers for new items and adds them to the cache.
+    /// Spawns a task to handle incoming transactions and bundles, adding them to the simulation cache.
+    ///
+    /// # Arguments
+    /// - `tx_receiver`: A channel receiver for incoming transactions.
+    /// - `bundle_receiver`: A channel receiver for incoming bundles.
+    /// - `cache`: The simulation cache to store the received items.
+    ///
+    /// # Returns
+    /// A `JoinHandle` for the spawned task.
     pub fn spawn_cache_handler(
         self: Arc<Self>,
         mut tx_receiver: mpsc::UnboundedReceiver<TxEnvelope>,
         mut bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
         cache: SimCache,
     ) -> JoinHandle<()> {
-        let jh = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 select! {
                     maybe_tx = tx_receiver.recv() => {
@@ -96,18 +119,25 @@ impl BlockBuilder {
                     }
                 }
             }
-        });
-        jh
+        })
     }
 
     /// Spawns the block building task.
+    ///
+    /// # Arguments
+    /// - `constants`: The system constants for the rollup.
+    /// - `cache`: The simulation cache containing transactions and bundles.
+    /// - `submit_sender`: A channel sender for submitting built blocks.
+    ///
+    /// # Returns
+    /// A `JoinHandle` for the spawned task.
     pub fn spawn_builder_task(
         self: Arc<Self>,
         constants: SignetSystemConstants,
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<BuiltBlock>,
     ) -> JoinHandle<()> {
-        let jh = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 let sim_cache = cache.clone();
 
@@ -126,11 +156,13 @@ impl BlockBuilder {
                     }
                 }
             }
-        });
-        jh
+        })
     }
 
-    /// Returns the instant at which simulation must stop.
+    /// Calculates the deadline for the current block simulation.
+    ///
+    /// # Returns
+    /// An `Instant` representing the deadline.
     pub fn calculate_deadline(&self) -> Instant {
         let now = SystemTime::now();
         let unix_seconds = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
@@ -138,7 +170,10 @@ impl BlockBuilder {
         Instant::now().checked_add(Duration::from_secs(unix_seconds)).unwrap()
     }
 
-    /// Creates an AlloyDB from a rollup provider
+    /// Creates an `AlloyDB` instance from the rollup provider.
+    ///
+    /// # Returns
+    /// An `Option` containing the wrapped database or `None` if an error occurs.
     async fn create_db(&self) -> Option<WrapAlloyDatabaseAsync> {
         let latest = match self.ru_provider.get_block_number().await {
             Ok(block_number) => block_number,
@@ -155,7 +190,7 @@ impl BlockBuilder {
     }
 }
 
-/// The wrapped alloy database type that is compatible with Db + DatabaseRef
+/// The wrapped alloy database type that is compatible with `Db` and `DatabaseRef`.
 type WrapAlloyDatabaseAsync = WrapDatabaseAsync<
     AlloyDB<
         alloy::network::Ethereum,
@@ -178,13 +213,17 @@ type WrapAlloyDatabaseAsync = WrapDatabaseAsync<
     >,
 >;
 
-/// Configuration struct for Pecorino network values
+/// Configuration struct for Pecorino network values.
 #[derive(Debug, Clone)]
 pub struct PecorinoCfg {}
 
 impl Copy for PecorinoCfg {}
 
 impl trevm::Cfg for PecorinoCfg {
+    /// Fills the configuration environment with Pecorino-specific values.
+    ///
+    /// # Arguments
+    /// - `cfg_env`: The configuration environment to be filled.
     fn fill_cfg_env(&self, cfg_env: &mut CfgEnv) {
         let CfgEnv { chain_id, spec, .. } = cfg_env;
 
