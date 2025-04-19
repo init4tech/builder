@@ -27,6 +27,9 @@ pub mod tasks;
 /// Utilities.
 pub mod utils;
 
+/// Test utilitites
+pub mod test_utils;
+
 // Anonymous import suppresses warnings about unused imports.
 use openssl as _;
 use tracing_subscriber as _;
