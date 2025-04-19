@@ -1,18 +1,18 @@
 mod tests {
-    use std::str::FromStr;
-
-    use alloy::consensus::{SignableTransaction, TxEip1559, TxEnvelope};
-    use alloy::primitives::{Address, TxKind, U256, bytes};
-    use alloy::signers::{SignerSync, local::PrivateKeySigner};
+    use alloy::primitives::U256;
+    use alloy::signers::local::PrivateKeySigner;
     use builder::config::BuilderConfig;
     use builder::tasks::tx_poller;
+    use builder::test_utils::{new_signed_tx, setup_logging, setup_test_config}; // Import the refactored function
     use eyre::{Ok, Result};
 
     #[ignore = "integration test"]
     #[tokio::test]
     async fn test_tx_roundtrip() -> Result<()> {
+        setup_logging();
+
         // Create a new test environment
-        let config = setup_test_config().await?;
+        let config = setup_test_config()?;
 
         // Post a transaction to the cache
         post_tx(&config).await?;
@@ -31,8 +31,9 @@ mod tests {
 
     async fn post_tx(config: &BuilderConfig) -> Result<()> {
         let client = reqwest::Client::new();
+
         let wallet = PrivateKeySigner::random();
-        let tx_envelope = new_test_tx(&wallet)?;
+        let tx_envelope = new_signed_tx(&wallet, 1, U256::from(1), 10_000)?;
 
         let url = format!("{}/transactions", config.tx_pool_url);
         let response = client.post(&url).json(&tx_envelope).send().await?;
@@ -43,53 +44,5 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    // Returns a new signed test transaction with default values
-    fn new_test_tx(wallet: &PrivateKeySigner) -> Result<TxEnvelope> {
-        let tx = TxEip1559 {
-            chain_id: 17001,
-            nonce: 1,
-            gas_limit: 50000,
-            to: TxKind::Call(
-                Address::from_str("0x0000000000000000000000000000000000000000").unwrap(),
-            ),
-            value: U256::from(1_f64),
-            input: bytes!(""),
-            ..Default::default()
-        };
-        let signature = wallet.sign_hash_sync(&tx.signature_hash())?;
-        Ok(TxEnvelope::Eip1559(tx.into_signed(signature)))
-    }
-
-    // Sets up a block builder with test values
-    pub async fn setup_test_config() -> Result<BuilderConfig> {
-        let config = BuilderConfig {
-            host_chain_id: 17000,
-            ru_chain_id: 17001,
-            host_rpc_url: "host-rpc.example.com".into(),
-            ru_rpc_url: "ru-rpc.example.com".into(),
-            tx_broadcast_urls: vec!["http://localhost:9000".into()],
-            zenith_address: Address::default(),
-            quincey_url: "http://localhost:8080".into(),
-            builder_port: 8080,
-            sequencer_key: None,
-            builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
-            block_confirmation_buffer: 1,
-            chain_offset: 0,
-            target_slot_time: 1,
-            builder_rewards_address: Address::default(),
-            rollup_block_gas_limit: 100_000,
-            tx_pool_url: "http://localhost:9000/".into(),
-            tx_pool_cache_duration: 5,
-            oauth_client_id: "some_client_id".into(),
-            oauth_client_secret: "some_client_secret".into(),
-            oauth_authenticate_url: "http://localhost:8080".into(),
-            oauth_token_url: "http://localhost:8080".into(),
-            oauth_token_refresh_interval: 300, // 5 minutes
-            builder_helper_address: Address::default(),
-            concurrency_limit: 1000,
-        };
-        Ok(config)
     }
 }
