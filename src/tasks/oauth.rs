@@ -131,7 +131,7 @@ mod tests {
 
         let config = setup_test_config()?;
         let auth = Authenticator::new(&config);
-        
+
         let _ = auth.fetch_oauth_token().await?;
 
         let token = auth.token().await.unwrap();
