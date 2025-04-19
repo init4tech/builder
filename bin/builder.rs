@@ -7,6 +7,8 @@ use builder::{
     },
 };
 use signet_sim::SimCache;
+use signet_types::SlotCalculator;
+use std::sync::Arc;
 use tokio::select;
 
 #[tokio::main]
@@ -29,7 +31,6 @@ async fn main() -> eyre::Result<()> {
     let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
-    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider.clone());
     let submit = SubmitTask {
         authenticator: authenticator.clone(),
         host_provider,
@@ -48,12 +49,17 @@ async fn main() -> eyre::Result<()> {
 
     let authenticator_jh = authenticator.spawn();
 
-    let (_submit_channel, submit_jh) = submit.spawn();
+    let (submit_channel, submit_jh) = submit.spawn();
 
     let sim_items = SimCache::new();
-    let sim_cache_jh = builder.spawn_cache_task(tx_receiver, bundle_receiver, sim_items.clone());
 
-    let build_jh = builder.handle_build(constants, ru_provider, sim_items.clone());
+    let slot_calculator = SlotCalculator::pecorino();
+    let builder = Arc::new(BlockBuilder::new(&config, ru_provider.clone(), slot_calculator));
+
+    let sim_cache_jh =
+        builder.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_items.clone());
+
+    let build_jh = builder.clone().spawn_builder_task(constants, sim_items.clone(), submit_channel);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);

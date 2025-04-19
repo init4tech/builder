@@ -1,17 +1,18 @@
 use crate::{
     config::{BuilderConfig, WalletlessProvider},
-    tasks::{
-        bundler::{Bundle, BundlePoller},
-        oauth::Authenticator,
-        tx_poller::TxPoller,
-    },
+    tasks::bundler::Bundle,
 };
 use alloy::{consensus::TxEnvelope, eips::BlockId, providers::Provider};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache, SimItem};
-use signet_types::config::SignetSystemConstants;
+use signet_types::{SlotCalculator, config::SignetSystemConstants};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 use tokio::{
     select,
     sync::mpsc::{self},
+    task::JoinHandle,
 };
 use trevm::{
     NoopBlock,
@@ -22,9 +23,6 @@ use trevm::{
         primitives::hardfork::SpecId,
     },
 };
-
-/// Ethereum's slot time in seconds.
-pub const ETHEREUM_SLOT_TIME: u64 = 12;
 
 /// Pecorino Chain ID
 pub const PECORINO_CHAIN_ID: u64 = 14174;
@@ -37,42 +35,28 @@ pub struct BlockBuilder {
     pub config: BuilderConfig,
     /// A provider that cannot sign transactions.
     pub ru_provider: WalletlessProvider,
-    /// A poller for fetching transactions.
-    pub tx_poller: TxPoller,
-    /// A poller for fetching bundles.
-    pub bundle_poller: BundlePoller,
+    /// The slot calculator for waking up and sleeping the builder correctly
+    pub slot_calculator: SlotCalculator,
 }
 
 impl BlockBuilder {
-    /// Create a new block builder with the given config.
+    /// Creates a new block builder that builds blocks based on the given provider.
     pub fn new(
         config: &BuilderConfig,
-        authenticator: Authenticator,
         ru_provider: WalletlessProvider,
+        slot_calculator: SlotCalculator,
     ) -> Self {
-        Self {
-            config: config.clone(),
-            ru_provider,
-            tx_poller: TxPoller::new(config),
-            bundle_poller: BundlePoller::new(config, authenticator),
-        }
+        Self { config: config.clone(), ru_provider, slot_calculator }
     }
 
-    /// Spawn the block builder task, returning the inbound channel to it, and
-    /// a handle to the running task.
+    /// Handles building a single block.
     pub async fn handle_build(
         &self,
         constants: SignetSystemConstants,
-        ru_provider: WalletlessProvider,
         sim_items: SimCache,
+        finish_by: Instant,
     ) -> Result<BuiltBlock, mpsc::error::SendError<BuiltBlock>> {
-        let db = create_db(ru_provider).await.unwrap();
-
-        // TODO: add real slot calculator
-        let finish_by = std::time::Instant::now() + std::time::Duration::from_millis(200);
-
-        dbg!(sim_items.read_best(2));
-        dbg!(sim_items.len());
+        let db = self.create_db().await.unwrap();
 
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
@@ -90,47 +74,85 @@ impl BlockBuilder {
         Ok(block)
     }
 
-    /// Spawns a task that receives transactions and bundles from the pollers and
-    /// adds them to the shared cache.
-    pub async fn spawn_cache_task(
-        &self,
+    /// Scans the tx and bundle receivers for new items and adds them to the cache.
+    pub fn spawn_cache_handler(
+        self: Arc<Self>,
         mut tx_receiver: mpsc::UnboundedReceiver<TxEnvelope>,
         mut bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
         cache: SimCache,
-    ) {
-        loop {
-            select! {
-                maybe_tx = tx_receiver.recv() => {
-                    if let Some(tx) = maybe_tx {
-                        cache.add_item(SimItem::Tx(tx));
+    ) -> JoinHandle<()> {
+        let jh = tokio::spawn(async move {
+            loop {
+                select! {
+                    maybe_tx = tx_receiver.recv() => {
+                        if let Some(tx) = maybe_tx {
+                            cache.add_item(SimItem::Tx(tx));
+                        }
                     }
-                }
-                maybe_bundle = bundle_receiver.recv() => {
-                    if let Some(bundle) = maybe_bundle {
-                        cache.add_item(SimItem::Bundle(bundle.bundle));
+                    maybe_bundle = bundle_receiver.recv() => {
+                        if let Some(bundle) = maybe_bundle {
+                            cache.add_item(SimItem::Bundle(bundle.bundle));
+                        }
                     }
                 }
             }
-        }
+        });
+        jh
     }
-}
 
-/// Creates an AlloyDB from a rollup provider
-async fn create_db(ru_provider: WalletlessProvider) -> Option<WrapAlloyDatabaseAsync> {
-    let latest = match ru_provider.get_block_number().await {
-        Ok(block_number) => block_number,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to get latest block number");
-            println!("failed to get latest block number");
-            // Should this do anything else?
-            return None;
-        }
-    };
-    let alloy_db = AlloyDB::new(ru_provider.clone(), BlockId::from(latest));
-    let wrapped_db = WrapDatabaseAsync::new(alloy_db).unwrap_or_else(|| {
-        panic!("failed to acquire async alloy_db; check which runtime you're using")
-    });
-    Some(wrapped_db)
+    /// Spawns the block building task.
+    pub fn spawn_builder_task(
+        self: Arc<Self>,
+        constants: SignetSystemConstants,
+        cache: SimCache,
+        submit_sender: mpsc::UnboundedSender<BuiltBlock>,
+    ) -> JoinHandle<()> {
+        let jh = tokio::spawn(async move {
+            loop {
+                let sim_cache = cache.clone();
+
+                let finish_by = self.calculate_deadline();
+                tracing::info!("simulating until target slot deadline");
+
+                // sleep until next wake period
+                tracing::info!("starting block build");
+                match self.handle_build(constants, sim_cache, finish_by).await {
+                    Ok(block) => {
+                        let _ = submit_sender.send(block);
+                    }
+                    Err(e) => {
+                        tracing::error!(err = %e, "failed to send block");
+                        continue;
+                    }
+                }
+            }
+        });
+        jh
+    }
+
+    /// Returns the instant at which simulation must stop.
+    pub fn calculate_deadline(&self) -> Instant {
+        let now = SystemTime::now();
+        let unix_seconds = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
+
+        Instant::now().checked_add(Duration::from_secs(unix_seconds)).unwrap()
+    }
+
+    /// Creates an AlloyDB from a rollup provider
+    async fn create_db(&self) -> Option<WrapAlloyDatabaseAsync> {
+        let latest = match self.ru_provider.get_block_number().await {
+            Ok(block_number) => block_number,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to get latest block number");
+                return None;
+            }
+        };
+        let alloy_db = AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest));
+        let wrapped_db = WrapDatabaseAsync::new(alloy_db).unwrap_or_else(|| {
+            panic!("failed to acquire async alloy_db; check which runtime you're using")
+        });
+        Some(wrapped_db)
+    }
 }
 
 /// The wrapped alloy database type that is compatible with Db + DatabaseRef

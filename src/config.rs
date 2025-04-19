@@ -40,6 +40,7 @@ const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
 const CONCURRENCY_LIMIT: &str = "CONCURRENCY_LIMIT";
+const START_TIMESTAMP: &str = "START_TIMESTAMP";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
@@ -97,6 +98,8 @@ pub struct BuilderConfig {
     pub oauth_token_refresh_interval: u64,
     /// The max number of simultaneous block simulations to run.
     pub concurrency_limit: usize,
+    /// The anchor for slot time and number calculations before adjusting for chain offset.
+    pub start_timestamp: u64,
 }
 
 /// Error loading the configuration.
@@ -193,6 +196,7 @@ impl BuilderConfig {
             oauth_token_url: load_string(OAUTH_TOKEN_URL)?,
             oauth_token_refresh_interval: load_u64(AUTH_TOKEN_REFRESH_INTERVAL)?,
             concurrency_limit: load_u64(CONCURRENCY_LIMIT).map(|v| v as usize).unwrap_or(1000),
+            start_timestamp: load_u64(START_TIMESTAMP)?,
         })
     }
 
