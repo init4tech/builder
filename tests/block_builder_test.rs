@@ -116,7 +116,7 @@ mod tests {
         sim.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_cache.clone());
 
         // Finally, Kick off the block builder task.
-        sim.clone().spawn_builder_task(constants, sim_cache.clone(), block_sender);
+        sim.clone().spawn_simulator_task(constants, sim_cache.clone(), block_sender);
 
         // Feed in transactions to the tx_sender and wait for the block to be simulated
         let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();

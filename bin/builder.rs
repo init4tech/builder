@@ -60,7 +60,7 @@ async fn main() -> eyre::Result<()> {
     let sim_cache_jh =
         sim.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_items.clone());
 
-    let build_jh = sim.clone().spawn_builder_task(constants, sim_items.clone(), submit_channel);
+    let build_jh = sim.clone().spawn_simulator_task(constants, sim_items.clone(), submit_channel);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);

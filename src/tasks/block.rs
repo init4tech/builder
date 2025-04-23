@@ -130,7 +130,8 @@ impl Simulator {
         })
     }
 
-    /// Spawns the block building task.
+    /// Spawns the simulator task, which handles the setup and sets the deadline  
+    /// for the each round of simulation.
     ///
     /// # Arguments
     /// - `constants`: The system constants for the rollup.
@@ -139,7 +140,7 @@ impl Simulator {
     ///
     /// # Returns
     /// A `JoinHandle` for the spawned task.
-    pub fn spawn_builder_task(
+    pub fn spawn_simulator_task(
         self: Arc<Self>,
         constants: SignetSystemConstants,
         cache: SimCache,
