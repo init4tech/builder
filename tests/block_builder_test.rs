@@ -6,7 +6,7 @@ mod tests {
         signers::local::PrivateKeySigner,
     };
     use builder::{
-        tasks::block::{Simulator, PECORINO_CHAIN_ID},
+        tasks::block::{PECORINO_CHAIN_ID, Simulator},
         test_utils::{new_signed_tx, setup_logging, setup_test_config},
     };
 

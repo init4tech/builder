@@ -2,8 +2,8 @@ use builder::{
     config::BuilderConfig,
     service::serve_builder_with_span,
     tasks::{
-        block::Simulator, bundler, metrics::MetricsTask, oauth::Authenticator,
-        submit::SubmitTask, tx_poller,
+        block::Simulator, bundler, metrics::MetricsTask, oauth::Authenticator, submit::SubmitTask,
+        tx_poller,
     },
 };
 use signet_sim::SimCache;
@@ -54,7 +54,7 @@ async fn main() -> eyre::Result<()> {
     let sim_items = SimCache::new();
     let slot_calculator =
         SlotCalculator::new(config.start_timestamp, config.chain_offset, config.target_slot_time);
-    
+
     let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
 
     let sim_cache_jh =

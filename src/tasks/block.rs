@@ -13,7 +13,6 @@ use tokio::{
     select,
     sync::mpsc::{self},
     task::JoinHandle,
-    time::sleep,
 };
 use trevm::{
     NoopBlock,
