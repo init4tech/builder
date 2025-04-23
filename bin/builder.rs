@@ -2,7 +2,7 @@ use builder::{
     config::BuilderConfig,
     service::serve_builder_with_span,
     tasks::{
-        block::BlockBuilder, bundler, metrics::MetricsTask, oauth::Authenticator,
+        block::Simulator, bundler, metrics::MetricsTask, oauth::Authenticator,
         submit::SubmitTask, tx_poller,
     },
 };
@@ -54,12 +54,13 @@ async fn main() -> eyre::Result<()> {
     let sim_items = SimCache::new();
     let slot_calculator =
         SlotCalculator::new(config.start_timestamp, config.chain_offset, config.target_slot_time);
-    let builder = Arc::new(BlockBuilder::new(&config, ru_provider.clone(), slot_calculator));
+    
+    let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
 
     let sim_cache_jh =
-        builder.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_items.clone());
+        sim.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_items.clone());
 
-    let build_jh = builder.clone().spawn_builder_task(constants, sim_items.clone(), submit_channel);
+    let build_jh = sim.clone().spawn_builder_task(constants, sim_items.clone(), submit_channel);
 
     let port = config.builder_port;
     let server = serve_builder_with_span(([0, 0, 0, 0], port), span);

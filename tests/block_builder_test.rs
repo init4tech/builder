@@ -6,7 +6,7 @@ mod tests {
         signers::local::PrivateKeySigner,
     };
     use builder::{
-        tasks::block::{BlockBuilder, PECORINO_CHAIN_ID},
+        tasks::block::{Simulator, PECORINO_CHAIN_ID},
         test_utils::{new_signed_tx, setup_logging, setup_test_config},
     };
 
@@ -18,7 +18,7 @@ mod tests {
     };
     use tokio::{sync::mpsc::unbounded_channel, time::timeout};
 
-    /// Tests the `handle_build` method of the `BlockBuilder`.
+    /// Tests the `handle_build` method of the `Simulator`.
     ///
     /// This test sets up a simulated environment using Anvil, creates a block builder,
     /// and verifies that the block builder can successfully build a block containing
@@ -50,7 +50,7 @@ mod tests {
             .as_secs();
         dbg!(now);
         let slot_calculator = SlotCalculator::new(now, 0, 12);
-        let block_builder = BlockBuilder::new(&config, ru_provider.clone(), slot_calculator);
+        let block_builder = Simulator::new(&config, ru_provider.clone(), slot_calculator);
 
         // Setup a sim cache
         let sim_items = SimCache::new();
@@ -107,16 +107,16 @@ mod tests {
             config.chain_offset,
             config.target_slot_time,
         );
-        let builder = Arc::new(BlockBuilder::new(&config, ru_provider.clone(), slot_calculator));
+        let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
 
         // Create a shared sim cache
         let sim_cache = SimCache::new();
 
         // Create a sim cache and start filling it with items
-        builder.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_cache.clone());
+        sim.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_cache.clone());
 
         // Finally, Kick off the block builder task.
-        builder.clone().spawn_builder_task(constants, sim_cache.clone(), block_sender);
+        sim.clone().spawn_builder_task(constants, sim_cache.clone(), block_sender);
 
         // Feed in transactions to the tx_sender and wait for the block to be simulated
         let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();
