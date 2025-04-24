@@ -113,7 +113,7 @@ impl SubmitTask {
             ru_chain_id,
             gas_limit: U256::from(self.config.rollup_block_gas_limit),
             ru_reward_address: self.config.builder_rewards_address,
-            contents: contents.contents_hash(),
+            contents: *contents.contents_hash(),
         })
     }
 
@@ -156,7 +156,7 @@ impl SubmitTask {
             rollupChainId: U256::from(self.config.ru_chain_id),
             gasLimit: resp.req.gas_limit,
             rewardAddress: resp.req.ru_reward_address,
-            blockDataHash: in_progress.contents_hash(),
+            blockDataHash: *in_progress.contents_hash(),
         };
 
         let fills = vec![]; // NB: ignored until fills are implemented
