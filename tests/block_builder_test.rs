@@ -57,10 +57,10 @@ mod tests {
 
         // Add two transactions from two senders to the sim cache
         let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();
-        sim_items.add_item(SimItem::Tx(tx_1));
+        sim_items.add_item(SimItem::Tx(tx_1), 0);
 
         let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
-        sim_items.add_item(SimItem::Tx(tx_2));
+        sim_items.add_item(SimItem::Tx(tx_2), 0);
 
         let finish_by = Instant::now() + Duration::from_secs(2);
 
@@ -113,7 +113,7 @@ mod tests {
         let sim_cache = SimCache::new();
 
         // Create a sim cache and start filling it with items
-        sim.clone().spawn_cache_handler(tx_receiver, bundle_receiver, sim_cache.clone());
+        sim.clone().spawn_cache_task(tx_receiver, bundle_receiver, sim_cache.clone());
 
         // Finally, Kick off the block builder task.
         sim.clone().spawn_simulator_task(constants, sim_cache.clone(), block_sender);

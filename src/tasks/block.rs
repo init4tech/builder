@@ -2,7 +2,11 @@ use crate::{
     config::{BuilderConfig, WalletlessProvider},
     tasks::bundler::Bundle,
 };
-use alloy::{consensus::TxEnvelope, eips::BlockId, providers::Provider};
+use alloy::{
+    consensus::TxEnvelope,
+    eips::{BlockId, BlockNumberOrTag::Latest},
+    providers::Provider,
+};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache, SimItem};
 use signet_types::{SlotCalculator, config::SignetSystemConstants};
 use std::{
@@ -11,8 +15,12 @@ use std::{
 };
 use tokio::{
     select,
-    sync::mpsc::{self},
+    sync::{
+        RwLock,
+        mpsc::{self},
+    },
     task::JoinHandle,
+    time::sleep,
 };
 use trevm::{
     NoopBlock,
@@ -92,8 +100,8 @@ impl Simulator {
         Ok(block)
     }
 
-    /// Spawns a task to handle incoming transactions and bundles, adding them
-    /// to the simulation cache.
+    /// Spawns two tasks: one to handle incoming transactions and bundles,
+    /// adding them to the simulation cache, and one to track the latest basefee.
     ///
     /// # Arguments
     /// - `tx_receiver`: A channel receiver for incoming transactions.
@@ -101,33 +109,74 @@ impl Simulator {
     /// - `cache`: The simulation cache to store the received items.
     ///
     /// # Returns
-    /// A `JoinHandle` for the spawned task.
-    pub fn spawn_cache_handler(
+    /// A `JoinHandle` for the basefee updater and a `JoinHandle` for the
+    /// cache handler.
+    pub fn spawn_cache_task(
         self: Arc<Self>,
         mut tx_receiver: mpsc::UnboundedReceiver<TxEnvelope>,
         mut bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
         cache: SimCache,
-    ) -> JoinHandle<()> {
+    ) -> (JoinHandle<()>, JoinHandle<()>) {
         tracing::debug!("starting up cache handler");
 
-        tokio::spawn(async move {
+        let shared_price = Arc::new(RwLock::new(0_u64));
+        let price_updater = Arc::clone(&shared_price);
+        let price_reader = Arc::clone(&shared_price);
+
+        // Update the basefee on a per-block cadence
+        let basefee_jh = tokio::spawn(async move {
             loop {
+                // calculate next slot position plus a small buffer to
+                let time_remaining = self.slot_calculator.slot_duration()
+                    - self.slot_calculator.current_timepoint_within_slot()
+                    + 1;
+                tracing::debug!(time_remaining = ?time_remaining, "sleeping until next slot");
+
+                // wait until that point in time
+                sleep(Duration::from_secs(time_remaining)).await;
+
+                // update the basefee with that price
+                tracing::debug!("checking latest basefee");
+                let resp = self.ru_provider.get_block_by_number(Latest).await;
+
+                if let Ok(maybe_block) = resp {
+                    match maybe_block {
+                        Some(block) => {
+                            let basefee = block.header.base_fee_per_gas.unwrap_or_default();
+                            let mut w = price_updater.write().await;
+                            *w = basefee;
+                            tracing::debug!(basefee = %basefee, "basefee updated");
+                        }
+                        None => {
+                            tracing::debug!("no block found; basefee not updated.")
+                        }
+                    }
+                }
+            }
+        });
+
+        // Update the sim cache whenever a transaction or bundle is received with respect to the basefee
+        let cache_jh = tokio::spawn(async move {
+            loop {
+                let p = price_reader.read().await;
                 select! {
                     maybe_tx = tx_receiver.recv() => {
                         if let Some(tx) = maybe_tx {
                             tracing::debug!(tx = ?tx.hash(), "received transaction");
-                            cache.add_item(SimItem::Tx(tx));
+                            cache.add_item(SimItem::Tx(tx), *p);
                         }
                     }
                     maybe_bundle = bundle_receiver.recv() => {
                         if let Some(bundle) = maybe_bundle {
                             tracing::debug!(bundle = ?bundle.id, "received bundle");
-                            cache.add_item(SimItem::Bundle(bundle.bundle));
+                            cache.add_item(SimItem::Bundle(bundle.bundle), *p);
                         }
                     }
                 }
             }
-        })
+        });
+
+        (basefee_jh, cache_jh)
     }
 
     /// Spawns the simulator task, which handles the setup and sets the deadline  
