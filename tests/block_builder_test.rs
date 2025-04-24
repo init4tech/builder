@@ -77,6 +77,7 @@ mod tests {
     /// This test sets up a simulated environment using Anvil, creates a block builder,
     /// and verifies that the builder can process incoming transactions and produce a block
     /// within a specified timeout.
+    #[ignore = "integration test"]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_spawn() {
         setup_logging();
