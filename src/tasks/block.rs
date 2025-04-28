@@ -10,15 +10,15 @@ use alloy::{
 use signet_sim::{BlockBuild, BuiltBlock, SimCache, SimItem};
 use signet_types::{SlotCalculator, config::SignetSystemConstants};
 use std::{
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     select,
-    sync::{
-        RwLock,
-        mpsc::{self},
-    },
+    sync::mpsc::{self},
     task::JoinHandle,
     time::sleep,
 };
@@ -119,7 +119,7 @@ impl Simulator {
     ) -> (JoinHandle<()>, JoinHandle<()>) {
         tracing::debug!("starting up cache handler");
 
-        let shared_price = Arc::new(RwLock::new(0_u64));
+        let shared_price = Arc::new(AtomicU64::new(0_u64));
         let price_updater = Arc::clone(&shared_price);
         let price_reader = Arc::clone(&shared_price);
 
@@ -143,8 +143,7 @@ impl Simulator {
                     match maybe_block {
                         Some(block) => {
                             let basefee = block.header.base_fee_per_gas.unwrap_or_default();
-                            let mut w = price_updater.write().await;
-                            *w = basefee;
+                            price_updater.store(basefee, Ordering::Relaxed);
                             tracing::debug!(basefee = %basefee, "basefee updated");
                         }
                         None => {
@@ -158,18 +157,18 @@ impl Simulator {
         // Update the sim cache whenever a transaction or bundle is received with respect to the basefee
         let cache_jh = tokio::spawn(async move {
             loop {
-                let p = price_reader.read().await;
+                let p = price_reader.load(Ordering::Relaxed);
                 select! {
                     maybe_tx = tx_receiver.recv() => {
                         if let Some(tx) = maybe_tx {
                             tracing::debug!(tx = ?tx.hash(), "received transaction");
-                            cache.add_item(SimItem::Tx(tx), *p);
+                            cache.add_item(SimItem::Tx(tx), p);
                         }
                     }
                     maybe_bundle = bundle_receiver.recv() => {
                         if let Some(bundle) = maybe_bundle {
                             tracing::debug!(bundle = ?bundle.id, "received bundle");
-                            cache.add_item(SimItem::Bundle(bundle.bundle), *p);
+                            cache.add_item(SimItem::Bundle(bundle.bundle), p);
                         }
                     }
                 }
