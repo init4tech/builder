@@ -1,5 +1,5 @@
 use crate::{
-    config::{Provider, ZenithInstance},
+    config::{HostProvider, ZenithInstance},
     signer::LocalOrAws,
     utils::extract_signature_components,
 };
@@ -58,7 +58,7 @@ pub enum ControlFlow {
 #[derive(Debug, Clone)]
 pub struct SubmitTask {
     /// Ethereum Provider
-    pub host_provider: Provider,
+    pub host_provider: HostProvider,
     /// Zenith
     pub zenith: ZenithInstance,
     /// Reqwest

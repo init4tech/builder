@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod tests {
     use alloy::{
-        node_bindings::Anvil, primitives::U256, providers::ProviderBuilder,
+        network::Ethereum, node_bindings::Anvil, primitives::U256, providers::RootProvider,
         signers::local::PrivateKeySigner,
     };
     use builder::{
@@ -41,7 +41,7 @@ mod tests {
         let test_key_1 = PrivateKeySigner::from_signing_key(keys[1].clone().into());
 
         // Create a rollup provider
-        let ru_provider = ProviderBuilder::new().on_http(anvil_instance.endpoint_url());
+        let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
         // Create a block builder with a slot calculator for testing
         let now = SystemTime::now()
@@ -100,7 +100,7 @@ mod tests {
         let (block_sender, mut block_receiver) = unbounded_channel();
 
         // Create a rollup provider
-        let ru_provider = ProviderBuilder::new().on_http(anvil_instance.endpoint_url());
+        let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
         // Create a builder with a test slot calculator
         let slot_calculator = SlotCalculator::new(

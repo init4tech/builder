@@ -11,6 +11,7 @@ use alloy::{
     },
 };
 use eyre::Result;
+use oauth2::url;
 use signet_types::config::{HostConfig, PredeployTokens, RollupConfig, SignetSystemConstants};
 use signet_zenith::Zenith;
 use std::{borrow::Cow, env, num, str::FromStr};
@@ -135,8 +136,8 @@ impl ConfigError {
     }
 }
 
-/// Type alias for the provider used in the builder.
-pub type Provider = FillProvider<
+/// Type alias for the provider used to build and submit blocks to the host.
+pub type HostProvider = FillProvider<
     JoinFill<
         JoinFill<
             Identity,
@@ -148,18 +149,11 @@ pub type Provider = FillProvider<
     Ethereum,
 >;
 
-/// Type alias for the provider used in the builder, without a wallet.
-pub type WalletlessProvider = FillProvider<
-    JoinFill<
-        Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-    >,
-    RootProvider,
-    Ethereum,
->;
+/// Type alias for the provider used to simulate against rollup state.
+pub type RuProvider = RootProvider<Ethereum>;
 
 /// A [`Zenith`] contract instance using [`Provider`] as the provider.
-pub type ZenithInstance<P = Provider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
+pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
@@ -217,17 +211,14 @@ impl BuilderConfig {
     }
 
     /// Connect to the Rollup rpc provider.
-    pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
-        let provider = ProviderBuilder::new()
-            .connect(&self.ru_rpc_url)
-            .await
-            .map_err(ConfigError::Provider)?;
-
+    pub async fn connect_ru_provider(&self) -> Result<RootProvider<Ethereum>, ConfigError> {
+        let url = url::Url::parse(&self.ru_rpc_url).expect("failed to parse URL");
+        let provider = RootProvider::<Ethereum>::new_http(url);
         Ok(provider)
     }
 
     /// Connect to the Host rpc provider.
-    pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
+    pub async fn connect_host_provider(&self) -> Result<HostProvider, ConfigError> {
         let builder_signer = self.connect_builder_signer().await?;
         let provider = ProviderBuilder::new()
             .wallet(EthereumWallet::from(builder_signer))
@@ -239,22 +230,20 @@ impl BuilderConfig {
     }
 
     /// Connect additional broadcast providers.
-    pub async fn connect_additional_broadcast(
-        &self,
-    ) -> Result<Vec<WalletlessProvider>, ConfigError> {
-        let mut providers: Vec<WalletlessProvider> =
-            Vec::with_capacity(self.tx_broadcast_urls.len());
-        for url in self.tx_broadcast_urls.iter() {
-            let provider =
-                ProviderBuilder::new().connect(url).await.map_err(ConfigError::Provider)?;
+    pub async fn connect_additional_broadcast(&self) -> Result<Vec<RootProvider>, ConfigError> {
+        let mut providers: Vec<RootProvider> = Vec::with_capacity(self.tx_broadcast_urls.len());
 
+        for url_str in self.tx_broadcast_urls.iter() {
+            let url = url::Url::parse(url_str).expect("failed to parse URL");
+            let provider = RootProvider::new_http(url);
             providers.push(provider);
         }
+
         Ok(providers)
     }
 
     /// Connect to the Zenith instance, using the specified provider.
-    pub const fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
+    pub const fn connect_zenith(&self, provider: HostProvider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
     }
 

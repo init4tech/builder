@@ -6,7 +6,7 @@ use alloy::{
     signers::aws::AwsSigner,
 };
 use aws_config::BehaviorVersion;
-use builder::config::{Provider, load_address, load_string, load_u64, load_url};
+use builder::config::{HostProvider, load_address, load_string, load_u64, load_url};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     init4,
@@ -30,7 +30,7 @@ async fn main() {
     }
 }
 
-async fn send_transaction(provider: Provider, recipient_address: Address) {
+async fn send_transaction(provider: HostProvider, recipient_address: Address) {
     // construct simple transaction to send ETH to a recipient
     let tx = TransactionRequest::default()
         .with_from(provider.default_signer_address())
@@ -67,7 +67,7 @@ async fn send_transaction(provider: Provider, recipient_address: Address) {
     histogram!("txn_submitter.tx_mine_time").record(mine_time as f64);
 }
 
-async fn connect_from_config() -> (Provider, Address, u64) {
+async fn connect_from_config() -> (HostProvider, Address, u64) {
     // load signer config values from .env
     let rpc_url = load_url("RPC_URL").unwrap();
     let chain_id = load_u64("CHAIN_ID").unwrap();

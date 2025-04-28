@@ -1,10 +1,11 @@
 use crate::{
-    config::{BuilderConfig, WalletlessProvider},
+    config::{BuilderConfig, RuProvider},
     tasks::bundler::Bundle,
 };
 use alloy::{
     consensus::TxEnvelope,
     eips::{BlockId, BlockNumberOrTag::Latest},
+    network::Ethereum,
     providers::Provider,
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
@@ -42,10 +43,12 @@ pub struct Simulator {
     /// Configuration for the builder.
     pub config: BuilderConfig,
     /// A provider that cannot sign transactions, used for interacting with the rollup.
-    pub ru_provider: WalletlessProvider,
+    pub ru_provider: RuProvider,
     /// The slot calculator for determining when to wake up and build blocks.
     pub slot_calculator: SlotCalculator,
 }
+
+type AlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
 
 impl Simulator {
     /// Creates a new `Simulator` instance.
@@ -61,7 +64,7 @@ impl Simulator {
     /// A new `Simulator` instance.
     pub fn new(
         config: &BuilderConfig,
-        ru_provider: WalletlessProvider,
+        ru_provider: RuProvider,
         slot_calculator: SlotCalculator,
     ) -> Self {
         Self { config: config.clone(), ru_provider, slot_calculator }
@@ -276,7 +279,7 @@ impl Simulator {
     /// # Returns
     ///
     /// An `Option` containing the wrapped database or `None` if an error occurs.
-    async fn create_db(&self) -> Option<WrapAlloyDatabaseAsync> {
+    async fn create_db(&self) -> Option<AlloyDatabaseProvider> {
         let latest = match self.ru_provider.get_block_number().await {
             Ok(block_number) => block_number,
             Err(e) => {
@@ -284,10 +287,12 @@ impl Simulator {
                 return None;
             }
         };
-        let alloy_db = AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest));
-        let wrapped_db = WrapDatabaseAsync::new(alloy_db).unwrap_or_else(|| {
-            panic!("failed to acquire async alloy_db; check which runtime you're using")
-        });
+        let alloy_db: AlloyDB<Ethereum, RuProvider> =
+            AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest));
+        let wrapped_db: WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>> =
+            WrapDatabaseAsync::new(alloy_db).unwrap_or_else(|| {
+                panic!("failed to acquire async alloy_db; check which runtime you're using")
+            });
         Some(wrapped_db)
     }
 }
@@ -328,29 +333,6 @@ async fn cache_updater(
         }
     }
 }
-
-/// The wrapped alloy database type that is compatible with `Db` and `DatabaseRef`.
-type WrapAlloyDatabaseAsync = WrapDatabaseAsync<
-    AlloyDB<
-        alloy::network::Ethereum,
-        alloy::providers::fillers::FillProvider<
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::Identity,
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::GasFiller,
-                    alloy::providers::fillers::JoinFill<
-                        alloy::providers::fillers::BlobGasFiller,
-                        alloy::providers::fillers::JoinFill<
-                            alloy::providers::fillers::NonceFiller,
-                            alloy::providers::fillers::ChainIdFiller,
-                        >,
-                    >,
-                >,
-            >,
-            alloy::providers::RootProvider,
-        >,
-    >,
->;
 
 /// Configuration struct for Pecorino network values.
 #[derive(Debug, Clone)]
