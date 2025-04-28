@@ -1,5 +1,6 @@
 use crate::{
     config::{BuilderConfig, RuProvider},
+    consts::PECORINO_CHAIN_ID,
     tasks::bundler::Bundle,
 };
 use alloy::{
@@ -32,9 +33,6 @@ use trevm::{
         primitives::hardfork::SpecId,
     },
 };
-
-/// Pecorino Chain ID used for the Pecorino network.
-pub const PECORINO_CHAIN_ID: u64 = 14174;
 
 /// `Simulator` is responsible for periodically building blocks and submitting them for
 /// signing and inclusion in the blockchain.
