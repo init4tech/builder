@@ -123,6 +123,9 @@ pub enum ConfigError {
     /// Error connecting to the signer
     #[error("failed to connect to signer: {0}")]
     Signer(#[from] SignerError),
+    /// Error checking available system concurrency
+    #[error("failed to determine system concurrency: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl ConfigError {
@@ -192,7 +195,7 @@ impl BuilderConfig {
             oauth_authenticate_url: load_string(OAUTH_AUTHENTICATE_URL)?,
             oauth_token_url: load_string(OAUTH_TOKEN_URL)?,
             oauth_token_refresh_interval: load_u64(AUTH_TOKEN_REFRESH_INTERVAL)?,
-            concurrency_limit: load_u64(CONCURRENCY_LIMIT).map(|v| v as usize).unwrap_or(1000),
+            concurrency_limit: load_concurrency_limit()?,
             start_timestamp: load_u64(START_TIMESTAMP)?,
         })
     }
@@ -319,4 +322,16 @@ pub fn load_address(key: &str) -> Result<Address, ConfigError> {
     let address = load_string(key)?;
     Address::from_str(&address)
         .map_err(|_| ConfigError::Var(format!("Invalid address format for {}", key)))
+}
+
+/// Checks the configured concurrency parameter and, if none is set, checks the available
+/// system concurrency with `std::thread::available_parallelism` and returns that.
+pub fn load_concurrency_limit() -> Result<usize, ConfigError> {
+    match load_u16(CONCURRENCY_LIMIT) {
+        Ok(env) => Ok(env as usize),
+        Err(_) => {
+            let limit = std::thread::available_parallelism()?.get();
+            Ok(limit)
+        }
+    }
 }
