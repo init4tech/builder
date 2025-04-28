@@ -21,10 +21,11 @@ async fn main() -> eyre::Result<()> {
     let constants = config.load_pecorino_constants();
     let authenticator = Authenticator::new(&config);
 
-    let host_provider = config.connect_host_provider().await?;
-    let ru_provider = config.connect_ru_provider().await?;
-
-    let sequencer_signer = config.connect_sequencer_signer().await?;
+    let (host_provider, ru_provider, sequencer_signer) = tokio::try_join!(
+        config.connect_host_provider(),
+        config.connect_ru_provider(),
+        config.connect_sequencer_signer(),
+    )?;
 
     let zenith = config.connect_zenith(host_provider.clone());
 
