@@ -7,7 +7,7 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag::Latest},
     providers::Provider,
 };
-use signet_sim::{BlockBuild, BuiltBlock, SimCache, SimItem};
+use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::{SlotCalculator, config::SignetSystemConstants};
 use std::{
     sync::{
@@ -219,6 +219,7 @@ impl Simulator {
         submit_sender: mpsc::UnboundedSender<BuiltBlock>,
     ) -> JoinHandle<()> {
         tracing::debug!("starting builder task");
+
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
 
@@ -315,13 +316,13 @@ async fn cache_updater(
             maybe_tx = tx_receiver.recv() => {
                 if let Some(tx) = maybe_tx {
                     tracing::debug!(tx = ?tx.hash(), "received transaction");
-                    cache.add_item(SimItem::Tx(tx), p);
+                    cache.add_item(tx, p);
                 }
             }
             maybe_bundle = bundle_receiver.recv() => {
                 if let Some(bundle) = maybe_bundle {
                     tracing::debug!(bundle = ?bundle.id, "received bundle");
-                    cache.add_item(SimItem::Bundle(bundle.bundle), p);
+                    cache.add_item(bundle.bundle, p);
                 }
             }
         }
