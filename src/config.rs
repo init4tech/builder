@@ -123,9 +123,6 @@ pub enum ConfigError {
     /// Error connecting to the signer
     #[error("failed to connect to signer: {0}")]
     Signer(#[from] SignerError),
-    /// Error parsing the provided genesis file
-    #[error("failed")]
-    Genesis(String),
 }
 
 impl ConfigError {
