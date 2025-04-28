@@ -24,10 +24,10 @@ path = "bin/submit_transaction.rs"
 [dependencies]
 init4-bin-base = { git = "https://github.com/init4tech/bin-base.git" }
 
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/sim-crate" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/sim-crate" }
-signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/sim-crate" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "prestwich/sim-crate" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 
 trevm = { version = "0.20.10", features = ["concurrent-db", "test-utils"] }
 
