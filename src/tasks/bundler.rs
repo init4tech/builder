@@ -2,7 +2,7 @@
 pub use crate::config::BuilderConfig;
 use crate::tasks::oauth::Authenticator;
 use oauth2::TokenResponse;
-use reqwest::Url;
+use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use signet_bundle::SignetEthBundle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -32,6 +32,8 @@ pub struct BundlePoller {
     pub config: BuilderConfig,
     /// Authentication module that periodically fetches and stores auth tokens.
     pub authenticator: Authenticator,
+    /// Holds a Reqwest client
+    pub client: Client,
     /// Defines the interval at which the bundler polls the tx-pool for bundles.
     pub poll_interval_ms: u64,
 }
@@ -40,7 +42,12 @@ pub struct BundlePoller {
 impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config.
     pub fn new(config: &BuilderConfig, authenticator: Authenticator) -> Self {
-        Self { config: config.clone(), authenticator, poll_interval_ms: 1000 }
+        Self {
+            config: config.clone(),
+            authenticator,
+            client: Client::new(),
+            poll_interval_ms: 1000,
+        }
     }
 
     /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.
@@ -49,7 +56,7 @@ impl BundlePoller {
         authenticator: Authenticator,
         poll_interval_ms: u64,
     ) -> Self {
-        Self { config: config.clone(), authenticator, poll_interval_ms }
+        Self { config: config.clone(), authenticator, client: Client::new(), poll_interval_ms }
     }
 
     /// Fetches bundles from the transaction cache and returns them.
@@ -57,7 +64,8 @@ impl BundlePoller {
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
         let token = self.authenticator.fetch_oauth_token().await?;
 
-        let result = reqwest::Client::new()
+        let result = self
+            .client
             .get(bundle_url)
             .bearer_auth(token.access_token().secret())
             .send()
