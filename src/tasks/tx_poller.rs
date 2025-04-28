@@ -26,7 +26,8 @@ pub struct TxPoller {
     pub poll_interval_ms: u64,
 }
 
-/// [`TxPoller`] implements a poller task that fetches unique transactions from the transaction pool.
+/// [`TxPoller`] implements a poller task that fetches transactions from the transaction pool
+/// and sends them into the provided channel sender.
 impl TxPoller {
     /// Returns a new [`TxPoller`] with the given config.
     /// * Defaults to 1000ms poll interval (1s).
