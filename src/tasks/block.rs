@@ -1,6 +1,6 @@
 use crate::{
     config::{BuilderConfig, RuProvider},
-    consts::PECORINO_CHAIN_ID,
+    constants::PECORINO_CHAIN_ID,
     tasks::bundler::Bundle,
 };
 use alloy::{

@@ -1,4 +1,7 @@
-use crate::signer::{LocalOrAws, SignerError};
+use crate::{
+    constants::{self, HOST_WBTC},
+    signer::{LocalOrAws, SignerError},
+};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{Address, address},
@@ -251,26 +254,26 @@ impl BuilderConfig {
     pub const fn load_pecorino_constants(&self) -> SignetSystemConstants {
         let host = HostConfig::new(
             self.host_chain_id,
-            149984,
+            constants::PECORINO_DEPLOY_HEIGHT,
             self.zenith_address,
-            address!("0x4E8cC181805aFC307C83298242271142b8e2f249"),
-            address!("0xd553C4CA4792Af71F4B61231409eaB321c1Dd2Ce"),
-            address!("0x1af3A16857C28917Ab2C4c78Be099fF251669200"),
+            constants::HOST_ORDERS,
+            constants::HOST_PASSAGE,
+            constants::HOST_TRANSACTOR,
             PredeployTokens::new(
-                address!("0x885F8DB528dC8a38aA3DDad9D3F619746B4a6A81"),
-                address!("0x7970D259D4a96764Fa9B23FF0715A35f06f52D1A"),
-                address!("0x7970D259D4a96764Fa9B23FF0715A35f06f52D1A"),
+                constants::HOST_USDC,
+                constants::HOST_USDT,
+                constants::HOST_WBTC,
             ),
         );
         let rollup = RollupConfig::new(
             self.ru_chain_id,
-            address!("0x4E8cC181805aFC307C83298242271142b8e2f249"),
-            address!("0xd553C4CA4792Af71F4B61231409eaB321c1Dd2Ce"),
-            address!("0xe0eDA3701D44511ce419344A4CeD30B52c9Ba231"),
+            constants::ROLLUP_ORDERS,
+            constants::ROLLUP_PASSAGE,
+            constants::BASE_FEE_RECIPIENT,
             PredeployTokens::new(
-                address!("0x0B8BC5e60EE10957E0d1A0d95598fA63E65605e2"),
-                address!("0xF34326d3521F1b07d1aa63729cB14A372f8A737C"),
-                address!("0xE3d7066115f7d6b65F88Dff86288dB4756a7D733"),
+                constants::ROLLUP_USDC,
+                constants::ROLLUP_USDT,
+                constants::ROLLUP_WBTC,
             ),
         );
 

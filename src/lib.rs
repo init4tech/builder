@@ -13,7 +13,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 /// Constants for the Builder.
-pub mod consts;
+pub mod constants;
 
 /// Configuration for the Builder binary.
 pub mod config;
