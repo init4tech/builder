@@ -1,10 +1,10 @@
 use crate::{
-    constants::{self, HOST_WBTC},
+    constants,
     signer::{LocalOrAws, SignerError},
 };
 use alloy::{
     network::{Ethereum, EthereumWallet},
-    primitives::{Address, address},
+    primitives::Address,
     providers::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{
@@ -259,11 +259,7 @@ impl BuilderConfig {
             constants::HOST_ORDERS,
             constants::HOST_PASSAGE,
             constants::HOST_TRANSACTOR,
-            PredeployTokens::new(
-                constants::HOST_USDC,
-                constants::HOST_USDT,
-                constants::HOST_WBTC,
-            ),
+            PredeployTokens::new(constants::HOST_USDC, constants::HOST_USDT, constants::HOST_WBTC),
         );
         let rollup = RollupConfig::new(
             self.ru_chain_id,
