@@ -1,11 +1,12 @@
 use builder::{
     config::BuilderConfig,
-    service::serve_builder_with_span,
+    service::serve_builder,
     tasks::{
         block::Simulator, bundler, metrics::MetricsTask, oauth::Authenticator, submit::SubmitTask,
         tx_poller,
     },
 };
+use init4_bin_base::deps::tracing;
 use signet_sim::SimCache;
 use signet_types::SlotCalculator;
 use std::sync::Arc;
@@ -16,12 +17,11 @@ use tokio::select;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
-
-    let span = tracing::info_span!("zenith-builder");
+    let init_span_guard = tracing::info_span!("builder initialization");
 
     let config = BuilderConfig::load_from_env()?.clone();
     let constants = config.load_pecorino_constants();
-    let authenticator = Authenticator::new(&config);
+    let authenticator = Authenticator::new(&config)?;
 
     let (host_provider, ru_provider, sequencer_signer) = tokio::try_join!(
         config.connect_host_provider(),
@@ -35,7 +35,7 @@ async fn main() -> eyre::Result<()> {
     let (tx_channel, metrics_jh) = metrics.spawn();
 
     let submit = SubmitTask {
-        authenticator: authenticator.clone(),
+        token: authenticator.token(),
         host_provider,
         zenith,
         client: reqwest::Client::new(),
@@ -47,7 +47,7 @@ async fn main() -> eyre::Result<()> {
     let tx_poller = tx_poller::TxPoller::new(&config);
     let (tx_receiver, tx_poller_jh) = tx_poller.spawn();
 
-    let bundle_poller = bundler::BundlePoller::new(&config, authenticator.clone());
+    let bundle_poller = bundler::BundlePoller::new(&config, authenticator.token());
     let (bundle_receiver, bundle_poller_jh) = bundle_poller.spawn();
 
     let authenticator_jh = authenticator.spawn();
@@ -65,8 +65,11 @@ async fn main() -> eyre::Result<()> {
 
     let build_jh = sim.clone().spawn_simulator_task(constants, sim_items.clone(), submit_channel);
 
-    let port = config.builder_port;
-    let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
+    let server = serve_builder(([0, 0, 0, 0], config.builder_port));
+
+    // We have finished initializing the builder, so we can drop the init span
+    // guard.
+    drop(init_span_guard);
 
     select! {
         _ = tx_poller_jh => {

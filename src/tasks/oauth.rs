@@ -1,90 +1,52 @@
 //! Service responsible for authenticating with the cache with Oauth tokens.
 //! This authenticator periodically fetches a new token every set amount of seconds.
-use std::sync::Arc;
-
 use crate::config::BuilderConfig;
 use oauth2::{
     AuthUrl, ClientId, ClientSecret, EmptyExtraTokenFields, StandardTokenResponse, TokenUrl,
     basic::{BasicClient, BasicTokenType},
     reqwest::async_http_client,
 };
-use tokio::{sync::RwLock, task::JoinHandle};
+use std::sync::{Arc, Mutex};
+use tokio::task::JoinHandle;
 
 type Token = StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
 
-/// A self-refreshing, periodically fetching authenticator for the block builder.
-/// It is architected as a shareable struct that can be used across all the multiple builder tasks.
-/// It fetches a new token every set amount of seconds, configured through the general builder config.
-/// Readers are guaranteed to not read stale tokens as the [RwLock] guarantees that write tasks (refreshing the token) will claim priority over read access.
-#[derive(Debug, Clone)]
+/// A shared token that can be read and written to by multiple threads.
+#[derive(Debug, Clone, Default)]
+pub struct SharedToken(Arc<Mutex<Option<Token>>>);
+
+impl SharedToken {
+    /// Read the token from the shared token.
+    pub fn read(&self) -> Option<Token> {
+        self.0.lock().unwrap().clone()
+    }
+
+    /// Write a new token to the shared token.
+    pub fn write(&self, token: Token) {
+        let mut lock = self.0.lock().unwrap();
+        *lock = Some(token);
+    }
+
+    /// Check if the token is authenticated.
+    pub fn is_authenticated(&self) -> bool {
+        self.0.lock().unwrap().is_some()
+    }
+}
+
+/// A self-refreshing, periodically fetching authenticator for the block
+/// builder. This task periodically fetches a new token, and stores it in a
+/// [`SharedToken`].
+#[derive(Debug)]
 pub struct Authenticator {
     /// Configuration
     pub config: BuilderConfig,
-    inner: Arc<RwLock<AuthenticatorInner>>,
-}
-
-/// Inner state of the Authenticator.
-/// Contains the token that is being used for authentication.
-#[derive(Debug)]
-pub struct AuthenticatorInner {
-    /// The token
-    pub token: Option<Token>,
-}
-
-impl Default for AuthenticatorInner {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AuthenticatorInner {
-    /// Creates a new AuthenticatorInner with no token set.
-    pub const fn new() -> Self {
-        Self { token: None }
-    }
+    client: BasicClient,
+    token: SharedToken,
 }
 
 impl Authenticator {
     /// Creates a new Authenticator from the provided builder config.
-    pub fn new(config: &BuilderConfig) -> Self {
-        Self { config: config.clone(), inner: Arc::new(RwLock::new(AuthenticatorInner::new())) }
-    }
-
-    /// Requests a new authentication token and, if successful, sets it to as the token
-    pub async fn authenticate(&self) -> eyre::Result<()> {
-        let token = self.fetch_oauth_token().await?;
-        self.set_token(token).await;
-        Ok(())
-    }
-
-    /// Returns true if there is Some token set
-    pub async fn is_authenticated(&self) -> bool {
-        let lock = self.inner.read().await;
-
-        lock.token.is_some()
-    }
-
-    /// Sets the Authenticator's token to the provided value
-    pub async fn set_token(
-        &self,
-        token: StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
-    ) {
-        let mut lock = self.inner.write().await;
-        lock.token = Some(token);
-    }
-
-    /// Returns the currently set token
-    pub async fn token(&self) -> Option<Token> {
-        let lock = self.inner.read().await;
-        lock.token.clone()
-    }
-
-    /// Fetches an oauth token
-    pub async fn fetch_oauth_token(
-        &self,
-    ) -> eyre::Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>> {
-        let config = self.config.clone();
-
+    pub fn new(config: &BuilderConfig) -> eyre::Result<Self> {
         let client = BasicClient::new(
             ClientId::new(config.oauth_client_id.clone()),
             Some(ClientSecret::new(config.oauth_client_secret.clone())),
@@ -92,8 +54,35 @@ impl Authenticator {
             Some(TokenUrl::new(config.oauth_token_url.clone())?),
         );
 
+        Ok(Self { config: config.clone(), client, token: Default::default() })
+    }
+
+    /// Requests a new authentication token and, if successful, sets it to as the token
+    pub async fn authenticate(&self) -> eyre::Result<()> {
+        let token = self.fetch_oauth_token().await?;
+        self.set_token(token);
+        Ok(())
+    }
+
+    /// Returns true if there is Some token set
+    pub fn is_authenticated(&self) -> bool {
+        self.token.is_authenticated()
+    }
+
+    /// Sets the Authenticator's token to the provided value
+    fn set_token(&self, token: StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>) {
+        self.token.write(token);
+    }
+
+    /// Returns the currently set token
+    pub fn token(&self) -> SharedToken {
+        self.token.clone()
+    }
+
+    /// Fetches an oauth token
+    async fn fetch_oauth_token(&self) -> eyre::Result<Token> {
         let token_result =
-            client.exchange_client_credentials().request_async(async_http_client).await?;
+            self.client.exchange_client_credentials().request_async(async_http_client).await?;
 
         Ok(token_result)
     }
