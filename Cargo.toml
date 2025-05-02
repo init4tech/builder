@@ -21,6 +21,10 @@ path = "bin/builder.rs"
 name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
+[[bin]]
+name = "fill-order"
+path = "bin/fill_order.rs"
+
 [dependencies]
 init4-bin-base = { git = "https://github.com/init4tech/bin-base.git" }
 

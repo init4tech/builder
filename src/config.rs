@@ -215,9 +215,7 @@ impl BuilderConfig {
 
     /// Connect to the Rollup rpc provider.
     pub async fn connect_ru_provider(&self) -> Result<RootProvider<Ethereum>, ConfigError> {
-        let url = url::Url::parse(&self.ru_rpc_url).expect("failed to parse URL");
-        let provider = RootProvider::<Ethereum>::new_http(url);
-        Ok(provider)
+        connect_provider(self.ru_rpc_url)
     }
 
     /// Connect to the Host rpc provider.
@@ -275,6 +273,12 @@ impl BuilderConfig {
 
         SignetSystemConstants::new(host, rollup)
     }
+}
+
+pub async fn connect_provider(rpc_url: &str) -> Result<WalletlessProvider, eyre::Error> {
+    let url = url::Url::parse(&rpc_url).expect("failed to parse URL");
+    let provider = RootProvider::<Ethereum>::new_http(url);
+    Ok(provider)
 }
 
 /// Load a string from an environment variable.
