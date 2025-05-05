@@ -1,5 +1,9 @@
 //! Test utilities for testing builder tasks
-use crate::{config::BuilderConfig, constants::{PECORINO_CHAIN_ID, PECORINO_HOST_CHAIN_ID}, tasks::block::PecorinoBlockEnv};
+use crate::{
+    config::BuilderConfig,
+    constants::{PECORINO_CHAIN_ID, PECORINO_HOST_CHAIN_ID},
+    tasks::block::PecorinoBlockEnv,
+};
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     primitives::{Address, FixedBytes, TxKind, U256},
