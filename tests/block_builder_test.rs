@@ -2,15 +2,17 @@
 #[cfg(test)]
 mod tests {
     use alloy::{
-        network::Ethereum, node_bindings::Anvil, primitives::U256, providers::RootProvider,
+        network::Ethereum,
+        node_bindings::Anvil,
+        primitives::U256,
+        providers::{Provider, RootProvider},
         signers::local::PrivateKeySigner,
     };
     use builder::{
         constants::PECORINO_CHAIN_ID,
         tasks::block::Simulator,
-        test_utils::{new_signed_tx, setup_logging, setup_test_config},
+        test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
     };
-
     use signet_sim::{SimCache, SimItem};
     use signet_types::SlotCalculator;
     use std::{
@@ -49,7 +51,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("Clock may have gone backwards")
             .as_secs();
-        dbg!(now);
+
         let slot_calculator = SlotCalculator::new(now, 0, 12);
         let block_builder = Simulator::new(&config, ru_provider.clone(), slot_calculator);
 
@@ -63,10 +65,13 @@ mod tests {
         let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
         sim_items.add_item(SimItem::Tx(tx_2), 0);
 
+        // Setup the block env
         let finish_by = Instant::now() + Duration::from_secs(2);
+        let block_number = ru_provider.get_block_number().await.unwrap();
+        let block_env = test_block_env(config, block_number, 7, finish_by);
 
         // Spawn the block builder task
-        let got = block_builder.handle_build(constants, sim_items, finish_by).await;
+        let got = block_builder.handle_build(constants, sim_items, finish_by, block_env).await;
 
         // Assert on the built block
         assert!(got.is_ok());
@@ -115,7 +120,7 @@ mod tests {
         let sim_cache = SimCache::new();
 
         // Create a sim cache and start filling it with items
-        sim.clone().spawn_cache_task(tx_receiver, bundle_receiver, sim_cache.clone());
+        sim.clone().spawn_cache_tasks(tx_receiver, bundle_receiver, sim_cache.clone());
 
         // Finally, Kick off the block builder task.
         sim.clone().spawn_simulator_task(constants, sim_cache.clone(), block_sender);

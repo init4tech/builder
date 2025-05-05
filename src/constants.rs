@@ -2,6 +2,9 @@
 
 use alloy::primitives::{Address, address};
 
+/// The default basefee to use for simulation if RPC fails.
+pub const BASEFEE_DEFAULT: u64 = 7;
+
 /// Pecorino Chain ID used for the Pecorino network.
 pub const PECORINO_CHAIN_ID: u64 = 14174;
 

@@ -127,8 +127,8 @@ pub enum ConfigError {
     /// Error connecting to the signer
     #[error("failed to connect to signer: {0}")]
     Signer(#[from] SignerError),
-    /// Error checking available system concurrency
-    #[error("failed to determine system concurrency: {0}")]
+    /// I/O error
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 

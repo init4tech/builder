@@ -1,12 +1,16 @@
 //! Test utilities for testing builder tasks
-use crate::{config::BuilderConfig, constants::PECORINO_CHAIN_ID};
+use crate::{config::BuilderConfig, constants::PECORINO_CHAIN_ID, tasks::block::PecorinoBlockEnv};
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
-    primitives::{Address, TxKind, U256},
+    primitives::{Address, FixedBytes, TxKind, U256},
     signers::{SignerSync, local::PrivateKeySigner},
 };
+use chrono::{DateTime, Utc};
 use eyre::Result;
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    time::{Instant, SystemTime},
+};
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Sets up a block builder with test values
@@ -26,7 +30,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         chain_offset: 0,
         target_slot_time: 1,
         builder_rewards_address: Address::default(),
-        rollup_block_gas_limit: 100_000,
+        rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".into(),
         tx_pool_cache_duration: 5,
         oauth_client_id: "some_client_id".into(),
@@ -69,4 +73,26 @@ pub fn setup_logging() {
     let fmt = tracing_subscriber::fmt::layer().with_filter(filter);
     let registry = tracing_subscriber::registry().with(fmt);
     let _ = registry.try_init();
+}
+
+/// Returns a Pecorino block environment for simulation with the timestamp set to `finish_by`,
+/// the block number set to latest + 1, system gas configs, and a beneficiary address.
+pub fn test_block_env(
+    config: BuilderConfig,
+    number: u64,
+    basefee: u64,
+    finish_by: Instant,
+) -> PecorinoBlockEnv {
+    let remaining = finish_by.duration_since(Instant::now());
+    let finish_time = SystemTime::now() + remaining;
+    let deadline: DateTime<Utc> = finish_time.into();
+
+    PecorinoBlockEnv {
+        number,
+        beneficiary: Address::repeat_byte(0),
+        timestamp: deadline.timestamp() as u64,
+        gas_limit: config.rollup_block_gas_limit,
+        basefee,
+        prevrandao: Some(FixedBytes::random()),
+    }
 }

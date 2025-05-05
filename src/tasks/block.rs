@@ -1,14 +1,25 @@
+//! `block.rs` contains the Simulator and everything that wires it into an
+//! actor that handles the simulation of a stream of bundles and transactions
+//! and turns them into valid Pecorino blocks for network submission.
+//!
+//! # Architecture
+//!
+//!
+//!
 use crate::{
     config::{BuilderConfig, RuProvider},
-    constants::PECORINO_CHAIN_ID,
+    constants::{BASEFEE_DEFAULT, PECORINO_CHAIN_ID},
     tasks::bundler::Bundle,
 };
 use alloy::{
     consensus::TxEnvelope,
     eips::{BlockId, BlockNumberOrTag::Latest},
     network::Ethereum,
+    primitives::{Address, B256, FixedBytes, U256},
     providers::Provider,
 };
+use chrono::{DateTime, Utc};
+use eyre::Report;
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::{SlotCalculator, config::SignetSystemConstants};
 use std::{
@@ -18,6 +29,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use thiserror::Error;
 use tokio::{
     select,
     sync::mpsc::{self},
@@ -25,17 +37,27 @@ use tokio::{
     time::sleep,
 };
 use trevm::{
-    NoopBlock,
+    Block,
     revm::{
-        context::CfgEnv,
+        context::{BlockEnv, CfgEnv},
+        context_interface::block::BlobExcessGasAndPrice,
         database::{AlloyDB, WrapDatabaseAsync},
         inspector::NoOpInspector,
-        primitives::hardfork::SpecId,
+        primitives::hardfork::SpecId::{self},
     },
 };
 
+/// Different error types that the Simulator handles
+#[derive(Debug, Error)]
+pub enum SimulatorError {
+    /// Wraps errors encountered when interacting with the RPC
+    #[error("RPC error: {0}")]
+    Rpc(#[source] Report),
+}
+
 /// `Simulator` is responsible for periodically building blocks and submitting them for
-/// signing and inclusion in the blockchain.
+/// signing and inclusion in the blockchain. It wraps a rollup provider and a slot
+/// calculator with a builder configuration.
 #[derive(Debug)]
 pub struct Simulator {
     /// Configuration for the builder.
@@ -84,15 +106,15 @@ impl Simulator {
         constants: SignetSystemConstants,
         sim_items: SimCache,
         finish_by: Instant,
-    ) -> Result<BuiltBlock, mpsc::error::SendError<BuiltBlock>> {
-        tracing::debug!(finish_by = ?finish_by, "starting block simulation");
-
+        block: PecorinoBlockEnv,
+    ) -> Result<BuiltBlock, SimulatorError> {
         let db = self.create_db().await.unwrap();
+
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
             constants,
             PecorinoCfg {},
-            NoopBlock,
+            block,
             finish_by,
             self.config.concurrency_limit,
             sim_items,
@@ -118,7 +140,7 @@ impl Simulator {
     ///
     /// A `JoinHandle` for the basefee updater and a `JoinHandle` for the
     /// cache handler.
-    pub fn spawn_cache_task(
+    pub fn spawn_cache_tasks(
         self: Arc<Self>,
         tx_receiver: mpsc::UnboundedReceiver<TxEnvelope>,
         bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
@@ -153,6 +175,7 @@ impl Simulator {
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee value.
     async fn basefee_updater(self: Arc<Self>, price: Arc<AtomicU64>) {
+        tracing::debug!("starting basefee updater");
         loop {
             // calculate start of next slot plus a small buffer
             let time_remaining = self.slot_calculator.slot_duration()
@@ -180,7 +203,6 @@ impl Simulator {
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee.
     async fn check_basefee(&self, price: &Arc<AtomicU64>) {
-        tracing::debug!("checking latest basefee");
         let resp = self.ru_provider.get_block_by_number(Latest).await;
         if let Err(e) = resp {
             tracing::debug!(err = %e, "basefee check failed with rpc error");
@@ -191,6 +213,7 @@ impl Simulator {
             match maybe_block {
                 Some(block) => {
                     let basefee = block.header.base_fee_per_gas.unwrap_or_default();
+                    println!("BASEFEE: {:?}", basefee);
                     price.store(basefee, Ordering::Relaxed);
                     tracing::debug!(basefee = %basefee, "basefee updated");
                 }
@@ -234,6 +257,7 @@ impl Simulator {
     /// This function runs indefinitely and never returns.
     ///
     /// # Arguments
+    ///
     /// - `constants`: The system constants for the rollup.
     /// - `cache`: The simulation cache containing transactions and bundles.
     /// - `submit_sender`: A channel sender used to submit built blocks.
@@ -247,7 +271,16 @@ impl Simulator {
             let sim_cache = cache.clone();
             let finish_by = self.calculate_deadline();
 
-            match self.handle_build(constants, sim_cache, finish_by).await {
+            let block_env = match self.next_block_env(finish_by).await {
+                Ok(block) => block,
+                Err(err) => {
+                    tracing::error!(err = %err, "failed to configure next block");
+                    break;
+                }
+            };
+            tracing::info!(block_env = ?block_env, "created block");
+
+            match self.handle_build(constants, sim_cache, finish_by, block_env).await {
                 Ok(block) => {
                     tracing::debug!(block = ?block, "built block");
                     let _ = submit_sender.send(block);
@@ -264,12 +297,16 @@ impl Simulator {
     ///
     /// # Returns
     ///
-    /// An `Instant` representing the deadline.
+    /// An `Instant` representing the deadline, as calculated by determining the time left in
+    /// the current slot and adding that to the current timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
+        // Calculate the current timestamp in seconds since the UNIX epoch
         let now = SystemTime::now();
         let unix_seconds = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
 
-        Instant::now().checked_add(Duration::from_secs(unix_seconds)).unwrap()
+        //  Deadline is equal to the start of the next slot plus the time remaining in this slot
+        let remaining = self.slot_calculator.calculate_timepoint_within_slot(unix_seconds);
+        Instant::now() + Duration::from_secs(remaining)
     }
 
     /// Creates an `AlloyDB` instance from the rollup provider.
@@ -293,6 +330,72 @@ impl Simulator {
             });
         Some(wrapped_db)
     }
+
+    /// Prepares the next block environment.
+    ///
+    /// Prepares the next block environment to load into the simulator by fetching the latest block number,
+    /// assigning the correct next block number, checking the basefee, and setting the timestamp,
+    /// reward address, and gas configuration for the block environment based on builder configuration.
+    ///
+    /// # Arguments
+    ///
+    /// - finish_by: The deadline at which block simulation will end.
+    async fn next_block_env(&self, finish_by: Instant) -> Result<PecorinoBlockEnv, SimulatorError> {
+        let remaining = finish_by.duration_since(Instant::now());
+        let finish_time = SystemTime::now() + remaining;
+        let deadline: DateTime<Utc> = finish_time.into();
+        tracing::debug!(deadline = %deadline, "preparing block env");
+
+        // Fetch the latest block number and increment it by 1
+        let latest_block_number = match self.ru_provider.get_block_number().await {
+            Ok(num) => num,
+            Err(err) => {
+                tracing::error!(error = %err, "RPC error during block build");
+                return Err(SimulatorError::Rpc(Report::new(err)));
+            }
+        };
+        tracing::debug!(next_block_num = latest_block_number + 1, "preparing block env");
+
+        // Fetch the basefee from previous block to calculate gas for this block
+        let basefee = match self.get_basefee().await? {
+            Some(basefee) => basefee,
+            None => {
+                tracing::warn!("get basefee failed - RPC error likely occurred");
+                BASEFEE_DEFAULT
+            }
+        };
+        tracing::debug!(basefee = basefee, "setting basefee");
+
+        // Craft the Block environment to pass to the simulator
+        let block_env = PecorinoBlockEnv::new(
+            self.config.clone(),
+            latest_block_number + 1,
+            deadline.timestamp() as u64,
+            basefee,
+        );
+        tracing::debug!(block_env = ?block_env, "prepared block env");
+
+        Ok(block_env)
+    }
+
+    /// Returns the basefee of the latest block.
+    ///
+    /// # Returns
+    ///
+    /// The basefee of the previous (latest) block if the request was successful,
+    /// or a sane default if the RPC failed.
+    async fn get_basefee(&self) -> Result<Option<u64>, SimulatorError> {
+        match self.ru_provider.get_block_by_number(Latest).await {
+            Ok(maybe_block) => match maybe_block {
+                Some(block) => {
+                    tracing::debug!(basefee = ?block.header.base_fee_per_gas, "basefee found");
+                    Ok(block.header.base_fee_per_gas)
+                }
+                None => Ok(None),
+            },
+            Err(err) => Err(SimulatorError::Rpc(err.into())),
+        }
+    }
 }
 
 /// Continuously updates the simulation cache with incoming transactions and bundles.
@@ -301,6 +404,7 @@ impl Simulator {
 /// channels and adds them to the simulation cache using the latest observed basefee.
 ///
 /// # Arguments
+///
 /// - `tx_receiver`: A receiver channel for incoming Ethereum transactions.
 /// - `bundle_receiver`: A receiver channel for incoming transaction bundles.
 /// - `cache`: The simulation cache used to store transactions and bundles.
@@ -332,21 +436,89 @@ async fn cache_updater(
     }
 }
 
-/// Configuration struct for Pecorino network values.
-#[derive(Debug, Clone)]
+/// PecorinoCfg holds network-level configuration values.
+#[derive(Debug, Clone, Copy)]
 pub struct PecorinoCfg {}
-
-impl Copy for PecorinoCfg {}
 
 impl trevm::Cfg for PecorinoCfg {
     /// Fills the configuration environment with Pecorino-specific values.
     ///
     /// # Arguments
+    ///
     /// - `cfg_env`: The configuration environment to be filled.
     fn fill_cfg_env(&self, cfg_env: &mut CfgEnv) {
         let CfgEnv { chain_id, spec, .. } = cfg_env;
 
         *chain_id = PECORINO_CHAIN_ID;
         *spec = SpecId::default();
+    }
+}
+
+/// PecorinoBlockEnv holds block-level configurations for Pecorino blocks.
+#[derive(Debug, Clone, Copy)]
+pub struct PecorinoBlockEnv {
+    /// The block number for this block.
+    pub number: u64,
+    /// The address the block reward should be sent to.
+    pub beneficiary: Address,
+    /// Timestamp for the block.
+    pub timestamp: u64,
+    /// The gas limit for this block environment.
+    pub gas_limit: u64,
+    /// The basefee to use for calculating gas usage.
+    pub basefee: u64,
+    /// The prevrandao to use for this block.
+    pub prevrandao: Option<FixedBytes<32>>,
+}
+
+/// Implements [`trevm::Block`] for the Pecorino block.
+impl Block for PecorinoBlockEnv {
+    /// Fills the block environment with the Pecorino specific values
+    fn fill_block_env(&self, block_env: &mut trevm::revm::context::BlockEnv) {
+        // Destructure the fields off of the block_env and modify them
+        let BlockEnv {
+            number,
+            beneficiary,
+            timestamp,
+            gas_limit,
+            basefee,
+            difficulty,
+            prevrandao,
+            blob_excess_gas_and_price,
+        } = block_env;
+        *number = self.number;
+        *beneficiary = self.beneficiary;
+        *timestamp = self.timestamp;
+        *gas_limit = self.gas_limit;
+        *basefee = self.basefee;
+        *prevrandao = self.prevrandao;
+
+        // NB: The following fields are set to sane defaults because they
+        // are not supported by the rollup
+        *difficulty = U256::ZERO;
+        *blob_excess_gas_and_price =
+            Some(BlobExcessGasAndPrice { excess_blob_gas: 0, blob_gasprice: 0 });
+    }
+}
+
+impl PecorinoBlockEnv {
+    /// Returns a new PecorinoBlockEnv with the specified values.
+    ///
+    /// # Arguments
+    ///
+    /// - config: The BuilderConfig for the builder.
+    /// - number: The block number of this block, usually the latest block number plus 1,
+    ///     unless simulating blocks in the past.
+    /// - timestamp: The timestamp of the block, typically set to the deadline of the
+    ///     block building task.
+    fn new(config: BuilderConfig, number: u64, timestamp: u64, basefee: u64) -> Self {
+        PecorinoBlockEnv {
+            number,
+            beneficiary: config.builder_rewards_address,
+            timestamp,
+            gas_limit: config.rollup_block_gas_limit,
+            basefee,
+            prevrandao: Some(B256::random()),
+        }
     }
 }
