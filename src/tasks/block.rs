@@ -1,11 +1,6 @@
 //! `block.rs` contains the Simulator and everything that wires it into an
 //! actor that handles the simulation of a stream of bundles and transactions
 //! and turns them into valid Pecorino blocks for network submission.
-//!
-//! # Architecture
-//!
-//!
-//!
 use crate::{
     config::{BuilderConfig, RuProvider},
     constants::{BASEFEE_DEFAULT, PECORINO_CHAIN_ID},
@@ -203,24 +198,16 @@ impl Simulator {
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee.
     async fn check_basefee(&self, price: &Arc<AtomicU64>) {
-        let resp = self.ru_provider.get_block_by_number(Latest).await;
-        if let Err(e) = resp {
-            tracing::debug!(err = %e, "basefee check failed with rpc error");
-            return;
-        }
+        let resp = self.ru_provider.get_block_by_number(Latest).await.inspect_err(|e| {
+            tracing::error!(error = %e, "RPC error during basefee update");
+        });
 
-        if let Ok(maybe_block) = resp {
-            match maybe_block {
-                Some(block) => {
-                    let basefee = block.header.base_fee_per_gas.unwrap_or_default();
-                    println!("BASEFEE: {:?}", basefee);
-                    price.store(basefee, Ordering::Relaxed);
-                    tracing::debug!(basefee = %basefee, "basefee updated");
-                }
-                None => {
-                    tracing::debug!("no block found; basefee not updated.")
-                }
-            }
+        if let Ok(Some(block)) = resp {
+            let basefee = block.header.base_fee_per_gas.unwrap_or(0);
+            price.store(basefee, Ordering::Relaxed);
+            tracing::debug!(basefee = basefee, "basefee updated");
+        } else {
+            tracing::warn!("get basefee failed - an error likely occurred");
         }
     }
 
@@ -286,7 +273,7 @@ impl Simulator {
                     let _ = submit_sender.send(block);
                 }
                 Err(e) => {
-                    tracing::error!(err = %e, "failed to send block");
+                    tracing::error!(err = %e, "failed to build block");
                     continue;
                 }
             }
@@ -297,15 +284,15 @@ impl Simulator {
     ///
     /// # Returns
     ///
-    /// An `Instant` representing the deadline, as calculated by determining the time left in
-    /// the current slot and adding that to the current timestamp in UNIX seconds.
+    /// An `Instant` representing the simulation deadline, as calculated by determining
+    /// the time left in the current slot and adding that to the current timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
         // Calculate the current timestamp in seconds since the UNIX epoch
         let now = SystemTime::now();
         let unix_seconds = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
-
-        //  Deadline is equal to the start of the next slot plus the time remaining in this slot
+        // Calculate the time remaining in the current slot
         let remaining = self.slot_calculator.calculate_timepoint_within_slot(unix_seconds);
+        //  Deadline is equal to the start of the next slot plus the time remaining in this slot
         Instant::now() + Duration::from_secs(remaining)
     }
 
