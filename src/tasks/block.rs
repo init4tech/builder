@@ -301,6 +301,7 @@ impl Simulator {
     ///
     /// An `Option` containing the wrapped database or `None` if an error occurs.
     async fn create_db(&self) -> Option<AlloyDatabaseProvider> {
+        // Fetch latest block number
         let latest = match self.ru_provider.get_block_number().await {
             Ok(block_number) => block_number,
             Err(e) => {
@@ -308,12 +309,16 @@ impl Simulator {
                 return None;
             }
         };
+
+        // Make an AlloyDB instance from the rollup provider with that latest block number
         let alloy_db: AlloyDB<Ethereum, RuProvider> =
             AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest));
-        let wrapped_db: WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>> =
-            WrapDatabaseAsync::new(alloy_db).unwrap_or_else(|| {
-                panic!("failed to acquire async alloy_db; check which runtime you're using")
-            });
+
+        // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
+        // This is safe to unwrap because the main function sets the proper runtime settings.
+        //
+        // See: https://docs.rs/tokio/latest/tokio/attr.main.html
+        let wrapped_db: AlloyDatabaseProvider = WrapDatabaseAsync::new(alloy_db).unwrap();
         Some(wrapped_db)
     }
 

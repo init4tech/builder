@@ -11,7 +11,9 @@ use signet_types::SlotCalculator;
 use std::sync::Arc;
 use tokio::select;
 
-#[tokio::main]
+// Note: Must be set to `multi_thread` to support async tasks.
+// See: https://docs.rs/tokio/latest/tokio/attr.main.html
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
 
