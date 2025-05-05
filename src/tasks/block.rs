@@ -147,8 +147,7 @@ impl Simulator {
         let basefee_reader = Arc::clone(&basefee_price);
 
         // Update the basefee on a per-block cadence
-        let basefee_jh =
-            tokio::spawn(async move { self.basefee_updater(Arc::clone(&basefee_price)).await });
+        let basefee_jh = tokio::spawn(async move { self.basefee_updater(basefee_price).await });
 
         // Update the sim cache whenever a transaction or bundle is received with respect to the basefee
         let cache_jh = tokio::spawn(async move {
