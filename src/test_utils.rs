@@ -1,5 +1,5 @@
 //! Test utilities for testing builder tasks
-use crate::{config::BuilderConfig, constants::PECORINO_CHAIN_ID, tasks::block::PecorinoBlockEnv};
+use crate::{config::BuilderConfig, constants::{PECORINO_CHAIN_ID, PECORINO_HOST_CHAIN_ID}, tasks::block::PecorinoBlockEnv};
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     primitives::{Address, FixedBytes, TxKind, U256},
@@ -16,10 +16,10 @@ use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::Subscribe
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
-        host_chain_id: 17000,
-        ru_chain_id: 17001,
-        host_rpc_url: "host-rpc.example.com".into(),
-        ru_rpc_url: "ru-rpc.example.com".into(),
+        host_chain_id: PECORINO_HOST_CHAIN_ID,
+        ru_chain_id: PECORINO_CHAIN_ID,
+        host_rpc_url: "https://host-rpc.pecorino.signet.sh".into(),
+        ru_rpc_url: "https://rpc.pecorino.signet.sh".into(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
