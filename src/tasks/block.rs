@@ -499,9 +499,9 @@ impl PecorinoBlockEnv {
     ///
     /// - config: The BuilderConfig for the builder.
     /// - number: The block number of this block, usually the latest block number plus 1,
-    ///     unless simulating blocks in the past.
+    ///   unless simulating blocks in the past.
     /// - timestamp: The timestamp of the block, typically set to the deadline of the
-    ///     block building task.
+    ///   block building task.
     fn new(config: BuilderConfig, number: u64, timestamp: u64, basefee: u64) -> Self {
         PecorinoBlockEnv {
             number,
