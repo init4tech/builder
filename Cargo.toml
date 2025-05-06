@@ -22,7 +22,7 @@ name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
-init4-bin-base = { git = "https://github.com/init4tech/bin-base.git" }
+init4-bin-base = "0.3"
 
 signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
