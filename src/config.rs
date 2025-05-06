@@ -1,4 +1,7 @@
-use crate::signer::{LocalOrAws, SignerError};
+use crate::{
+    constants,
+    signer::{LocalOrAws, SignerError},
+};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -9,10 +12,12 @@ use alloy::{
             WalletFiller,
         },
     },
-    transports::BoxTransport,
 };
+use eyre::Result;
+use oauth2::url;
+use signet_types::config::{HostConfig, PredeployTokens, RollupConfig, SignetSystemConstants};
+use signet_zenith::Zenith;
 use std::{borrow::Cow, env, num, str::FromStr};
-use zenith_types::Zenith;
 
 // Keys for .env variables that need to be set to configure the builder.
 const HOST_CHAIN_ID: &str = "HOST_CHAIN_ID";
@@ -38,6 +43,8 @@ const OAUTH_CLIENT_ID: &str = "OAUTH_CLIENT_ID";
 const OAUTH_CLIENT_SECRET: &str = "OAUTH_CLIENT_SECRET";
 const OAUTH_AUTHENTICATE_URL: &str = "OAUTH_AUTHENTICATE_URL";
 const OAUTH_TOKEN_URL: &str = "OAUTH_TOKEN_URL";
+const CONCURRENCY_LIMIT: &str = "CONCURRENCY_LIMIT";
+const START_TIMESTAMP: &str = "START_TIMESTAMP";
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
@@ -93,6 +100,10 @@ pub struct BuilderConfig {
     pub oauth_token_url: String,
     /// The oauth token refresh interval in seconds.
     pub oauth_token_refresh_interval: u64,
+    /// The max number of simultaneous block simulations to run.
+    pub concurrency_limit: usize,
+    /// The anchor for slot time and number calculations before adjusting for chain offset.
+    pub start_timestamp: u64,
 }
 
 /// Error loading the configuration.
@@ -116,6 +127,9 @@ pub enum ConfigError {
     /// Error connecting to the signer
     #[error("failed to connect to signer: {0}")]
     Signer(#[from] SignerError),
+    /// I/O error
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl ConfigError {
@@ -125,8 +139,8 @@ impl ConfigError {
     }
 }
 
-/// Provider type used to read & write.
-pub type Provider = FillProvider<
+/// Type alias for the provider used to build and submit blocks to the host.
+pub type HostProvider = FillProvider<
     JoinFill<
         JoinFill<
             Identity,
@@ -134,26 +148,15 @@ pub type Provider = FillProvider<
         >,
         WalletFiller<EthereumWallet>,
     >,
-    RootProvider<BoxTransport>,
-    BoxTransport,
+    RootProvider,
     Ethereum,
 >;
 
-/// Provider type used to read-only.
-pub type WalletlessProvider = FillProvider<
-    JoinFill<
-        Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-    >,
-    RootProvider<BoxTransport>,
-    BoxTransport,
-    Ethereum,
->;
+/// Type alias for the provider used to simulate against rollup state.
+pub type RuProvider = RootProvider<Ethereum>;
 
-/// A Zenith contract instance, using some provider `P` (defaults to
-/// [`Provider`]).
-pub type ZenithInstance<P = Provider> =
-    Zenith::ZenithInstance<BoxTransport, P, alloy::network::Ethereum>;
+/// A [`Zenith`] contract instance using [`Provider`] as the provider.
+pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Load the builder configuration from environment variables.
@@ -189,6 +192,8 @@ impl BuilderConfig {
             oauth_authenticate_url: load_string(OAUTH_AUTHENTICATE_URL)?,
             oauth_token_url: load_string(OAUTH_TOKEN_URL)?,
             oauth_token_refresh_interval: load_u64(AUTH_TOKEN_REFRESH_INTERVAL)?,
+            concurrency_limit: load_concurrency_limit()?,
+            start_timestamp: load_u64(START_TIMESTAMP)?,
         })
     }
 
@@ -209,41 +214,66 @@ impl BuilderConfig {
     }
 
     /// Connect to the Rollup rpc provider.
-    pub async fn connect_ru_provider(&self) -> Result<WalletlessProvider, ConfigError> {
-        ProviderBuilder::new()
-            .with_recommended_fillers()
-            .on_builtin(&self.ru_rpc_url)
-            .await
-            .map_err(Into::into)
+    pub async fn connect_ru_provider(&self) -> Result<RootProvider<Ethereum>, ConfigError> {
+        let url = url::Url::parse(&self.ru_rpc_url).expect("failed to parse URL");
+        let provider = RootProvider::<Ethereum>::new_http(url);
+        Ok(provider)
     }
 
     /// Connect to the Host rpc provider.
-    pub async fn connect_host_provider(&self) -> Result<Provider, ConfigError> {
+    pub async fn connect_host_provider(&self) -> Result<HostProvider, ConfigError> {
         let builder_signer = self.connect_builder_signer().await?;
-        ProviderBuilder::new()
-            .with_recommended_fillers()
+        let provider = ProviderBuilder::new()
             .wallet(EthereumWallet::from(builder_signer))
-            .on_builtin(&self.host_rpc_url)
+            .connect(&self.host_rpc_url)
             .await
-            .map_err(Into::into)
+            .map_err(ConfigError::Provider)?;
+
+        Ok(provider)
     }
 
     /// Connect additional broadcast providers.
-    pub async fn connect_additional_broadcast(
-        &self,
-    ) -> Result<Vec<RootProvider<BoxTransport>>, ConfigError> {
-        let mut providers = Vec::with_capacity(self.tx_broadcast_urls.len());
-        for url in self.tx_broadcast_urls.iter() {
-            let provider =
-                ProviderBuilder::new().on_builtin(url).await.map_err(Into::<ConfigError>::into)?;
+    pub async fn connect_additional_broadcast(&self) -> Result<Vec<RootProvider>, ConfigError> {
+        let mut providers: Vec<RootProvider> = Vec::with_capacity(self.tx_broadcast_urls.len());
+
+        for url_str in self.tx_broadcast_urls.iter() {
+            let url = url::Url::parse(url_str).expect("failed to parse URL");
+            let provider = RootProvider::new_http(url);
             providers.push(provider);
         }
+
         Ok(providers)
     }
 
     /// Connect to the Zenith instance, using the specified provider.
-    pub const fn connect_zenith(&self, provider: Provider) -> ZenithInstance {
+    pub const fn connect_zenith(&self, provider: HostProvider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
+    }
+
+    /// Loads the Signet system constants for Pecorino.
+    pub const fn load_pecorino_constants(&self) -> SignetSystemConstants {
+        let host = HostConfig::new(
+            self.host_chain_id,
+            constants::PECORINO_DEPLOY_HEIGHT,
+            self.zenith_address,
+            constants::HOST_ORDERS,
+            constants::HOST_PASSAGE,
+            constants::HOST_TRANSACTOR,
+            PredeployTokens::new(constants::HOST_USDC, constants::HOST_USDT, constants::HOST_WBTC),
+        );
+        let rollup = RollupConfig::new(
+            self.ru_chain_id,
+            constants::ROLLUP_ORDERS,
+            constants::ROLLUP_PASSAGE,
+            constants::BASE_FEE_RECIPIENT,
+            PredeployTokens::new(
+                constants::ROLLUP_USDC,
+                constants::ROLLUP_USDT,
+                constants::ROLLUP_WBTC,
+            ),
+        );
+
+        SignetSystemConstants::new(host, rollup)
     }
 }
 
@@ -278,5 +308,18 @@ pub fn load_url(key: &str) -> Result<Cow<'static, str>, ConfigError> {
 /// Load an address from an environment variable.
 pub fn load_address(key: &str) -> Result<Address, ConfigError> {
     let address = load_string(key)?;
-    Address::from_str(&address).map_err(Into::into)
+    Address::from_str(&address)
+        .map_err(|_| ConfigError::Var(format!("Invalid address format for {}", key)))
+}
+
+/// Checks the configured concurrency parameter and, if none is set, checks the available
+/// system concurrency with `std::thread::available_parallelism` and returns that.
+pub fn load_concurrency_limit() -> Result<usize, ConfigError> {
+    match load_u16(CONCURRENCY_LIMIT) {
+        Ok(env) => Ok(env as usize),
+        Err(_) => {
+            let limit = std::thread::available_parallelism()?.get();
+            Ok(limit)
+        }
+    }
 }

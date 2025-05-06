@@ -12,6 +12,9 @@
 #![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
+/// Constants for the Builder.
+pub mod constants;
+
 /// Configuration for the Builder binary.
 pub mod config;
 
@@ -27,4 +30,9 @@ pub mod tasks;
 /// Utilities.
 pub mod utils;
 
+/// Test utilitites
+pub mod test_utils;
+
+// Anonymous import suppresses warnings about unused imports.
 use openssl as _;
+use tracing_subscriber as _;

@@ -122,53 +122,21 @@ impl Authenticator {
 }
 
 mod tests {
-    use crate::config::BuilderConfig;
-    use alloy::primitives::Address;
-    use eyre::Result;
-
     #[ignore = "integration test"]
     #[tokio::test]
-    async fn test_authenticator() -> Result<()> {
+    async fn test_authenticator() -> eyre::Result<()> {
         use super::*;
+        use crate::test_utils::setup_test_config;
         use oauth2::TokenResponse;
 
         let config = setup_test_config()?;
         let auth = Authenticator::new(&config);
-        let token = auth.fetch_oauth_token().await?;
-        dbg!(&token);
+
+        let _ = auth.fetch_oauth_token().await?;
+
         let token = auth.token().await.unwrap();
-        println!("{:?}", token);
+
         assert!(!token.access_token().secret().is_empty());
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn setup_test_config() -> Result<BuilderConfig> {
-        let config = BuilderConfig {
-            host_chain_id: 17000,
-            ru_chain_id: 17001,
-            host_rpc_url: "host-rpc.example.com".into(),
-            ru_rpc_url: "ru-rpc.example.com".into(),
-            zenith_address: Address::default(),
-            quincey_url: "http://localhost:8080".into(),
-            builder_port: 8080,
-            sequencer_key: None,
-            builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
-            block_confirmation_buffer: 1,
-            chain_offset: 0,
-            target_slot_time: 1,
-            builder_rewards_address: Address::default(),
-            rollup_block_gas_limit: 100_000,
-            tx_pool_url: "http://localhost:9000/".into(),
-            tx_pool_cache_duration: 5,
-            oauth_client_id: "some_client_id".into(),
-            oauth_client_secret: "some_client_secret".into(),
-            oauth_authenticate_url: "http://localhost:9000".into(),
-            oauth_token_url: "http://localhost:9000".into(),
-            tx_broadcast_urls: vec!["http://localhost:9000".into()],
-            oauth_token_refresh_interval: 300, // 5 minutes
-            builder_helper_address: Address::default(),
-        };
-        Ok(config)
     }
 }

@@ -1,4 +1,4 @@
-use crate::config::Provider;
+use crate::config::HostProvider;
 use alloy::{primitives::TxHash, providers::Provider as _};
 use init4_bin_base::deps::metrics::{counter, histogram};
 use std::time::Instant;
@@ -9,7 +9,7 @@ use tracing::{debug, error};
 #[derive(Debug, Clone)]
 pub struct MetricsTask {
     /// Ethereum Provider
-    pub host_provider: Provider,
+    pub host_provider: HostProvider,
 }
 
 impl MetricsTask {
