@@ -73,6 +73,7 @@ pub struct SubmitTask {
 }
 
 impl SubmitTask {
+    #[instrument(skip(self))]
     async fn sup_quincey(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
         tracing::info!(
             host_block_number = %sig_request.host_block_number,
@@ -80,10 +81,7 @@ impl SubmitTask {
             "pinging quincey for signature"
         );
 
-        let Some(token) = self.token.read() else {
-            tracing::error!("no token available");
-            return Err(eyre!("no token available"));
-        };
+        let Some(token) = self.token.read() else { bail!("no token available") };
 
         let resp: reqwest::Response = self
             .client

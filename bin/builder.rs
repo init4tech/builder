@@ -11,13 +11,14 @@ use signet_sim::SimCache;
 use signet_types::SlotCalculator;
 use std::sync::Arc;
 use tokio::select;
+use tracing::info_span;
 
 // Note: Must be set to `multi_thread` to support async tasks.
 // See: https://docs.rs/tokio/latest/tokio/attr.main.html
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
-    let init_span_guard = tracing::info_span!("builder initialization");
+    let init_span_guard = info_span!("builder initialization");
 
     let config = BuilderConfig::load_from_env()?.clone();
     let constants = config.load_pecorino_constants();

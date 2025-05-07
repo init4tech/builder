@@ -7,7 +7,7 @@ use signet_bundle::SignetEthBundle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use tokio::time;
-use tracing::{Instrument, debug, trace};
+use tracing::{Instrument, debug, trace, warn};
 
 pub use crate::config::BuilderConfig;
 
@@ -60,7 +60,7 @@ impl BundlePoller {
     pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<Bundle>> {
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
         let Some(token) = self.token.read() else {
-            tracing::warn!("No token available, skipping bundle fetch");
+            warn!("No token available, skipping bundle fetch");
             return Ok(vec![]);
         };
 
