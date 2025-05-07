@@ -80,7 +80,7 @@ impl Authenticator {
     }
 
     /// Fetches an oauth token
-    async fn fetch_oauth_token(&self) -> eyre::Result<Token> {
+    pub async fn fetch_oauth_token(&self) -> eyre::Result<Token> {
         let token_result =
             self.client.exchange_client_credentials().request_async(async_http_client).await?;
 
@@ -107,25 +107,5 @@ impl Authenticator {
         });
 
         handle
-    }
-}
-
-mod tests {
-    #[ignore = "integration test"]
-    #[tokio::test]
-    async fn test_authenticator() -> eyre::Result<()> {
-        use super::*;
-        use crate::test_utils::setup_test_config;
-        use oauth2::TokenResponse;
-
-        let config = setup_test_config()?;
-        let auth = Authenticator::new(&config);
-
-        let _ = auth.fetch_oauth_token().await?;
-
-        let token = auth.token().await.unwrap();
-
-        assert!(!token.access_token().secret().is_empty());
-        Ok(())
     }
 }
