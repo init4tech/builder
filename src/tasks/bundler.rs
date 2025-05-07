@@ -5,9 +5,11 @@ use oauth2::TokenResponse;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use signet_bundle::SignetEthBundle;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use tokio::task::JoinHandle;
-use tokio::time;
+use tokio::{
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+    task::JoinHandle,
+    time::{self, Duration},
+};
 
 /// Holds a bundle from the cache with a unique ID and a Zenith bundle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,18 +64,21 @@ impl BundlePoller {
             return Ok(vec![]);
         };
 
-        let result = self
-            .client
+        self.client
             .get(bundle_url)
             .bearer_auth(token.access_token().secret())
             .send()
             .await?
-            .error_for_status()?;
+            .error_for_status()?
+            .json()
+            .await
+            .map(|resp: TxPoolBundleResponse| resp.bundles)
+            .map_err(Into::into)
+    }
 
-        let body = result.bytes().await?;
-        let resp: TxPoolBundleResponse = serde_json::from_slice(&body)?;
-
-        Ok(resp.bundles)
+    /// Returns the poll duration as a [`Duration`].
+    const fn poll_duration(&self) -> Duration {
+        Duration::from_millis(self.poll_interval_ms)
     }
 
     async fn task_future(mut self, outbound: UnboundedSender<Bundle>) {
@@ -92,22 +97,21 @@ impl BundlePoller {
             // exit the span after the check.
             drop(_guard);
 
-            match self.check_bundle_cache().instrument(span.clone()).await {
-                Ok(bundles) => {
-                    debug!(count = ?bundles.len(), "found bundles");
-                    for bundle in bundles.into_iter() {
-                        if let Err(err) = outbound.send(bundle) {
-                            error!(err = ?err, "Failed to send bundle - channel is dropped");
-                        }
+            if let Ok(bundles) = self
+                .check_bundle_cache()
+                .instrument(span.clone())
+                .await
+                .inspect_err(|err| debug!(%err, "Error fetching bundles"))
+            {
+                debug!(count = ?bundles.len(), "found bundles");
+                for bundle in bundles.into_iter() {
+                    if let Err(err) = outbound.send(bundle) {
+                        error!(err = ?err, "Failed to send bundle - channel is dropped");
                     }
                 }
-                // If fetching was an error, we log and continue. We expect
-                // these to be transient network issues.
-                Err(e) => {
-                    debug!(error = %e, "Error fetching bundles");
-                }
             }
-            time::sleep(time::Duration::from_millis(self.poll_interval_ms)).await;
+
+            time::sleep(self.poll_duration()).await;
         }
     }
 
