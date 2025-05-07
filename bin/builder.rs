@@ -7,8 +7,8 @@ use builder::{
     },
 };
 use init4_bin_base::deps::tracing;
+use init4_bin_base::utils::calc::SlotCalculator;
 use signet_sim::SimCache;
-use signet_types::SlotCalculator;
 use std::sync::Arc;
 use tokio::select;
 use tracing::info_span;

@@ -15,8 +15,9 @@ use alloy::{
 };
 use chrono::{DateTime, Utc};
 use eyre::Report;
+use init4_bin_base::utils::calc::SlotCalculator;
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
-use signet_types::{SlotCalculator, config::SignetSystemConstants};
+use signet_types::config::SignetSystemConstants;
 use std::{
     sync::{
         Arc,
@@ -210,7 +211,7 @@ impl Simulator {
         }
     }
 
-    /// Spawns the simulator task, which handles the setup and sets the deadline  
+    /// Spawns the simulator task, which handles the setup and sets the deadline
     /// for the each round of simulation.
     ///
     /// # Arguments
