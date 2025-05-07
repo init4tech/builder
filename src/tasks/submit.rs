@@ -206,7 +206,7 @@ impl SubmitTask {
         let fut = spawn_provider_send!(&self.host_provider, &tx);
 
         // Spawn send_tx futures for all additional broadcast host_providers
-        for host_provider in self.config.connect_additional_broadcast().await? {
+        for host_provider in self.config.connect_additional_broadcast() {
             spawn_provider_send!(&host_provider, &tx);
         }
 

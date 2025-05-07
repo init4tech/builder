@@ -108,13 +108,7 @@ mod tests {
         // Create a rollup provider
         let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-        // Create a builder with a test slot calculator
-        let slot_calculator = SlotCalculator::new(
-            config.start_timestamp,
-            config.chain_offset,
-            config.target_slot_time,
-        );
-        let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
+        let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), config.slot_calculator));
 
         // Create a shared sim cache
         let sim_cache = SimCache::new();

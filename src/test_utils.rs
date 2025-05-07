@@ -11,6 +11,7 @@ use alloy::{
 };
 use chrono::{DateTime, Utc};
 use eyre::Result;
+use init4_bin_base::utils::calc::SlotCalculator;
 use std::{
     str::FromStr,
     time::{Instant, SystemTime},
@@ -31,8 +32,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         sequencer_key: None,
         builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
         block_confirmation_buffer: 1,
-        chain_offset: 0,
-        target_slot_time: 1,
+
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".into(),
@@ -44,7 +44,10 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         oauth_token_refresh_interval: 300, // 5 minutes
         builder_helper_address: Address::default(),
         concurrency_limit: 1000,
-        start_timestamp: 1740681556, // pecorino start timestamp as sane default
+        slot_calculator: SlotCalculator::new(
+            1740681556, // pecorino start timestamp as sane default
+            0, 1,
+        ),
     };
     Ok(config)
 }
