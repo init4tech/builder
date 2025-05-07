@@ -6,8 +6,7 @@ use builder::{
         tx_poller,
     },
 };
-use init4_bin_base::deps::tracing;
-use init4_bin_base::utils::calc::SlotCalculator;
+use init4_bin_base::{deps::tracing, utils::calc::SlotCalculator};
 use signet_sim::SimCache;
 use std::sync::Arc;
 use tokio::select;
