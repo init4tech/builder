@@ -1,9 +1,11 @@
 use crate::config::HostProvider;
 use alloy::{primitives::TxHash, providers::Provider as _};
-use init4_bin_base::deps::metrics::{counter, histogram};
+use init4_bin_base::deps::{
+    metrics::{counter, histogram},
+    tracing::{debug, error},
+};
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error};
 
 /// Collects metrics on transactions sent by the Builder
 #[derive(Debug, Clone)]
@@ -68,7 +70,7 @@ impl MetricsTask {
                         debug!("logged tx metrics");
                     });
                 } else {
-                    tracing::debug!("upstream task gone");
+                    debug!("upstream task gone");
                     break;
                 }
             }

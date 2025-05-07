@@ -7,7 +7,10 @@ use alloy::{
 };
 use builder::config::HostProvider;
 use init4_bin_base::{
-    deps::metrics::{counter, histogram},
+    deps::{
+        metrics::{counter, histogram},
+        tracing,
+    },
     init4,
     utils::from_env::FromEnv,
 };
@@ -45,11 +48,10 @@ impl Config {
 
 #[tokio::main]
 async fn main() {
-    init4();
-
-    tracing::trace!("connecting to provider");
+    let _guard = init4();
 
     let config = Config::from_env().unwrap();
+    tracing::trace!("connecting to provider");
     let provider = config.provider().await;
     let recipient_address = config.recipient_address;
     let sleep_time = config.sleep_time;
