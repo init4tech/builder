@@ -75,8 +75,8 @@ pub struct BuilderConfig {
     )]
     pub quincey_url: Cow<'static, str>,
     /// Port for the Builder server.
-    #[from_env(var = "BUILDER_PORT", desc = "Port for the Builder server", optional)]
-    pub builder_port: Option<u16>,
+    #[from_env(var = "BUILDER_PORT", desc = "Port for the Builder server")]
+    pub builder_port: u16,
     /// Key to access Sequencer Wallet - AWS Key ID _OR_ local private key.
     /// Set IFF using local Sequencer signing instead of remote Quincey signing.
     #[from_env(
