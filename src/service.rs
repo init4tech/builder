@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use init4_bin_base::deps::tracing::error;
 use std::net::SocketAddr;
 
 /// Return a 404 Not Found response
@@ -25,11 +26,11 @@ pub fn serve_builder(socket: impl Into<SocketAddr>) -> tokio::task::JoinHandle<(
         match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
                 if let Err(err) = axum::serve(listener, router).await {
-                    tracing::error!(%err, "serve failed");
+                    error!(%err, "serve failed");
                 }
             }
             Err(err) => {
-                tracing::error!(%err, "failed to bind to the address");
+                error!(%err, "failed to bind to the address");
             }
         };
     })
