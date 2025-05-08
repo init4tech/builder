@@ -11,12 +11,16 @@ use alloy::{
 };
 use chrono::{DateTime, Utc};
 use eyre::Result;
-use init4_bin_base::utils::calc::SlotCalculator;
+use init4_bin_base::{
+    deps::tracing_subscriber::{
+        EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
+    },
+    utils::calc::SlotCalculator,
+};
 use std::{
     str::FromStr,
     time::{Instant, SystemTime},
 };
-use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
@@ -77,8 +81,8 @@ pub fn new_signed_tx(
 pub fn setup_logging() {
     // Initialize logging
     let filter = EnvFilter::from_default_env();
-    let fmt = tracing_subscriber::fmt::layer().with_filter(filter);
-    let registry = tracing_subscriber::registry().with(fmt);
+    let fmt = fmt::layer().with_filter(filter);
+    let registry = registry().with(fmt);
     let _ = registry.try_init();
 }
 

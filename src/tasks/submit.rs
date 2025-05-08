@@ -16,7 +16,10 @@ use alloy::{
     transports::TransportError,
 };
 use eyre::{bail, eyre};
-use init4_bin_base::deps::metrics::{counter, histogram};
+use init4_bin_base::deps::{
+    metrics::{counter, histogram},
+    tracing::{self, debug, error, info, instrument, trace, warn},
+};
 use oauth2::TokenResponse;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
@@ -26,7 +29,6 @@ use signet_zenith::{
 };
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, instrument, trace};
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -35,7 +37,7 @@ macro_rules! spawn_provider_send {
             let t = $tx.clone();
             tokio::spawn(async move {
                 p.send_tx_envelope(t).await.inspect_err(|e| {
-                    tracing::warn!(%e, "error in transaction broadcast")
+                   warn!(%e, "error in transaction broadcast")
                 })
             })
         }
@@ -75,7 +77,7 @@ pub struct SubmitTask {
 impl SubmitTask {
     #[instrument(skip(self))]
     async fn sup_quincey(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
-        tracing::info!(
+        info!(
             host_block_number = %sig_request.host_block_number,
             ru_chain_id = %sig_request.ru_chain_id,
             "pinging quincey for signature"
@@ -192,7 +194,7 @@ impl SubmitTask {
         resp: &SignResponse,
         tx: TransactionRequest,
     ) -> Result<ControlFlow, eyre::Error> {
-        tracing::debug!(
+        debug!(
             host_block_number = %resp.req.host_block_number,
             gas_limit = %resp.req.gas_limit,
             "sending transaction to network"
@@ -212,17 +214,17 @@ impl SubmitTask {
 
         // send the in-progress transaction over the outbound_tx_channel
         if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
-            tracing::error!("receipts task gone");
+            error!("receipts task gone");
         }
 
         // question mark unwraps join error, which would be an internal panic
         // then if let checks for rpc error
         if let Err(e) = fut.await? {
-            tracing::error!(error = %e, "Primary tx broadcast failed. Skipping transaction.");
+            error!(error = %e, "Primary tx broadcast failed. Skipping transaction.");
             return Ok(ControlFlow::Skip);
         }
 
-        tracing::info!(
+        info!(
             tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
             gas_limit = %resp.req.gas_limit,
@@ -234,16 +236,16 @@ impl SubmitTask {
 
     #[instrument(skip_all, err)]
     async fn handle_inbound(&self, block: &BuiltBlock) -> eyre::Result<ControlFlow> {
-        tracing::info!(txns = block.tx_count(), "handling inbound block");
+        info!(txns = block.tx_count(), "handling inbound block");
         let sig_request = match self.construct_sig_request(block).await {
             Ok(sig_request) => sig_request,
             Err(e) => {
-                tracing::error!(error = %e, "error constructing signature request");
+                error!(error = %e, "error constructing signature request");
                 return Ok(ControlFlow::Skip);
             }
         };
 
-        tracing::debug!(
+        debug!(
             host_block_number = %sig_request.host_block_number,
             ru_chain_id = %sig_request.ru_chain_id,
             "constructed signature request for host block"
@@ -253,23 +255,17 @@ impl SubmitTask {
         // quincey (politely)
         let signed = if let Some(signer) = &self.sequencer_signer {
             let sig = signer.sign_hash(&sig_request.signing_hash()).await?;
-            tracing::debug!(
-                sig = hex::encode(sig.as_bytes()),
-                "acquired signature from local signer"
-            );
+            debug!(sig = hex::encode(sig.as_bytes()), "acquired signature from local signer");
             SignResponse { req: sig_request, sig }
         } else {
             let resp: SignResponse = match self.sup_quincey(&sig_request).await {
                 Ok(resp) => resp,
                 Err(e) => {
-                    tracing::error!(error = %e, "error acquiring signature from quincey");
+                    error!(error = %e, "error acquiring signature from quincey");
                     return Ok(ControlFlow::Retry);
                 }
             };
-            tracing::debug!(
-                sig = hex::encode(resp.sig.as_bytes()),
-                "acquired signature from quincey"
-            );
+            debug!(sig = hex::encode(resp.sig.as_bytes()), "acquired signature from quincey");
             counter!("builder.quincey_signature_acquired").increment(1);
             resp
         };
@@ -293,36 +289,34 @@ impl SubmitTask {
                                     counter!("builder.building_too_many_retries").increment(1);
                                     histogram!("builder.block_build_time")
                                         .record(building_start_time.elapsed().as_millis() as f64);
-                                    tracing::error!(
-                                        "error handling inbound block: too many retries"
-                                    );
+                                    error!("error handling inbound block: too many retries");
                                     break;
                                 }
-                                tracing::error!("error handling inbound block: retrying");
+                                error!("error handling inbound block: retrying");
                                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                             }
                             Ok(ControlFlow::Skip) => {
                                 histogram!("builder.block_build_time")
                                     .record(building_start_time.elapsed().as_millis() as f64);
                                 counter!("builder.skipped_blocks").increment(1);
-                                tracing::info!("skipping block");
+                                info!("skipping block");
                                 break;
                             }
                             Ok(ControlFlow::Done) => {
                                 histogram!("builder.block_build_time")
                                     .record(building_start_time.elapsed().as_millis() as f64);
                                 counter!("builder.submitted_successful_blocks").increment(1);
-                                tracing::info!("block landed successfully");
+                                info!("block landed successfully");
                                 break;
                             }
                             Err(e) => {
-                                tracing::error!(error = %e, "error handling inbound block");
+                                error!(error = %e, "error handling inbound block");
                                 break;
                             }
                         }
                     }
                 } else {
-                    tracing::debug!("upstream task gone");
+                    debug!("upstream task gone");
                     break;
                 }
             }

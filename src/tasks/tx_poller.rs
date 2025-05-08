@@ -2,11 +2,11 @@
 use crate::config::BuilderConfig;
 use alloy::consensus::TxEnvelope;
 use eyre::Error;
+use init4_bin_base::deps::tracing::{Instrument, debug, debug_span, trace};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use tokio::{sync::mpsc, task::JoinHandle, time};
-use tracing::{Instrument, debug, trace};
 
 /// Models a response from the transaction pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ impl TxPoller {
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
         loop {
-            let span = tracing::debug_span!("TxPoller::loop", url = %self.config.tx_pool_url);
+            let span = debug_span!("TxPoller::loop", url = %self.config.tx_pool_url);
 
             // Enter the span for the next check.
             let _guard = span.enter();

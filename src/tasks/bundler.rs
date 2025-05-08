@@ -1,5 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
-use crate::tasks::oauth::SharedToken;
+use crate::{config::BuilderConfig, tasks::oauth::SharedToken};
+use init4_bin_base::deps::tracing::{Instrument, debug, debug_span, error, trace, warn};
 use oauth2::TokenResponse;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
@@ -7,9 +8,6 @@ use signet_bundle::SignetEthBundle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use tokio::time;
-use tracing::{Instrument, debug, trace, warn};
-
-pub use crate::config::BuilderConfig;
 
 /// Holds a bundle from the cache with a unique ID and a Zenith bundle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +78,7 @@ impl BundlePoller {
 
     async fn task_future(mut self, outbound: UnboundedSender<Bundle>) {
         loop {
-            let span = tracing::debug_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
+            let span = debug_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
 
             // Enter the span for the next check.
             let _guard = span.enter();
@@ -96,10 +94,10 @@ impl BundlePoller {
 
             match self.check_bundle_cache().instrument(span.clone()).await {
                 Ok(bundles) => {
-                    tracing::debug!(count = ?bundles.len(), "found bundles");
+                    debug!(count = ?bundles.len(), "found bundles");
                     for bundle in bundles.into_iter() {
                         if let Err(err) = outbound.send(bundle) {
-                            tracing::error!(err = ?err, "Failed to send bundle - channel is dropped");
+                            error!(err = ?err, "Failed to send bundle - channel is dropped");
                         }
                     }
                 }

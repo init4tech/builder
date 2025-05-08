@@ -15,7 +15,10 @@ use alloy::{
 };
 use chrono::{DateTime, Utc};
 use eyre::Report;
-use init4_bin_base::utils::calc::SlotCalculator;
+use init4_bin_base::{
+    deps::tracing::{debug, error, info, warn},
+    utils::calc::SlotCalculator,
+};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::{
@@ -118,7 +121,7 @@ impl Simulator {
         );
 
         let block = block_build.build().await;
-        tracing::debug!(block = ?block, "finished block simulation");
+        debug!(block = ?block, "finished block simulation");
 
         Ok(block)
     }
@@ -142,7 +145,7 @@ impl Simulator {
         bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
         cache: SimCache,
     ) -> (JoinHandle<()>, JoinHandle<()>) {
-        tracing::debug!("starting up cache handler");
+        debug!("starting up cache handler");
 
         let basefee_price = Arc::new(AtomicU64::new(0_u64));
         let basefee_reader = Arc::clone(&basefee_price);
@@ -170,13 +173,13 @@ impl Simulator {
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee value.
     async fn basefee_updater(self: Arc<Self>, price: Arc<AtomicU64>) {
-        tracing::debug!("starting basefee updater");
+        debug!("starting basefee updater");
         loop {
             // calculate start of next slot plus a small buffer
             let time_remaining = self.slot_calculator.slot_duration()
                 - self.slot_calculator.current_timepoint_within_slot()
                 + 1;
-            tracing::debug!(time_remaining = ?time_remaining, "basefee updater sleeping until next slot");
+            debug!(time_remaining = ?time_remaining, "basefee updater sleeping until next slot");
 
             // wait until that point in time
             sleep(Duration::from_secs(time_remaining)).await;
@@ -199,15 +202,15 @@ impl Simulator {
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee.
     async fn check_basefee(&self, price: &Arc<AtomicU64>) {
         let resp = self.ru_provider.get_block_by_number(Latest).await.inspect_err(|e| {
-            tracing::error!(error = %e, "RPC error during basefee update");
+            error!(error = %e, "RPC error during basefee update");
         });
 
         if let Ok(Some(block)) = resp {
             let basefee = block.header.base_fee_per_gas.unwrap_or(0);
             price.store(basefee, Ordering::Relaxed);
-            tracing::debug!(basefee = basefee, "basefee updated");
+            debug!(basefee = basefee, "basefee updated");
         } else {
-            tracing::warn!("get basefee failed - an error likely occurred");
+            warn!("get basefee failed - an error likely occurred");
         }
     }
 
@@ -229,7 +232,7 @@ impl Simulator {
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<BuiltBlock>,
     ) -> JoinHandle<()> {
-        tracing::debug!("starting builder task");
+        debug!("starting builder task");
 
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
@@ -261,19 +264,19 @@ impl Simulator {
             let block_env = match self.next_block_env(finish_by).await {
                 Ok(block) => block,
                 Err(err) => {
-                    tracing::error!(err = %err, "failed to configure next block");
+                    error!(err = %err, "failed to configure next block");
                     break;
                 }
             };
-            tracing::info!(block_env = ?block_env, "created block");
+            info!(block_env = ?block_env, "created block");
 
             match self.handle_build(constants, sim_cache, finish_by, block_env).await {
                 Ok(block) => {
-                    tracing::debug!(block = ?block, "built block");
+                    debug!(block = ?block, "built block");
                     let _ = submit_sender.send(block);
                 }
                 Err(e) => {
-                    tracing::error!(err = %e, "failed to build block");
+                    error!(err = %e, "failed to build block");
                     continue;
                 }
             }
@@ -306,7 +309,7 @@ impl Simulator {
         let latest = match self.ru_provider.get_block_number().await {
             Ok(block_number) => block_number,
             Err(e) => {
-                tracing::error!(error = %e, "failed to get latest block number");
+                error!(error = %e, "failed to get latest block number");
                 return None;
             }
         };
@@ -336,27 +339,27 @@ impl Simulator {
         let remaining = finish_by.duration_since(Instant::now());
         let finish_time = SystemTime::now() + remaining;
         let deadline: DateTime<Utc> = finish_time.into();
-        tracing::debug!(deadline = %deadline, "preparing block env");
+        debug!(deadline = %deadline, "preparing block env");
 
         // Fetch the latest block number and increment it by 1
         let latest_block_number = match self.ru_provider.get_block_number().await {
             Ok(num) => num,
             Err(err) => {
-                tracing::error!(error = %err, "RPC error during block build");
+                error!(error = %err, "RPC error during block build");
                 return Err(SimulatorError::Rpc(Report::new(err)));
             }
         };
-        tracing::debug!(next_block_num = latest_block_number + 1, "preparing block env");
+        debug!(next_block_num = latest_block_number + 1, "preparing block env");
 
         // Fetch the basefee from previous block to calculate gas for this block
         let basefee = match self.get_basefee().await? {
             Some(basefee) => basefee,
             None => {
-                tracing::warn!("get basefee failed - RPC error likely occurred");
+                warn!("get basefee failed - RPC error likely occurred");
                 BASEFEE_DEFAULT
             }
         };
-        tracing::debug!(basefee = basefee, "setting basefee");
+        debug!(basefee = basefee, "setting basefee");
 
         // Craft the Block environment to pass to the simulator
         let block_env = PecorinoBlockEnv::new(
@@ -365,7 +368,7 @@ impl Simulator {
             deadline.timestamp() as u64,
             basefee,
         );
-        tracing::debug!(block_env = ?block_env, "prepared block env");
+        debug!(block_env = ?block_env, "prepared block env");
 
         Ok(block_env)
     }
@@ -380,7 +383,7 @@ impl Simulator {
         match self.ru_provider.get_block_by_number(Latest).await {
             Ok(maybe_block) => match maybe_block {
                 Some(block) => {
-                    tracing::debug!(basefee = ?block.header.base_fee_per_gas, "basefee found");
+                    debug!(basefee = ?block.header.base_fee_per_gas, "basefee found");
                     Ok(block.header.base_fee_per_gas)
                 }
                 None => Ok(None),
@@ -414,13 +417,13 @@ async fn cache_updater(
         select! {
             maybe_tx = tx_receiver.recv() => {
                 if let Some(tx) = maybe_tx {
-                    tracing::debug!(tx = ?tx.hash(), "received transaction");
+                    debug!(tx = ?tx.hash(), "received transaction");
                     cache.add_item(tx, p);
                 }
             }
             maybe_bundle = bundle_receiver.recv() => {
                 if let Some(bundle) = maybe_bundle {
-                    tracing::debug!(bundle = ?bundle.id, "received bundle");
+                    debug!(bundle = ?bundle.id, "received bundle");
                     cache.add_item(bundle.bundle, p);
                 }
             }
