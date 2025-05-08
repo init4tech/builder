@@ -8,6 +8,7 @@ use builder::{
 };
 use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
 use signet_sim::SimCache;
+use signet_types::constants::SignetSystemConstants;
 use std::sync::Arc;
 use tokio::select;
 use tracing::info_span;
@@ -20,7 +21,7 @@ async fn main() -> eyre::Result<()> {
     let init_span_guard = info_span!("builder initialization");
 
     let config = BuilderConfig::from_env()?.clone();
-    let constants = config.load_pecorino_constants();
+    let constants = SignetSystemConstants::pecorino();
     let authenticator = Authenticator::new(&config)?;
 
     let (host_provider, sequencer_signer) =

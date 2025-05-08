@@ -15,6 +15,7 @@ mod tests {
     };
     use init4_bin_base::utils::calc::SlotCalculator;
     use signet_sim::{SimCache, SimItem};
+    use signet_types::constants::SignetSystemConstants;
     use std::{
         sync::Arc,
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -33,7 +34,7 @@ mod tests {
 
         // Make a test config
         let config = setup_test_config().unwrap();
-        let constants = config.load_pecorino_constants();
+        let constants = SignetSystemConstants::pecorino();
 
         // Create an anvil instance for testing
         let anvil_instance = Anvil::new().chain_id(PECORINO_CHAIN_ID).spawn();
@@ -90,7 +91,7 @@ mod tests {
 
         // Make a test config
         let config = setup_test_config().unwrap();
-        let constants = config.load_pecorino_constants();
+        let constants = SignetSystemConstants::pecorino();
 
         // Create an anvil instance for testing
         let anvil_instance = Anvil::new().chain_id(PECORINO_CHAIN_ID).spawn();

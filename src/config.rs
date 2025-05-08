@@ -1,7 +1,4 @@
-use crate::{
-    constants,
-    signer::{LocalOrAws, SignerError},
-};
+use crate::signer::{LocalOrAws, SignerError};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -16,7 +13,6 @@ use alloy::{
 use eyre::Result;
 use init4_bin_base::utils::{calc::SlotCalculator, from_env::FromEnv};
 use oauth2::url;
-use signet_types::config::{HostConfig, PredeployTokens, RollupConfig, SignetSystemConstants};
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 
@@ -209,31 +205,5 @@ impl BuilderConfig {
     /// Connect to the Zenith instance, using the specified provider.
     pub const fn connect_zenith(&self, provider: HostProvider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
-    }
-
-    /// Loads the Signet system constants for Pecorino.
-    pub const fn load_pecorino_constants(&self) -> SignetSystemConstants {
-        let host = HostConfig::new(
-            self.host_chain_id,
-            constants::PECORINO_DEPLOY_HEIGHT,
-            self.zenith_address,
-            constants::HOST_ORDERS,
-            constants::HOST_PASSAGE,
-            constants::HOST_TRANSACTOR,
-            PredeployTokens::new(constants::HOST_USDC, constants::HOST_USDT, constants::HOST_WBTC),
-        );
-        let rollup = RollupConfig::new(
-            self.ru_chain_id,
-            constants::ROLLUP_ORDERS,
-            constants::ROLLUP_PASSAGE,
-            constants::BASE_FEE_RECIPIENT,
-            PredeployTokens::new(
-                constants::ROLLUP_USDC,
-                constants::ROLLUP_USDT,
-                constants::ROLLUP_WBTC,
-            ),
-        );
-
-        SignetSystemConstants::new(host, rollup)
     }
 }

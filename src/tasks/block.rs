@@ -17,7 +17,7 @@ use chrono::{DateTime, Utc};
 use eyre::Report;
 use init4_bin_base::utils::calc::SlotCalculator;
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
-use signet_types::config::SignetSystemConstants;
+use signet_types::constants::SignetSystemConstants;
 use std::{
     sync::{
         Arc,
