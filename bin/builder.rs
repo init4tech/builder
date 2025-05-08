@@ -6,7 +6,7 @@ use builder::{
         tx_poller,
     },
 };
-use init4_bin_base::{deps::tracing, utils::calc::SlotCalculator};
+use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
 use signet_sim::SimCache;
 use std::sync::Arc;
 use tokio::select;
@@ -19,15 +19,13 @@ async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
     let init_span_guard = info_span!("builder initialization");
 
-    let config = BuilderConfig::load_from_env()?.clone();
+    let config = BuilderConfig::from_env()?.clone();
     let constants = config.load_pecorino_constants();
     let authenticator = Authenticator::new(&config)?;
 
-    let (host_provider, ru_provider, sequencer_signer) = tokio::try_join!(
-        config.connect_host_provider(),
-        config.connect_ru_provider(),
-        config.connect_sequencer_signer(),
-    )?;
+    let (host_provider, sequencer_signer) =
+        tokio::try_join!(config.connect_host_provider(), config.connect_sequencer_signer(),)?;
+    let ru_provider = config.connect_ru_provider();
 
     let zenith = config.connect_zenith(host_provider.clone());
 
@@ -55,8 +53,7 @@ async fn main() -> eyre::Result<()> {
     let (submit_channel, submit_jh) = submit.spawn();
 
     let sim_items = SimCache::new();
-    let slot_calculator =
-        SlotCalculator::new(config.start_timestamp, config.chain_offset, config.target_slot_time);
+    let slot_calculator = config.slot_calculator;
 
     let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
 

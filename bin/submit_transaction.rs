@@ -5,32 +5,65 @@ use alloy::{
     rpc::types::eth::TransactionRequest,
     signers::aws::AwsSigner,
 };
-use aws_config::BehaviorVersion;
-use builder::config::{HostProvider, load_address, load_string, load_u64, load_url};
+use builder::config::HostProvider;
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     init4,
+    utils::from_env::FromEnv,
 };
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
+
+#[derive(Debug, Clone, FromEnv)]
+struct Config {
+    #[from_env(var = "RPC_URL", desc = "Ethereum RPC URL")]
+    rpc_url: String,
+    #[from_env(var = "CHAIN_ID", desc = "Ethereum chain ID")]
+    chain_id: u64,
+    #[from_env(var = "AWS_KMS_KEY_ID", desc = "AWS KMS key ID")]
+    kms_key_id: String,
+    #[from_env(var = "RECIPIENT_ADDRESS", desc = "Recipient address")]
+    recipient_address: Address,
+    #[from_env(var = "SLEEP_TIME", desc = "Time to sleep between transactions")]
+    sleep_time: u64,
+}
+
+impl Config {
+    async fn provider(&self) -> HostProvider {
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let client = aws_sdk_kms::Client::new(&config);
+        let signer =
+            AwsSigner::new(client, self.kms_key_id.clone(), Some(self.chain_id)).await.unwrap();
+
+        ProviderBuilder::new()
+            .wallet(EthereumWallet::from(signer))
+            .connect(&self.rpc_url)
+            .await
+            .unwrap()
+    }
+}
 
 #[tokio::main]
 async fn main() {
     init4();
 
     tracing::trace!("connecting to provider");
-    let (provider, recipient_address, sleep_time) = connect_from_config().await;
+
+    let config = Config::from_env().unwrap();
+    let provider = config.provider().await;
+    let recipient_address = config.recipient_address;
+    let sleep_time = config.sleep_time;
 
     loop {
         tracing::debug!("attempting transaction");
-        send_transaction(provider.clone(), recipient_address).await;
+        send_transaction(&provider, recipient_address).await;
 
         tracing::debug!(sleep_time, "sleeping");
         tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
     }
 }
 
-async fn send_transaction(provider: HostProvider, recipient_address: Address) {
+async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
     // construct simple transaction to send ETH to a recipient
     let tx = TransactionRequest::default()
         .with_from(provider.default_signer_address())
@@ -65,27 +98,4 @@ async fn send_transaction(provider: HostProvider, recipient_address: Address) {
     let mine_time = dispatch_start_time.elapsed().as_secs();
     tracing::debug!(success = receipt.status(), mine_time, hash, "transaction mined");
     histogram!("txn_submitter.tx_mine_time").record(mine_time as f64);
-}
-
-async fn connect_from_config() -> (HostProvider, Address, u64) {
-    // load signer config values from .env
-    let rpc_url = load_url("RPC_URL").unwrap();
-    let chain_id = load_u64("CHAIN_ID").unwrap();
-    let kms_key_id = load_string("AWS_KMS_KEY_ID").unwrap();
-    // load transaction sending config value from .env
-    let recipient_address: Address = load_address("RECIPIENT_ADDRESS").unwrap();
-    let sleep_time = load_u64("SLEEP_TIME").unwrap();
-
-    // connect signer & provider
-    let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let client = aws_sdk_kms::Client::new(&config);
-    let signer = AwsSigner::new(client, kms_key_id.to_string(), Some(chain_id)).await.unwrap();
-
-    let provider = ProviderBuilder::new()
-        .wallet(EthereumWallet::from(signer))
-        .connect(&rpc_url)
-        .await
-        .unwrap();
-
-    (provider, recipient_address, sleep_time)
 }
