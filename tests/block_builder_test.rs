@@ -13,8 +13,8 @@ mod tests {
         tasks::block::Simulator,
         test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
     };
+    use init4_bin_base::utils::calc::SlotCalculator;
     use signet_sim::{SimCache, SimItem};
-    use signet_types::SlotCalculator;
     use std::{
         sync::Arc,
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -138,6 +138,6 @@ mod tests {
         // Assert on the block
         let block = result.unwrap();
         assert!(block.is_some(), "Block channel closed without receiving a block");
-        assert!(block.unwrap().tx_count() == 2); // TODO: Why is this failing? I'm seeing EVM errors but haven't tracked them down yet. 
+        assert!(block.unwrap().tx_count() == 2); // TODO: Why is this failing? I'm seeing EVM errors but haven't tracked them down yet.
     }
 }

@@ -1,6 +1,7 @@
 use crate::{
     config::{HostProvider, ZenithInstance},
     signer::LocalOrAws,
+    tasks::oauth::SharedToken,
     utils::extract_signature_components,
 };
 use alloy::{
@@ -41,8 +42,6 @@ macro_rules! spawn_provider_send {
     };
 }
 
-use super::oauth::Authenticator;
-
 /// Control flow for transaction submission.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ControlFlow {
@@ -55,7 +54,7 @@ pub enum ControlFlow {
 }
 
 /// Submits sidecars in ethereum txns to mainnet ethereum
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SubmitTask {
     /// Ethereum Provider
     pub host_provider: HostProvider,
@@ -68,12 +67,13 @@ pub struct SubmitTask {
     /// Config
     pub config: crate::config::BuilderConfig,
     /// Authenticator
-    pub authenticator: Authenticator,
+    pub token: SharedToken,
     /// Channel over which to send pending transactions
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
 impl SubmitTask {
+    #[instrument(skip(self))]
     async fn sup_quincey(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
         tracing::info!(
             host_block_number = %sig_request.host_block_number,
@@ -81,7 +81,7 @@ impl SubmitTask {
             "pinging quincey for signature"
         );
 
-        let token = self.authenticator.fetch_oauth_token().await?;
+        let Some(token) = self.token.read() else { bail!("no token available") };
 
         let resp: reqwest::Response = self
             .client
