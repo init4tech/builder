@@ -14,7 +14,7 @@ use alloy::{
     providers::Provider,
 };
 use chrono::{DateTime, Utc};
-use eyre::Report;
+use eyre::{Context, bail};
 use init4_bin_base::{
     deps::tracing::{debug, error, info, warn},
     utils::calc::SlotCalculator,
@@ -28,7 +28,6 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use thiserror::Error;
 use tokio::{
     select,
     sync::mpsc::{self},
@@ -45,14 +44,6 @@ use trevm::{
         primitives::hardfork::SpecId::{self},
     },
 };
-
-/// Different error types that the Simulator handles
-#[derive(Debug, Error)]
-pub enum SimulatorError {
-    /// Wraps errors encountered when interacting with the RPC
-    #[error("RPC error: {0}")]
-    Rpc(#[source] Report),
-}
 
 /// `Simulator` is responsible for periodically building blocks and submitting them for
 /// signing and inclusion in the blockchain. It wraps a rollup provider and a slot
@@ -106,7 +97,7 @@ impl Simulator {
         sim_items: SimCache,
         finish_by: Instant,
         block: PecorinoBlockEnv,
-    ) -> Result<BuiltBlock, SimulatorError> {
+    ) -> eyre::Result<BuiltBlock> {
         let db = self.create_db().await.unwrap();
 
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
@@ -335,7 +326,7 @@ impl Simulator {
     /// # Arguments
     ///
     /// - finish_by: The deadline at which block simulation will end.
-    async fn next_block_env(&self, finish_by: Instant) -> Result<PecorinoBlockEnv, SimulatorError> {
+    async fn next_block_env(&self, finish_by: Instant) -> eyre::Result<PecorinoBlockEnv> {
         let remaining = finish_by.duration_since(Instant::now());
         let finish_time = SystemTime::now() + remaining;
         let deadline: DateTime<Utc> = finish_time.into();
@@ -345,8 +336,8 @@ impl Simulator {
         let latest_block_number = match self.ru_provider.get_block_number().await {
             Ok(num) => num,
             Err(err) => {
-                error!(error = %err, "RPC error during block build");
-                return Err(SimulatorError::Rpc(Report::new(err)));
+                error!(%err, "RPC error during block build");
+                bail!(err)
             }
         };
         debug!(next_block_num = latest_block_number + 1, "preparing block env");
@@ -379,17 +370,15 @@ impl Simulator {
     ///
     /// The basefee of the previous (latest) block if the request was successful,
     /// or a sane default if the RPC failed.
-    async fn get_basefee(&self) -> Result<Option<u64>, SimulatorError> {
-        match self.ru_provider.get_block_by_number(Latest).await {
-            Ok(maybe_block) => match maybe_block {
-                Some(block) => {
-                    debug!(basefee = ?block.header.base_fee_per_gas, "basefee found");
-                    Ok(block.header.base_fee_per_gas)
-                }
-                None => Ok(None),
-            },
-            Err(err) => Err(SimulatorError::Rpc(err.into())),
-        }
+    async fn get_basefee(&self) -> eyre::Result<Option<u64>> {
+        let Some(block) =
+            self.ru_provider.get_block_by_number(Latest).await.wrap_err("basefee error")?
+        else {
+            return Ok(None);
+        };
+
+        debug!(basefee = ?block.header.base_fee_per_gas, "basefee found");
+        Ok(block.header.base_fee_per_gas)
     }
 }
 
