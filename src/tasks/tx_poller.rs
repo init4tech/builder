@@ -5,7 +5,7 @@ use eyre::Error;
 use init4_bin_base::deps::tracing::{Instrument, debug, debug_span, trace};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
-use serde_json::from_slice;
+use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 
 /// Models a response from the transaction pool.
@@ -40,12 +40,22 @@ impl TxPoller {
         Self { config: config.clone(), client: Client::new(), poll_interval_ms }
     }
 
+    /// Returns the poll duration as a [`Duration`].
+    const fn poll_duration(&self) -> Duration {
+        Duration::from_millis(self.poll_interval_ms)
+    }
+
     /// Polls the transaction cache for transactions.
     pub async fn check_tx_cache(&mut self) -> Result<Vec<TxEnvelope>, Error> {
         let url: Url = Url::parse(&self.config.tx_pool_url)?.join("transactions")?;
-        let result = self.client.get(url).send().await?;
-        let response: TxPoolResponse = from_slice(result.text().await?.as_bytes())?;
-        Ok(response.transactions)
+        self.client
+            .get(url)
+            .send()
+            .await?
+            .json()
+            .await
+            .map(|resp: TxPoolResponse| resp.transactions)
+            .map_err(Into::into)
     }
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
@@ -64,25 +74,23 @@ impl TxPoller {
             // exit the span after the check.
             drop(_guard);
 
-            match self.check_tx_cache().instrument(span.clone()).await {
-                Ok(transactions) => {
-                    let _guard = span.entered();
-                    debug!(count = ?transactions.len(), "found transactions");
-                    for tx in transactions.into_iter() {
-                        if outbound.send(tx).is_err() {
-                            // If there are no receivers, we can shut down
-                            trace!("No receivers left, shutting down");
-                            break;
-                        }
+            if let Ok(transactions) =
+                self.check_tx_cache().instrument(span.clone()).await.inspect_err(|err| {
+                    debug!(%err, "Error fetching transactions");
+                })
+            {
+                let _guard = span.entered();
+                debug!(count = ?transactions.len(), "found transactions");
+                for tx in transactions.into_iter() {
+                    if outbound.send(tx).is_err() {
+                        // If there are no receivers, we can shut down
+                        trace!("No receivers left, shutting down");
+                        break;
                     }
                 }
-                // If fetching was an error, we log and continue. We expect
-                // these to be transient network issues.
-                Err(e) => {
-                    debug!(error = %e, "Error fetching transactions");
-                }
             }
-            time::sleep(time::Duration::from_millis(self.poll_interval_ms)).await;
+
+            time::sleep(self.poll_duration()).await;
         }
     }
 
