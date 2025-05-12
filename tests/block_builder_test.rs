@@ -9,7 +9,7 @@ mod tests {
         signers::local::PrivateKeySigner,
     };
     use builder::{
-        tasks::block::Simulator,
+        tasks::block::sim::Simulator,
         test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
     };
     use init4_bin_base::utils::calc::SlotCalculator;

@@ -1,5 +1,5 @@
 //! Test utilities for testing builder tasks
-use crate::{config::BuilderConfig, tasks::block::PecorinoBlockEnv};
+use crate::{config::BuilderConfig, tasks::block::cfg::PecorinoBlockEnv};
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     primitives::{Address, FixedBytes, TxKind, U256},
@@ -32,7 +32,6 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         sequencer_key: None,
         builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
         block_confirmation_buffer: 1,
-
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".into(),

@@ -1,7 +1,7 @@
 use builder::{
     config::BuilderConfig,
     service::serve_builder,
-    tasks::{block::Simulator, bundler, metrics::MetricsTask, submit::SubmitTask, tx_poller},
+    tasks::{block::sim::Simulator, bundler, metrics::MetricsTask, submit::SubmitTask, tx_poller},
 };
 use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
 use signet_sim::SimCache;
