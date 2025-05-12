@@ -1,7 +1,7 @@
 [package]
-name = "zenith-builder-example"
+name = "builder"
 version = "0.1.1"
-description = "Zenith Builder Example"
+description = "signet builder example"
 
 edition = "2024"
 rust-version = "1.85"
@@ -22,11 +22,24 @@ name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
 [dependencies]
-init4-bin-base = "0.1.0"
+init4-bin-base = "0.3"
 
-zenith-types = "0.13"
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 
-alloy = { version = "0.7.3", features = ["full", "json-rpc", "signer-aws", "rpc-types-mev", "rlp"] }
+trevm = { version = "0.20.10", features = ["concurrent-db", "test-utils"] }
+
+alloy = { version = "0.12.6", features = [
+    "full",
+    "json-rpc",
+    "signer-aws",
+    "rpc-types-mev",
+    "rlp",
+    "node-bindings",
+    "serde",
+] }
 
 aws-config = "1.1.7"
 aws-sdk-kms = "1.15.0"
@@ -36,7 +49,6 @@ hex = { package = "const-hex", version = "1", default-features = false, features
 ] }
 
 serde = { version = "1.0.197", features = ["derive"] }
-tracing = "0.1.40"
 
 axum = "0.7.5"
 eyre = "0.6.12"
@@ -48,3 +60,4 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
+chrono = "0.4.41"

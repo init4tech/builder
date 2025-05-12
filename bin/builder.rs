@@ -1,36 +1,40 @@
-#![allow(dead_code)]
-
-use builder::config::BuilderConfig;
-use builder::service::serve_builder_with_span;
-use builder::tasks::block::BlockBuilder;
-use builder::tasks::metrics::MetricsTask;
-use builder::tasks::oauth::Authenticator;
-use builder::tasks::submit::SubmitTask;
-
+use builder::{
+    config::BuilderConfig,
+    service::serve_builder,
+    tasks::{
+        block::Simulator, bundler, metrics::MetricsTask, oauth::Authenticator, submit::SubmitTask,
+        tx_poller,
+    },
+};
+use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
+use signet_sim::SimCache;
+use signet_types::constants::SignetSystemConstants;
+use std::sync::Arc;
 use tokio::select;
+use tracing::info_span;
 
-#[tokio::main]
+// Note: Must be set to `multi_thread` to support async tasks.
+// See: https://docs.rs/tokio/latest/tokio/attr.main.html
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
+    let init_span_guard = info_span!("builder initialization");
 
-    let span = tracing::info_span!("zenith-builder");
+    let config = BuilderConfig::from_env()?.clone();
+    let constants = SignetSystemConstants::pecorino();
+    let authenticator = Authenticator::new(&config)?;
 
-    let config = BuilderConfig::load_from_env()?.clone();
-    let host_provider = config.connect_host_provider().await?;
-    let ru_provider = config.connect_ru_provider().await?;
-    let authenticator = Authenticator::new(&config);
+    let (host_provider, sequencer_signer) =
+        tokio::try_join!(config.connect_host_provider(), config.connect_sequencer_signer(),)?;
+    let ru_provider = config.connect_ru_provider();
 
-    tracing::debug!(rpc_url = config.host_rpc_url.as_ref(), "instantiated provider");
-
-    let sequencer_signer = config.connect_sequencer_signer().await?;
     let zenith = config.connect_zenith(host_provider.clone());
 
     let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
-    let builder = BlockBuilder::new(&config, authenticator.clone(), ru_provider.clone());
     let submit = SubmitTask {
-        authenticator: authenticator.clone(),
+        token: authenticator.token(),
         host_provider,
         zenith,
         client: reqwest::Client::new(),
@@ -39,14 +43,45 @@ async fn main() -> eyre::Result<()> {
         outbound_tx_channel: tx_channel,
     };
 
-    let authenticator_jh = authenticator.spawn();
-    let (submit_channel, submit_jh) = submit.spawn();
-    let build_jh = builder.spawn(submit_channel);
+    let tx_poller = tx_poller::TxPoller::new(&config);
+    let (tx_receiver, tx_poller_jh) = tx_poller.spawn();
 
-    let port = config.builder_port;
-    let server = serve_builder_with_span(([0, 0, 0, 0], port), span);
+    let bundle_poller = bundler::BundlePoller::new(&config, authenticator.token());
+    let (bundle_receiver, bundle_poller_jh) = bundle_poller.spawn();
+
+    let authenticator_jh = authenticator.spawn();
+
+    let (submit_channel, submit_jh) = submit.spawn();
+
+    let sim_items = SimCache::new();
+    let slot_calculator = config.slot_calculator;
+
+    let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
+
+    let (basefee_jh, sim_cache_jh) =
+        sim.clone().spawn_cache_tasks(tx_receiver, bundle_receiver, sim_items.clone());
+
+    let build_jh = sim.clone().spawn_simulator_task(constants, sim_items.clone(), submit_channel);
+
+    let server = serve_builder(([0, 0, 0, 0], config.builder_port));
+
+    // We have finished initializing the builder, so we can drop the init span
+    // guard.
+    drop(init_span_guard);
 
     select! {
+        _ = tx_poller_jh => {
+            tracing::info!("tx_poller finished");
+        },
+        _ = bundle_poller_jh => {
+            tracing::info!("bundle_poller finished");
+        },
+        _ = sim_cache_jh => {
+            tracing::info!("sim cache task finished");
+        }
+        _ = basefee_jh => {
+            tracing::info!("basefee task finished");
+        }
         _ = submit_jh => {
             tracing::info!("submit finished");
         },

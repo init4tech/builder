@@ -1,7 +1,7 @@
 use crate::{
-    config::{Provider, ZenithInstance},
+    config::{HostProvider, ZenithInstance},
     signer::LocalOrAws,
-    tasks::block::InProgressBlock,
+    tasks::oauth::SharedToken,
     utils::extract_signature_components,
 };
 use alloy::{
@@ -15,17 +15,20 @@ use alloy::{
     sol_types::{SolCall, SolError},
     transports::TransportError,
 };
-use eyre::{bail, eyre};
-use init4_bin_base::deps::metrics::{counter, histogram};
+use eyre::{Context, bail, eyre};
+use init4_bin_base::deps::{
+    metrics::{counter, histogram},
+    tracing::{self, Instrument, debug, debug_span, error, info, instrument, trace, warn},
+};
 use oauth2::TokenResponse;
-use std::time::Instant;
-use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, instrument, trace};
-use zenith_types::{
-    BundleHelper::{self, FillPermit2},
-    SignRequest, SignResponse,
+use signet_sim::BuiltBlock;
+use signet_types::{SignRequest, SignResponse};
+use signet_zenith::{
+    BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
     Zenith::IncorrectHostBlock,
 };
+use std::time::Instant;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -34,14 +37,12 @@ macro_rules! spawn_provider_send {
             let t = $tx.clone();
             tokio::spawn(async move {
                 p.send_tx_envelope(t).await.inspect_err(|e| {
-                    tracing::warn!(%e, "error in transaction broadcast")
+                   warn!(%e, "error in transaction broadcast")
                 })
             })
         }
     };
 }
-
-use super::oauth::Authenticator;
 
 /// Control flow for transaction submission.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -55,10 +56,10 @@ pub enum ControlFlow {
 }
 
 /// Submits sidecars in ethereum txns to mainnet ethereum
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SubmitTask {
     /// Ethereum Provider
-    pub host_provider: Provider,
+    pub host_provider: HostProvider,
     /// Zenith
     pub zenith: ZenithInstance,
     /// Reqwest
@@ -68,20 +69,21 @@ pub struct SubmitTask {
     /// Config
     pub config: crate::config::BuilderConfig,
     /// Authenticator
-    pub authenticator: Authenticator,
+    pub token: SharedToken,
     /// Channel over which to send pending transactions
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
 impl SubmitTask {
+    #[instrument(skip(self))]
     async fn sup_quincey(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
-        tracing::info!(
+        info!(
             host_block_number = %sig_request.host_block_number,
             ru_chain_id = %sig_request.ru_chain_id,
             "pinging quincey for signature"
         );
 
-        let token = self.authenticator.fetch_oauth_token().await?;
+        let Some(token) = self.token.read() else { bail!("no token available") };
 
         let resp: reqwest::Response = self
             .client
@@ -103,7 +105,7 @@ impl SubmitTask {
     /// Constructs the signing request from the in-progress block passed to it and assigns the
     /// correct height, chain ID, gas limit, and rollup reward address.
     #[instrument(skip_all)]
-    async fn construct_sig_request(&self, contents: &InProgressBlock) -> eyre::Result<SignRequest> {
+    async fn construct_sig_request(&self, contents: &BuiltBlock) -> eyre::Result<SignRequest> {
         let ru_chain_id = U256::from(self.config.ru_chain_id);
         let next_block_height = self.next_host_block_height().await?;
 
@@ -113,7 +115,7 @@ impl SubmitTask {
             ru_chain_id,
             gas_limit: U256::from(self.config.rollup_block_gas_limit),
             ru_reward_address: self.config.builder_rewards_address,
-            contents: contents.contents_hash(),
+            contents: *contents.contents_hash(),
         })
     }
 
@@ -125,9 +127,9 @@ impl SubmitTask {
         v: u8,
         r: FixedBytes<32>,
         s: FixedBytes<32>,
-        in_progress: &InProgressBlock,
+        in_progress: &BuiltBlock,
     ) -> eyre::Result<TransactionRequest> {
-        let data = zenith_types::BundleHelper::submitCall { fills, header, v, r, s }.abi_encode();
+        let data = submitCall { fills, header, v, r, s }.abi_encode();
 
         let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
         Ok(TransactionRequest::default()
@@ -147,16 +149,16 @@ impl SubmitTask {
     async fn submit_transaction(
         &self,
         resp: &SignResponse,
-        in_progress: &InProgressBlock,
+        in_progress: &BuiltBlock,
     ) -> eyre::Result<ControlFlow> {
         let (v, r, s) = extract_signature_components(&resp.sig);
 
-        let header = zenith_types::BundleHelper::BlockHeader {
+        let header = BlockHeader {
             hostBlockNumber: resp.req.host_block_number,
             rollupChainId: U256::from(self.config.ru_chain_id),
             gasLimit: resp.req.gas_limit,
             rewardAddress: resp.req.ru_reward_address,
-            blockDataHash: in_progress.contents_hash(),
+            blockDataHash: *in_progress.contents_hash(),
         };
 
         let fills = vec![]; // NB: ignored until fills are implemented
@@ -167,7 +169,7 @@ impl SubmitTask {
             .with_gas_limit(1_000_000);
 
         if let Err(TransportError::ErrorResp(e)) =
-            self.host_provider.call(&tx).block(BlockNumberOrTag::Pending.into()).await
+            self.host_provider.call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
         {
             error!(
                 code = e.code,
@@ -176,7 +178,10 @@ impl SubmitTask {
                 "error in transaction submission"
             );
 
-            if e.as_revert_data() == Some(IncorrectHostBlock::SELECTOR.into()) {
+            if e.as_revert_data()
+                .map(|data| data.starts_with(&IncorrectHostBlock::SELECTOR))
+                .unwrap_or_default()
+            {
                 return Ok(ControlFlow::Retry);
             }
 
@@ -192,7 +197,7 @@ impl SubmitTask {
         resp: &SignResponse,
         tx: TransactionRequest,
     ) -> Result<ControlFlow, eyre::Error> {
-        tracing::debug!(
+        debug!(
             host_block_number = %resp.req.host_block_number,
             gas_limit = %resp.req.gas_limit,
             "sending transaction to network"
@@ -206,23 +211,23 @@ impl SubmitTask {
         let fut = spawn_provider_send!(&self.host_provider, &tx);
 
         // Spawn send_tx futures for all additional broadcast host_providers
-        for host_provider in self.config.connect_additional_broadcast().await? {
+        for host_provider in self.config.connect_additional_broadcast() {
             spawn_provider_send!(&host_provider, &tx);
         }
 
         // send the in-progress transaction over the outbound_tx_channel
         if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
-            tracing::error!("receipts task gone");
+            error!("receipts task gone");
         }
 
         // question mark unwraps join error, which would be an internal panic
         // then if let checks for rpc error
         if let Err(e) = fut.await? {
-            tracing::error!(error = %e, "Primary tx broadcast failed. Skipping transaction.");
+            error!(error = %e, "Primary tx broadcast failed. Skipping transaction.");
             return Ok(ControlFlow::Skip);
         }
 
-        tracing::info!(
+        info!(
             tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
             gas_limit = %resp.req.gas_limit,
@@ -232,101 +237,112 @@ impl SubmitTask {
         Ok(ControlFlow::Done)
     }
 
-    #[instrument(skip_all, err)]
-    async fn handle_inbound(&self, in_progress: &InProgressBlock) -> eyre::Result<ControlFlow> {
-        tracing::info!(txns = in_progress.len(), "handling inbound block");
-        let sig_request = match self.construct_sig_request(in_progress).await {
-            Ok(sig_request) => sig_request,
-            Err(e) => {
-                tracing::error!(error = %e, "error constructing signature request");
-                return Ok(ControlFlow::Skip);
-            }
+    /// Sign with a local signer if available, otherwise ask quincey
+    /// for a signature (politely).
+    #[instrument(skip_all, fields(is_local = self.sequencer_signer.is_some()))]
+    async fn get_signature(&self, req: SignRequest) -> eyre::Result<SignResponse> {
+        let sig = if let Some(signer) = &self.sequencer_signer {
+            signer.sign_hash(&req.signing_hash()).await?
+        } else {
+            self.sup_quincey(&req)
+                .await
+                .wrap_err("failed to get signature from quincey")
+                .inspect(|_| {
+                    counter!("builder.quincey_signature_acquired").increment(1);
+                })?
+                .sig
         };
 
-        tracing::debug!(
+        debug!(sig = hex::encode(sig.as_bytes()), "acquired signature");
+        Ok(SignResponse { req, sig })
+    }
+
+    #[instrument(skip_all)]
+    async fn handle_inbound(&self, block: &BuiltBlock) -> eyre::Result<ControlFlow> {
+        info!(txns = block.tx_count(), "handling inbound block");
+        let Ok(sig_request) = self.construct_sig_request(block).await.inspect_err(|e| {
+            error!(error = %e, "error constructing signature request");
+        }) else {
+            return Ok(ControlFlow::Skip);
+        };
+
+        debug!(
             host_block_number = %sig_request.host_block_number,
             ru_chain_id = %sig_request.ru_chain_id,
             "constructed signature request for host block"
         );
 
-        // If configured with a local signer, we use it. Otherwise, we ask
-        // quincey (politely)
-        let signed = if let Some(signer) = &self.sequencer_signer {
-            let sig = signer.sign_hash(&sig_request.signing_hash()).await?;
-            tracing::debug!(
-                sig = hex::encode(sig.as_bytes()),
-                "acquired signature from local signer"
-            );
-            SignResponse { req: sig_request, sig }
-        } else {
-            let resp: SignResponse = match self.sup_quincey(&sig_request).await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    tracing::error!(error = %e, "error acquiring signature from quincey");
-                    return Ok(ControlFlow::Retry);
+        let signed = self.get_signature(sig_request).await?;
+
+        self.submit_transaction(&signed, block).await
+    }
+
+    async fn retrying_handle_inbound(
+        &self,
+        block: &BuiltBlock,
+        retry_limit: usize,
+    ) -> eyre::Result<ControlFlow> {
+        let mut retries = 0;
+        let building_start_time = Instant::now();
+
+        let result = loop {
+            let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
+
+            let result =
+                self.handle_inbound(block).instrument(span.clone()).await.inspect_err(|e| {
+                    error!(error = %e, "error handling inbound block");
+                })?;
+
+            let guard = span.entered();
+
+            match result {
+                ControlFlow::Retry => {
+                    retries += 1;
+                    if retries > retry_limit {
+                        counter!("builder.building_too_many_retries").increment(1);
+                        return Ok(ControlFlow::Skip);
+                    }
+                    error!("error handling inbound block: retrying");
+                    drop(guard);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+                    continue;
                 }
-            };
-            tracing::debug!(
-                sig = hex::encode(resp.sig.as_bytes()),
-                "acquired signature from quincey"
-            );
-            counter!("builder.quincey_signature_acquired").increment(1);
-            resp
+                ControlFlow::Skip => {
+                    counter!("builder.skipped_blocks").increment(1);
+                    break result;
+                }
+                ControlFlow::Done => {
+                    counter!("builder.submitted_successful_blocks").increment(1);
+                    break result;
+                }
+            }
         };
 
-        self.submit_transaction(&signed, in_progress).await
+        // This is reached when `Done` or `Skip` is returned
+        histogram!("builder.block_build_time")
+            .record(building_start_time.elapsed().as_millis() as f64);
+        info!(?result, "finished block building");
+        Ok(result)
+    }
+
+    async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<BuiltBlock>) {
+        loop {
+            let Some(block) = inbound.recv().await else {
+                debug!("upstream task gone");
+                break;
+            };
+
+            if self.retrying_handle_inbound(&block, 3).await.is_err() {
+                break;
+            }
+        }
     }
 
     /// Spawns the in progress block building task
-    pub fn spawn(self) -> (mpsc::UnboundedSender<InProgressBlock>, JoinHandle<()>) {
-        let (sender, mut inbound) = mpsc::unbounded_channel();
-        let handle = tokio::spawn(async move {
-            loop {
-                if let Some(in_progress) = inbound.recv().await {
-                    let building_start_time = Instant::now();
-                    let mut retries = 0;
-                    loop {
-                        match self.handle_inbound(&in_progress).await {
-                            Ok(ControlFlow::Retry) => {
-                                retries += 1;
-                                if retries > 3 {
-                                    counter!("builder.building_too_many_retries").increment(1);
-                                    histogram!("builder.block_build_time")
-                                        .record(building_start_time.elapsed().as_millis() as f64);
-                                    tracing::error!(
-                                        "error handling inbound block: too many retries"
-                                    );
-                                    break;
-                                }
-                                tracing::error!("error handling inbound block: retrying");
-                                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                            }
-                            Ok(ControlFlow::Skip) => {
-                                histogram!("builder.block_build_time")
-                                    .record(building_start_time.elapsed().as_millis() as f64);
-                                counter!("builder.skipped_blocks").increment(1);
-                                tracing::info!("skipping block");
-                                break;
-                            }
-                            Ok(ControlFlow::Done) => {
-                                histogram!("builder.block_build_time")
-                                    .record(building_start_time.elapsed().as_millis() as f64);
-                                counter!("builder.submitted_successful_blocks").increment(1);
-                                tracing::info!("block landed successfully");
-                                break;
-                            }
-                            Err(e) => {
-                                tracing::error!(error = %e, "error handling inbound block");
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    tracing::debug!("upstream task gone");
-                    break;
-                }
-            }
-        });
+    pub fn spawn(self) -> (mpsc::UnboundedSender<BuiltBlock>, JoinHandle<()>) {
+        let (sender, inbound) = mpsc::unbounded_channel();
+        let handle = tokio::spawn(self.task_future(inbound));
 
         (sender, handle)
     }
