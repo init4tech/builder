@@ -138,7 +138,10 @@ pub struct BuilderConfig {
     )]
     pub oauth_token_url: String,
     /// The oauth token refresh interval in seconds.
-    #[from_env(var = "CONCURRENCY_LIMIT", desc = "The oauth token refresh interval in seconds")]
+    #[from_env(
+        var = "AUTH_TOKEN_REFRESH_INTERVAL",
+        desc = "The oauth token refresh interval in seconds"
+    )]
     pub oauth_token_refresh_interval: u64,
     /// The max number of simultaneous block simulations to run.
     #[from_env(
