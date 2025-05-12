@@ -1,4 +1,8 @@
-use crate::signer::{LocalOrAws, SignerError};
+use crate::{
+    quincey::Quincey,
+    signer::{LocalOrAws, SignerError},
+    tasks::oauth::{Authenticator, SharedToken},
+};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -208,5 +212,32 @@ impl BuilderConfig {
     /// Connect to the Zenith instance, using the specified provider.
     pub const fn connect_zenith(&self, provider: HostProvider) -> ZenithInstance {
         Zenith::new(self.zenith_address, provider)
+    }
+
+    /// Get an oauth2 token for the builder, starting the authenticator if it
+    // is not already running.
+    pub fn oauth_token(&self) -> SharedToken {
+        static ONCE: std::sync::OnceLock<SharedToken> = std::sync::OnceLock::new();
+
+        ONCE.get_or_init(|| {
+            let authenticator = Authenticator::new(self).unwrap();
+            let token = authenticator.token();
+            authenticator.spawn();
+            token
+        })
+        .clone()
+    }
+
+    /// Connect to a Quincey, owned or shared.
+    pub async fn connect_quincey(&self) -> eyre::Result<Quincey> {
+        if let Some(signer) = self.connect_sequencer_signer().await? {
+            return Ok(Quincey::new_owned(signer));
+        }
+
+        let client = reqwest::Client::new();
+        let url = url::Url::parse(&self.quincey_url)?;
+        let token = self.oauth_token();
+
+        Ok(Quincey::new_remote(client, url, token))
     }
 }

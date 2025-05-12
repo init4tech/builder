@@ -18,6 +18,9 @@ pub mod constants;
 /// Configuration for the Builder binary.
 pub mod config;
 
+/// Quincey client for signing requests.
+pub mod quincey;
+
 /// Implements the `/healthcheck` endpoint.
 pub mod service;
 

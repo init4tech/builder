@@ -1,10 +1,7 @@
 use builder::{
     config::BuilderConfig,
     service::serve_builder,
-    tasks::{
-        block::Simulator, bundler, metrics::MetricsTask, oauth::Authenticator, submit::SubmitTask,
-        tx_poller,
-    },
+    tasks::{block::Simulator, bundler, metrics::MetricsTask, submit::SubmitTask, tx_poller},
 };
 use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
 use signet_sim::SimCache;
@@ -22,34 +19,25 @@ async fn main() -> eyre::Result<()> {
 
     let config = BuilderConfig::from_env()?.clone();
     let constants = SignetSystemConstants::pecorino();
-    let authenticator = Authenticator::new(&config)?;
+    let token = config.oauth_token();
 
-    let (host_provider, sequencer_signer) =
-        tokio::try_join!(config.connect_host_provider(), config.connect_sequencer_signer(),)?;
+    let (host_provider, quincey) =
+        tokio::try_join!(config.connect_host_provider(), config.connect_quincey())?;
     let ru_provider = config.connect_ru_provider();
 
     let zenith = config.connect_zenith(host_provider.clone());
 
-    let metrics = MetricsTask { host_provider: host_provider.clone() };
+    let metrics = MetricsTask { host_provider };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
-    let submit = SubmitTask {
-        token: authenticator.token(),
-        host_provider,
-        zenith,
-        client: reqwest::Client::new(),
-        sequencer_signer,
-        config: config.clone(),
-        outbound_tx_channel: tx_channel,
-    };
+    let submit =
+        SubmitTask { zenith, quincey, config: config.clone(), outbound_tx_channel: tx_channel };
 
     let tx_poller = tx_poller::TxPoller::new(&config);
     let (tx_receiver, tx_poller_jh) = tx_poller.spawn();
 
-    let bundle_poller = bundler::BundlePoller::new(&config, authenticator.token());
+    let bundle_poller = bundler::BundlePoller::new(&config, token);
     let (bundle_receiver, bundle_poller_jh) = bundle_poller.spawn();
-
-    let authenticator_jh = authenticator.spawn();
 
     let (submit_channel, submit_jh) = submit.spawn();
 
@@ -93,9 +81,6 @@ async fn main() -> eyre::Result<()> {
         }
         _ = server => {
             tracing::info!("server finished");
-        }
-        _ = authenticator_jh => {
-            tracing::info!("authenticator finished");
         }
     }
 
