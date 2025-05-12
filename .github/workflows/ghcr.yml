@@ -1,0 +1,21 @@
+name: Release GHCR
+
+on:
+  release:
+    types: [published]
+  push:
+    branches:
+      - swanny-ghcr
+  workflow_dispatch:
+
+# simplest example of using the rust-base action
+jobs:
+  ghcr-release:
+    uses: init4tech/actions/.github/workflows/ghcr.yml@main
+    permissions:
+        contents: read
+        packages: write
+        attestations: write
+        id-token: write
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
