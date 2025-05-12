@@ -1,9 +1,5 @@
 //! Test utilities for testing builder tasks
-use crate::{
-    config::BuilderConfig,
-    constants::{PECORINO_CHAIN_ID, PECORINO_HOST_CHAIN_ID},
-    tasks::block::PecorinoBlockEnv,
-};
+use crate::{config::BuilderConfig, tasks::block::PecorinoBlockEnv};
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     primitives::{Address, FixedBytes, TxKind, U256},
@@ -25,8 +21,8 @@ use std::{
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
-        host_chain_id: PECORINO_HOST_CHAIN_ID,
-        ru_chain_id: PECORINO_CHAIN_ID,
+        host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+        ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
         host_rpc_url: "https://host-rpc.pecorino.signet.sh".into(),
         ru_rpc_url: "https://rpc.pecorino.signet.sh".into(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
@@ -64,7 +60,7 @@ pub fn new_signed_tx(
     mpfpg: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
-        chain_id: PECORINO_CHAIN_ID,
+        chain_id: signet_constants::pecorino::RU_CHAIN_ID,
         nonce,
         max_fee_per_gas: 50_000,
         max_priority_fee_per_gas: mpfpg,
