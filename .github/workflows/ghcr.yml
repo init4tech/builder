@@ -17,5 +17,3 @@ jobs:
         packages: write
         attestations: write
         id-token: write
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
