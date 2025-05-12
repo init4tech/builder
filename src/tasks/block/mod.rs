@@ -1,4 +1,4 @@
-//! block holds the tasks responsible for block environment configuration, 
+//! block holds the tasks responsible for block environment configuration,
 //! preparation, and simulation.
 
 /// Block simulation task for building blocks.
