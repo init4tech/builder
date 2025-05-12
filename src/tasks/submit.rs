@@ -1,7 +1,6 @@
 use crate::{
     config::{HostProvider, ZenithInstance},
-    signer::LocalOrAws,
-    tasks::oauth::SharedToken,
+    quincey::Quincey,
     utils::extract_signature_components,
 };
 use alloy::{
@@ -11,16 +10,14 @@ use alloy::{
     primitives::{FixedBytes, TxHash, U256},
     providers::{Provider as _, SendableTx, WalletProvider},
     rpc::types::eth::TransactionRequest,
-    signers::Signer,
     sol_types::{SolCall, SolError},
     transports::TransportError,
 };
-use eyre::{Context, bail, eyre};
+use eyre::{bail, eyre};
 use init4_bin_base::deps::{
     metrics::{counter, histogram},
-    tracing::{self, Instrument, debug, debug_span, error, info, instrument, trace, warn},
+    tracing::{self, Instrument, debug, debug_span, error, info, instrument, warn},
 };
-use oauth2::TokenResponse;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::{
@@ -58,48 +55,23 @@ pub enum ControlFlow {
 /// Submits sidecars in ethereum txns to mainnet ethereum
 #[derive(Debug)]
 pub struct SubmitTask {
-    /// Ethereum Provider
-    pub host_provider: HostProvider,
     /// Zenith
     pub zenith: ZenithInstance,
-    /// Reqwest
-    pub client: reqwest::Client,
-    /// Sequencer Signer
-    pub sequencer_signer: Option<LocalOrAws>,
+
+    /// Quincey
+    pub quincey: Quincey,
+
     /// Config
     pub config: crate::config::BuilderConfig,
-    /// Authenticator
-    pub token: SharedToken,
+
     /// Channel over which to send pending transactions
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
 impl SubmitTask {
-    #[instrument(skip(self))]
-    async fn sup_quincey(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
-        info!(
-            host_block_number = %sig_request.host_block_number,
-            ru_chain_id = %sig_request.ru_chain_id,
-            "pinging quincey for signature"
-        );
-
-        let Some(token) = self.token.read() else { bail!("no token available") };
-
-        let resp: reqwest::Response = self
-            .client
-            .post(self.config.quincey_url.as_ref())
-            .json(sig_request)
-            .bearer_auth(token.access_token().secret())
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let body = resp.bytes().await?;
-
-        debug!(bytes = body.len(), "retrieved response body");
-        trace!(body = %String::from_utf8_lossy(&body), "response body");
-
-        serde_json::from_slice(&body).map_err(Into::into)
+    /// Get the provider from the zenith instance
+    const fn provider(&self) -> &HostProvider {
+        self.zenith.provider()
     }
 
     /// Constructs the signing request from the in-progress block passed to it and assigns the
@@ -140,7 +112,7 @@ impl SubmitTask {
 
     /// Returns the next host block height
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
-        let result = self.host_provider.get_block_number().await?;
+        let result = self.provider().get_block_number().await?;
         let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
         Ok(next)
     }
@@ -164,12 +136,12 @@ impl SubmitTask {
         let fills = vec![]; // NB: ignored until fills are implemented
         let tx = self
             .build_blob_tx(fills, header, v, r, s, in_progress)?
-            .with_from(self.host_provider.default_signer_address())
+            .with_from(self.provider().default_signer_address())
             .with_to(self.config.builder_helper_address)
             .with_gas_limit(1_000_000);
 
         if let Err(TransportError::ErrorResp(e)) =
-            self.host_provider.call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
+            self.provider().call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
         {
             error!(
                 code = e.code,
@@ -203,12 +175,12 @@ impl SubmitTask {
             "sending transaction to network"
         );
 
-        let SendableTx::Envelope(tx) = self.host_provider.fill(tx).await? else {
+        let SendableTx::Envelope(tx) = self.provider().fill(tx).await? else {
             bail!("failed to fill transaction")
         };
 
         // Send the tx via the primary host_provider
-        let fut = spawn_provider_send!(&self.host_provider, &tx);
+        let fut = spawn_provider_send!(self.provider(), &tx);
 
         // Spawn send_tx futures for all additional broadcast host_providers
         for host_provider in self.config.connect_additional_broadcast() {
@@ -237,26 +209,6 @@ impl SubmitTask {
         Ok(ControlFlow::Done)
     }
 
-    /// Sign with a local signer if available, otherwise ask quincey
-    /// for a signature (politely).
-    #[instrument(skip_all, fields(is_local = self.sequencer_signer.is_some()))]
-    async fn get_signature(&self, req: SignRequest) -> eyre::Result<SignResponse> {
-        let sig = if let Some(signer) = &self.sequencer_signer {
-            signer.sign_hash(&req.signing_hash()).await?
-        } else {
-            self.sup_quincey(&req)
-                .await
-                .wrap_err("failed to get signature from quincey")
-                .inspect(|_| {
-                    counter!("builder.quincey_signature_acquired").increment(1);
-                })?
-                .sig
-        };
-
-        debug!(sig = hex::encode(sig.as_bytes()), "acquired signature");
-        Ok(SignResponse { req, sig })
-    }
-
     #[instrument(skip_all)]
     async fn handle_inbound(&self, block: &BuiltBlock) -> eyre::Result<ControlFlow> {
         info!(txns = block.tx_count(), "handling inbound block");
@@ -272,7 +224,7 @@ impl SubmitTask {
             "constructed signature request for host block"
         );
 
-        let signed = self.get_signature(sig_request).await?;
+        let signed = self.quincey.get_signature(&sig_request).await?;
 
         self.submit_transaction(&signed, block).await
     }
