@@ -21,6 +21,9 @@ path = "bin/builder.rs"
 name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
+[features]
+integration = []
+
 [dependencies]
 init4-bin-base = "0.3"
 
