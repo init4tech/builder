@@ -286,7 +286,7 @@ impl SubmitTask {
             };
 
             if self.retrying_handle_inbound(&block, 3).await.is_err() {
-                break;
+                continue;
             }
         }
     }
