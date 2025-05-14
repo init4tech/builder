@@ -15,10 +15,7 @@ mod tests {
     use init4_bin_base::utils::calc::SlotCalculator;
     use signet_sim::{SimCache, SimItem};
     use signet_types::constants::SignetSystemConstants;
-    use std::{
-        sync::Arc,
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    };
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
     use tokio::{sync::mpsc::unbounded_channel, time::timeout};
 
     /// Tests the `handle_build` method of the `Simulator`.
@@ -108,16 +105,16 @@ mod tests {
         // Create a rollup provider
         let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-        let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), config.slot_calculator));
+        let sim = Simulator::new(&config, ru_provider.clone(), config.slot_calculator);
 
         // Create a shared sim cache
         let sim_cache = SimCache::new();
 
         // Create a sim cache and start filling it with items
-        sim.clone().spawn_cache_tasks(tx_receiver, bundle_receiver, sim_cache.clone());
+        sim.spawn_cache_tasks(tx_receiver, bundle_receiver, sim_cache.clone());
 
         // Finally, Kick off the block builder task.
-        sim.clone().spawn_simulator_task(constants, sim_cache.clone(), block_sender);
+        sim.spawn_simulator_task(constants, sim_cache.clone(), block_sender);
 
         // Feed in transactions to the tx_sender and wait for the block to be simulated
         let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();

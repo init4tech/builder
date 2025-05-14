@@ -6,7 +6,6 @@ use builder::{
 use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
 use signet_sim::SimCache;
 use signet_types::constants::SignetSystemConstants;
-use std::sync::Arc;
 use tokio::select;
 use tracing::info_span;
 
@@ -44,12 +43,12 @@ async fn main() -> eyre::Result<()> {
     let sim_items = SimCache::new();
     let slot_calculator = config.slot_calculator;
 
-    let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
+    let sim = Simulator::new(&config, ru_provider.clone(), slot_calculator);
 
     let (basefee_jh, sim_cache_jh) =
         sim.spawn_cache_tasks(tx_receiver, bundle_receiver, sim_items.clone());
 
-    let build_jh = sim.clone().spawn_simulator_task(constants, sim_items.clone(), submit_channel);
+    let build_jh = sim.spawn_simulator_task(constants, sim_items.clone(), submit_channel);
 
     let server = serve_builder(([0, 0, 0, 0], config.builder_port));
 
