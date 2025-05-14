@@ -163,7 +163,7 @@ impl Simulator {
     /// # Arguments
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee value.
-    fn basefee_updater_fut(&self, price: Arc<AtomicU64>) -> impl Future<Output = ()> + use<>{
+    fn basefee_updater_fut(&self, price: Arc<AtomicU64>) -> impl Future<Output = ()> + use<> {
         let slot_calculator = self.slot_calculator.clone();
         let ru_provider = self.ru_provider.clone();
 
@@ -192,7 +192,6 @@ impl Simulator {
                     warn!("get basefee failed - an error likely occurred");
                 }
             }
-
         }
     }
 
