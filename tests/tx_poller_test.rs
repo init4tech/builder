@@ -1,9 +1,11 @@
 mod tests {
-    use alloy::primitives::U256;
-    use alloy::signers::local::PrivateKeySigner;
-    use builder::config::BuilderConfig;
-    use builder::tasks::tx_poller;
-    use builder::test_utils::{new_signed_tx, setup_logging, setup_test_config}; // Import the refactored function
+    use alloy::{primitives::U256, signers::local::PrivateKeySigner};
+    use builder::{
+        config::BuilderConfig,
+        tasks::cache::TxPoller,
+        test_utils::{new_signed_tx, setup_logging, setup_test_config},
+    };
+    // Import the refactored function
     use eyre::{Ok, Result};
 
     #[ignore = "integration test"]
@@ -18,7 +20,7 @@ mod tests {
         post_tx(&config).await?;
 
         // Create a new poller
-        let mut poller = tx_poller::TxPoller::new(&config);
+        let mut poller = TxPoller::new(&config);
 
         // Fetch transactions the pool
         let transactions = poller.check_tx_cache().await?;
