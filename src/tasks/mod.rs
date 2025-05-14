@@ -15,3 +15,6 @@ pub mod tx_poller;
 
 /// Block simulation and environment
 pub mod block;
+
+/// Constructs the simualtion environment.
+pub mod env;

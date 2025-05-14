@@ -202,12 +202,12 @@ impl Simulator {
     ///
     /// A `JoinHandle` for the spawned task.
     pub fn spawn_simulator_task(
-        self: Arc<Self>,
+        self,
         constants: SignetSystemConstants,
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<BuiltBlock>,
     ) -> JoinHandle<()> {
-        debug!("starting builder task");
+        debug!("starting simulator task");
 
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
@@ -227,7 +227,7 @@ impl Simulator {
     /// - `cache`: The simulation cache containing transactions and bundles.
     /// - `submit_sender`: A channel sender used to submit built blocks.
     async fn run_simulator(
-        self: Arc<Self>,
+        self,
         constants: SignetSystemConstants,
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<BuiltBlock>,

@@ -20,6 +20,12 @@ use oauth2::url;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 
+/// Type alias for the provider used to simulate against rollup state.
+pub type RuProvider = RootProvider<Ethereum>;
+
+/// A [`Zenith`] contract instance using [`Provider`] as the provider.
+pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
+
 /// Type alias for the provider used to build and submit blocks to the host.
 pub type HostProvider = FillProvider<
     JoinFill<
@@ -157,12 +163,6 @@ pub struct BuilderConfig {
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 }
-
-/// Type alias for the provider used to simulate against rollup state.
-pub type RuProvider = RootProvider<Ethereum>;
-
-/// A [`Zenith`] contract instance using [`Provider`] as the provider.
-pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
 
 impl BuilderConfig {
     /// Connect to the Builder signer.
