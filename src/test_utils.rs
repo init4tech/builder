@@ -1,11 +1,10 @@
 //! Test utilities for testing builder tasks
-use crate::{config::BuilderConfig, tasks::block::cfg::PecorinoBlockEnv};
+use crate::config::BuilderConfig;
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
-    primitives::{Address, FixedBytes, TxKind, U256},
+    primitives::{Address, B256, TxKind, U256},
     signers::{SignerSync, local::PrivateKeySigner},
 };
-use chrono::{DateTime, Utc};
 use eyre::Result;
 use init4_bin_base::{
     deps::tracing_subscriber::{
@@ -14,10 +13,8 @@ use init4_bin_base::{
     perms::OAuthConfig,
     utils::calc::SlotCalculator,
 };
-use std::{
-    str::FromStr,
-    time::{Instant, SystemTime},
-};
+use std::str::FromStr;
+use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
@@ -90,18 +87,19 @@ pub fn test_block_env(
     config: BuilderConfig,
     number: u64,
     basefee: u64,
-    finish_by: Instant,
-) -> PecorinoBlockEnv {
-    let remaining = finish_by.duration_since(Instant::now());
-    let finish_time = SystemTime::now() + remaining;
-    let deadline: DateTime<Utc> = finish_time.into();
-
-    PecorinoBlockEnv {
+    timestamp: u64,
+) -> BlockEnv {
+    BlockEnv {
         number,
-        beneficiary: Address::repeat_byte(0),
-        timestamp: deadline.timestamp() as u64,
+        beneficiary: Address::repeat_byte(1),
+        timestamp,
         gas_limit: config.rollup_block_gas_limit,
         basefee,
-        prevrandao: Some(FixedBytes::random()),
+        difficulty: U256::ZERO,
+        prevrandao: Some(B256::random()),
+        blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
+            excess_blob_gas: 0,
+            blob_gasprice: 0,
+        }),
     }
 }
