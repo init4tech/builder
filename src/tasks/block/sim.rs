@@ -23,6 +23,8 @@ use trevm::revm::{
     inspector::NoOpInspector,
 };
 
+type AlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
+
 /// `Simulator` is responsible for periodically building blocks and submitting them for
 /// signing and inclusion in the blockchain. It wraps a rollup provider and a slot
 /// calculator with a builder configuration.
@@ -36,8 +38,6 @@ pub struct Simulator {
     /// The block configuration environment on which to simulate
     pub block_env: watch::Receiver<Option<BlockEnv>>,
 }
-
-type AlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
 
 impl Simulator {
     /// Creates a new `Simulator` instance.
@@ -172,6 +172,7 @@ impl Simulator {
     /// An `Instant` representing the simulation deadline, as calculated by determining
     /// the time left in the current slot and adding that to the current timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
+        // Get the current timepoint within the slot.
         let timepoint = self.slot_calculator().current_timepoint_within_slot();
 
         // We have the timepoint in seconds into the slot. To find out what's
@@ -179,7 +180,11 @@ impl Simulator {
         let remaining = self.slot_calculator().slot_duration() - timepoint;
 
         // We add a 1500 ms buffer to account for sequencer stopping signing.
-        Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500)
+
+        let candidate =
+            Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
+
+        candidate.max(Instant::now())
     }
 
     /// Creates an `AlloyDB` instance from the rollup provider.
