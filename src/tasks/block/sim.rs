@@ -4,7 +4,7 @@
 use super::cfg::PecorinoBlockEnv;
 use crate::{
     config::{BuilderConfig, RuProvider},
-    tasks::{block::cfg::PecorinoCfg, bundler::Bundle},
+    tasks::{block::cfg::PecorinoCfg, cache::Bundle},
 };
 use alloy::{
     consensus::TxEnvelope,

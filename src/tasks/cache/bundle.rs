@@ -22,7 +22,7 @@ pub struct Bundle {
 
 /// Response from the tx-pool containing a list of bundles.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TxPoolBundleResponse {
+struct TxPoolBundleResponse {
     /// Bundle responses are available on the bundles property.
     pub bundles: Vec<Bundle>,
 }
