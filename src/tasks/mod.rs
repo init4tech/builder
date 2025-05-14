@@ -1,3 +1,9 @@
+/// Block creation task
+pub mod block;
+
+/// Cache ingestion task
+pub mod cache;
+
 /// Bundle poller task
 pub mod bundler;
 
@@ -12,9 +18,6 @@ pub mod submit;
 
 /// Tx polling task
 pub mod tx_poller;
-
-/// Block simulation and environment
-pub mod block;
 
 /// Constructs the simualtion environment.
 pub mod env;
