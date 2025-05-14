@@ -47,7 +47,7 @@ async fn main() -> eyre::Result<()> {
     let sim = Arc::new(Simulator::new(&config, ru_provider.clone(), slot_calculator));
 
     let (basefee_jh, sim_cache_jh) =
-        sim.clone().spawn_cache_tasks(tx_receiver, bundle_receiver, sim_items.clone());
+        sim.spawn_cache_tasks(tx_receiver, bundle_receiver, sim_items.clone());
 
     let build_jh = sim.clone().spawn_simulator_task(constants, sim_items.clone(), submit_channel);
 
