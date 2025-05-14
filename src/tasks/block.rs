@@ -130,7 +130,7 @@ impl Simulator {
     /// A `JoinHandle` for the basefee updater and a `JoinHandle` for the
     /// cache handler.
     pub fn spawn_cache_tasks(
-        self: Arc<Self>,
+        &self,
         tx_receiver: mpsc::UnboundedReceiver<TxEnvelope>,
         bundle_receiver: mpsc::UnboundedReceiver<Bundle>,
         cache: SimCache,
@@ -139,9 +139,10 @@ impl Simulator {
 
         let basefee_price = Arc::new(AtomicU64::new(0_u64));
         let basefee_reader = Arc::clone(&basefee_price);
+        let fut = self.basefee_updater_fut(basefee_price);
 
         // Update the basefee on a per-block cadence
-        let basefee_jh = tokio::spawn(async move { self.basefee_updater(basefee_price).await });
+        let basefee_jh = tokio::spawn(fut);
 
         // Update the sim cache whenever a transaction or bundle is received with respect to the basefee
         let cache_jh = tokio::spawn(async move {
@@ -162,45 +163,36 @@ impl Simulator {
     /// # Arguments
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee value.
-    async fn basefee_updater(self: Arc<Self>, price: Arc<AtomicU64>) {
-        debug!("starting basefee updater");
-        loop {
-            // calculate start of next slot plus a small buffer
-            let time_remaining = self.slot_calculator.slot_duration()
-                - self.slot_calculator.current_timepoint_within_slot()
-                + 1;
-            debug!(time_remaining = ?time_remaining, "basefee updater sleeping until next slot");
+    fn basefee_updater_fut(&self, price: Arc<AtomicU64>) -> impl Future<Output = ()> + use<>{
+        let slot_calculator = self.slot_calculator.clone();
+        let ru_provider = self.ru_provider.clone();
 
-            // wait until that point in time
-            sleep(Duration::from_secs(time_remaining)).await;
+        async move {
+            debug!("starting basefee updater");
+            loop {
+                // calculate start of next slot plus a small buffer
+                let time_remaining = slot_calculator.slot_duration()
+                    - slot_calculator.current_timepoint_within_slot()
+                    + 1;
+                debug!(time_remaining = ?time_remaining, "basefee updater sleeping until next slot");
 
-            // update the basefee with that price
-            self.check_basefee(&price).await;
-        }
-    }
+                // wait until that point in time
+                sleep(Duration::from_secs(time_remaining)).await;
 
-    /// Queries the latest block from the rollup provider and updates the shared
-    /// basefee value if a block is found.
-    ///
-    /// This function retrieves the latest block using the provider, extracts the
-    /// `base_fee_per_gas` field from the block header (defaulting to zero if missing),
-    /// and updates the shared `AtomicU64` price tracker. If no block is available,
-    /// it logs a message without updating the price.
-    ///
-    /// # Arguments
-    ///
-    /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee.
-    async fn check_basefee(&self, price: &Arc<AtomicU64>) {
-        let resp = self.ru_provider.get_block_by_number(Latest).await.inspect_err(|e| {
-            error!(error = %e, "RPC error during basefee update");
-        });
+                // update the basefee with that price
+                let resp = ru_provider.get_block_by_number(Latest).await.inspect_err(|e| {
+                    error!(error = %e, "RPC error during basefee update");
+                });
 
-        if let Ok(Some(block)) = resp {
-            let basefee = block.header.base_fee_per_gas.unwrap_or(0);
-            price.store(basefee, Ordering::Relaxed);
-            debug!(basefee = basefee, "basefee updated");
-        } else {
-            warn!("get basefee failed - an error likely occurred");
+                if let Ok(Some(block)) = resp {
+                    let basefee = block.header.base_fee_per_gas.unwrap_or(0);
+                    price.store(basefee, Ordering::Relaxed);
+                    debug!(basefee = basefee, "basefee updated");
+                } else {
+                    warn!("get basefee failed - an error likely occurred");
+                }
+            }
+
         }
     }
 
