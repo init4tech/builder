@@ -3,7 +3,6 @@
 //! and turns them into valid Pecorino blocks for network submission.
 use crate::{
     config::{BuilderConfig, RuProvider},
-    constants::{BASEFEE_DEFAULT, PECORINO_CHAIN_ID},
     tasks::bundler::Bundle,
 };
 use alloy::{
@@ -347,7 +346,7 @@ impl Simulator {
             Some(basefee) => basefee,
             None => {
                 warn!("get basefee failed - RPC error likely occurred");
-                BASEFEE_DEFAULT
+                todo!()
             }
         };
         debug!(basefee = basefee, "setting basefee");
@@ -433,7 +432,7 @@ impl trevm::Cfg for PecorinoCfg {
     fn fill_cfg_env(&self, cfg_env: &mut CfgEnv) {
         let CfgEnv { chain_id, spec, .. } = cfg_env;
 
-        *chain_id = PECORINO_CHAIN_ID;
+        *chain_id = signet_constants::pecorino::RU_CHAIN_ID;
         *spec = SpecId::default();
     }
 }

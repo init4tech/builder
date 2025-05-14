@@ -9,7 +9,6 @@ mod tests {
         signers::local::PrivateKeySigner,
     };
     use builder::{
-        constants::PECORINO_CHAIN_ID,
         tasks::block::Simulator,
         test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
     };
@@ -37,7 +36,7 @@ mod tests {
         let constants = SignetSystemConstants::pecorino();
 
         // Create an anvil instance for testing
-        let anvil_instance = Anvil::new().chain_id(PECORINO_CHAIN_ID).spawn();
+        let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
 
         // Create a wallet
         let keys = anvil_instance.keys();
@@ -94,7 +93,7 @@ mod tests {
         let constants = SignetSystemConstants::pecorino();
 
         // Create an anvil instance for testing
-        let anvil_instance = Anvil::new().chain_id(PECORINO_CHAIN_ID).spawn();
+        let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
 
         // Create a wallet
         let keys = anvil_instance.keys();
