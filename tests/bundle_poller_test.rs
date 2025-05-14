@@ -8,7 +8,7 @@ mod tests {
         let config = test_utils::setup_test_config().unwrap();
         let auth = Authenticator::new(&config)?;
 
-        let mut bundle_poller = builder::tasks::bundler::BundlePoller::new(&config, auth.token());
+        let mut bundle_poller = builder::tasks::cache::BundlePoller::new(&config, auth.token());
 
         let _ = bundle_poller.check_bundle_cache().await?;
 

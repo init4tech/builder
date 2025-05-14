@@ -1,7 +1,12 @@
 use builder::{
     config::BuilderConfig,
     service::serve_builder,
-    tasks::{block::sim::Simulator, bundler, metrics::MetricsTask, submit::SubmitTask, tx_poller},
+    tasks::{
+        block::sim::Simulator,
+        cache::{BundlePoller, TxPoller},
+        metrics::MetricsTask,
+        submit::SubmitTask,
+    },
 };
 use init4_bin_base::{deps::tracing, utils::from_env::FromEnv};
 use signet_sim::SimCache;
@@ -32,10 +37,10 @@ async fn main() -> eyre::Result<()> {
     let submit =
         SubmitTask { zenith, quincey, config: config.clone(), outbound_tx_channel: tx_channel };
 
-    let tx_poller = tx_poller::TxPoller::new(&config);
+    let tx_poller = TxPoller::new(&config);
     let (tx_receiver, tx_poller_jh) = tx_poller.spawn();
 
-    let bundle_poller = bundler::BundlePoller::new(&config, token);
+    let bundle_poller = BundlePoller::new(&config, token);
     let (bundle_receiver, bundle_poller_jh) = bundle_poller.spawn();
 
     let (submit_channel, submit_jh) = submit.spawn();

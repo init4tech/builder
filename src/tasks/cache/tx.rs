@@ -10,7 +10,7 @@ use tokio::{sync::mpsc, task::JoinHandle, time};
 
 /// Models a response from the transaction pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TxPoolResponse {
+struct TxPoolResponse {
     /// Holds the transactions property as a list on the response.
     transactions: Vec<TxEnvelope>,
 }
