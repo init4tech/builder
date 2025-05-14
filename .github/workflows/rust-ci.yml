@@ -5,12 +5,11 @@ on:
     branches: [main]
   pull_request:
 
-# simplest example of using the rust-base action
 jobs:
   rust-base:
     uses: init4tech/actions/.github/workflows/rust-base.yml@main
     with: 
       requires-private-deps: true
+      install-foundry: true
     secrets: 
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      
