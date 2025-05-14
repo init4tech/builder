@@ -9,13 +9,12 @@ mod tests {
         signers::local::PrivateKeySigner,
     };
     use builder::{
-        tasks::block::sim::Simulator,
+        tasks::{block::sim::Simulator, cache::CacheTask},
         test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
     };
-    use init4_bin_base::utils::calc::SlotCalculator;
     use signet_sim::{SimCache, SimItem};
     use signet_types::constants::SignetSystemConstants;
-    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant};
     use tokio::{sync::mpsc::unbounded_channel, time::timeout};
 
     /// Tests the `handle_build` method of the `Simulator`.
@@ -26,6 +25,8 @@ mod tests {
     #[cfg(feature = "integration")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_handle_build() {
+        use alloy::eips::BlockId;
+
         setup_logging();
 
         // Make a test config
@@ -43,14 +44,9 @@ mod tests {
         // Create a rollup provider
         let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-        // Create a block builder with a slot calculator for testing
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Clock may have gone backwards")
-            .as_secs();
+        let block_env = config.env_task().spawn().0;
 
-        let slot_calculator = SlotCalculator::new(now, 0, 12);
-        let block_builder = Simulator::new(&config, ru_provider.clone(), slot_calculator);
+        let block_builder = Simulator::new(&config, ru_provider.clone(), block_env);
 
         // Setup a sim cache
         let sim_items = SimCache::new();
@@ -64,8 +60,10 @@ mod tests {
 
         // Setup the block env
         let finish_by = Instant::now() + Duration::from_secs(2);
-        let block_number = ru_provider.get_block_number().await.unwrap();
-        let block_env = test_block_env(config, block_number, 7, finish_by);
+        let header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+        let number = header.number + 1;
+        let timestamp = header.timestamp + config.slot_calculator.slot_duration();
+        let block_env = test_block_env(config, number, 7, timestamp);
 
         // Spawn the block builder task
         let got = block_builder.handle_build(constants, sim_items, finish_by, block_env).await;
@@ -102,16 +100,16 @@ mod tests {
         let (_, bundle_receiver) = unbounded_channel();
         let (block_sender, mut block_receiver) = unbounded_channel();
 
+        let env_task = config.env_task();
+        let (block_env, _env_jh) = env_task.spawn();
+
+        let cache_task = CacheTask::new(block_env.clone(), bundle_receiver, tx_receiver);
+        let (sim_cache, _cache_jh) = cache_task.spawn();
+
         // Create a rollup provider
         let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-        let sim = Simulator::new(&config, ru_provider.clone(), config.slot_calculator);
-
-        // Create a shared sim cache
-        let sim_cache = SimCache::new();
-
-        // Create a sim cache and start filling it with items
-        sim.spawn_cache_tasks(tx_receiver, bundle_receiver, sim_cache.clone());
+        let sim = Simulator::new(&config, ru_provider.clone(), block_env);
 
         // Finally, Kick off the block builder task.
         sim.spawn_simulator_task(constants, sim_cache.clone(), block_sender);
