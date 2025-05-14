@@ -164,7 +164,7 @@ impl Simulator {
     ///
     /// - `price`: A shared `Arc<AtomicU64>` used to store the updated basefee value.
     fn basefee_updater_fut(&self, price: Arc<AtomicU64>) -> impl Future<Output = ()> + use<> {
-        let slot_calculator = self.slot_calculator.clone();
+        let slot_calculator = self.slot_calculator;
         let ru_provider = self.ru_provider.clone();
 
         async move {
