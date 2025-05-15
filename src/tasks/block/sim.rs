@@ -138,7 +138,7 @@ impl Simulator {
     /// - `cache`: The simulation cache containing transactions and bundles.
     /// - `submit_sender`: A channel sender used to submit built blocks.
     async fn run_simulator(
-        self,
+        mut self,
         constants: SignetSystemConstants,
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<BuiltBlock>,
@@ -147,8 +147,14 @@ impl Simulator {
             let sim_cache = cache.clone();
             let finish_by = self.calculate_deadline();
 
+            // Wait for the block environment to be set
+            if self.block_env.changed().await.is_err() {
+                error!("block_env channel closed");
+                return;
+            }
+
             // If no env, skip this run
-            let Some(block_env) = self.block_env.borrow().clone() else { return };
+            let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
 
             debug!(block_env = ?block_env, "building on block");
 

@@ -96,11 +96,13 @@ impl EnvTask {
                 }
             };
             span.record("number", previous.number);
+            debug!("retrieved latest block");
 
             let env = self.construct_block_env(&previous);
             debug!(?env, "constructed block env");
             if sender.send(Some(env)).is_err() {
                 // The receiver has been dropped, so we can stop the task.
+                debug!("receiver dropped, stopping task");
                 break;
             }
         }
