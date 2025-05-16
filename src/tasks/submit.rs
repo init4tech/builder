@@ -4,7 +4,7 @@ use crate::{
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::{SimpleCoder, constants::GWEI_TO_WEI},
+    consensus::{SimpleCoder, Transaction, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{FixedBytes, TxHash, U256},
@@ -22,9 +22,9 @@ use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::{
     BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
-    Zenith::IncorrectHostBlock,
+    Zenith::{self, IncorrectHostBlock},
 };
-use std::time::Instant;
+use std::time::{Instant, UNIX_EPOCH};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 macro_rules! spawn_provider_send {
@@ -53,17 +53,14 @@ pub enum ControlFlow {
 }
 
 /// Submits sidecars in ethereum txns to mainnet ethereum
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SubmitTask {
     /// Zenith
     pub zenith: ZenithInstance,
-
     /// Quincey
     pub quincey: Quincey,
-
     /// Config
     pub config: crate::config::BuilderConfig,
-
     /// Channel over which to send pending transactions
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
@@ -99,47 +96,69 @@ impl SubmitTask {
         v: u8,
         r: FixedBytes<32>,
         s: FixedBytes<32>,
-        in_progress: &BuiltBlock,
+        block: &BuiltBlock,
     ) -> eyre::Result<TransactionRequest> {
         let data = submitCall { fills, header, v, r, s }.abi_encode();
 
-        let sidecar = in_progress.encode_blob::<SimpleCoder>().build()?;
+        let sidecar = block.encode_blob::<SimpleCoder>().build()?;
         Ok(TransactionRequest::default()
             .with_blob_sidecar(sidecar)
             .with_input(data)
             .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
     }
 
-    /// Returns the next host block height
+    /// Returns the next host block height.
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let result = self.provider().get_block_number().await?;
         let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
         Ok(next)
     }
 
-    /// Submits the EIP 4844 transaction to the network
+    /// Prepares and then sends the EIP-4844 transaction with a sidecar encoded with a rollup block to the network.
     async fn submit_transaction(
         &self,
+        retry_count: usize,
         resp: &SignResponse,
-        in_progress: &BuiltBlock,
+        block: &BuiltBlock,
     ) -> eyre::Result<ControlFlow> {
+        let tx = self.prepare_tx(retry_count, resp, block).await?;
+
+        self.send_transaction(resp, tx).await
+    }
+
+    /// Prepares the transaction by extracting the signature components, creating the transaction
+    /// request, and simulating the transaction with a call to the host provider.
+    async fn prepare_tx(
+        &self,
+        retry_count: usize,
+        resp: &SignResponse,
+        block: &BuiltBlock,
+    ) -> Result<TransactionRequest, eyre::Error> {
+        // Extract the signature components from the response
         let (v, r, s) = extract_signature_components(&resp.sig);
 
-        let header = BlockHeader {
-            hostBlockNumber: resp.req.host_block_number,
-            rollupChainId: U256::from(self.config.ru_chain_id),
-            gasLimit: resp.req.gas_limit,
-            rewardAddress: resp.req.ru_reward_address,
-            blockDataHash: *in_progress.contents_hash(),
-        };
+        // Create the transaction request with the signature values
+        let tx: TransactionRequest = self.tx_request(retry_count, resp, block, v, r, s).await?;
 
-        let fills = vec![]; // NB: ignored until fills are implemented
-        let tx = self
-            .build_blob_tx(fills, header, v, r, s, in_progress)?
-            .with_from(self.provider().default_signer_address())
-            .with_to(self.config.builder_helper_address)
-            .with_gas_limit(1_000_000);
+        // Simulate the transaction with a call to the host provider
+        if let Some(maybe_error) = self.sim_with_call(&tx).await {
+            warn!(
+                error = ?maybe_error,
+                "error in transaction simulation"
+            );
+            if let Err(e) = maybe_error {
+                return Err(e);
+            }
+        }
 
+        Ok(tx)
+    }
+
+    /// Simulates the transaction with a call to the host provider to check for reverts.
+    async fn sim_with_call(
+        &self,
+        tx: &TransactionRequest,
+    ) -> Option<Result<ControlFlow, eyre::Error>> {
         if let Err(TransportError::ErrorResp(e)) =
             self.provider().call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
         {
@@ -154,16 +173,79 @@ impl SubmitTask {
                 .map(|data| data.starts_with(&IncorrectHostBlock::SELECTOR))
                 .unwrap_or_default()
             {
-                return Ok(ControlFlow::Retry);
+                debug!(%e, "incorrect host block");
+                return Some(Ok(ControlFlow::Retry));
             }
 
-            return Ok(ControlFlow::Skip);
+            if e.as_revert_data()
+                .map(|data| data.starts_with(&Zenith::BadSignature::SELECTOR))
+                .unwrap_or_default()
+            {
+                debug!(%e, "bad signature");
+                return Some(Ok(ControlFlow::Skip));
+            }
+
+            if e.as_revert_data()
+                .map(|data| data.starts_with(&Zenith::OneRollupBlockPerHostBlock::SELECTOR))
+                .unwrap_or_default()
+            {
+                debug!(%e, "one rollup block per host block");
+                return Some(Ok(ControlFlow::Skip));
+            }
+
+            return Some(Ok(ControlFlow::Skip));
         }
 
-        // All validation checks have passed, send the transaction
-        self.send_transaction(resp, tx).await
+        debug!(?tx, "successfully simulated transaction request");
+        None
     }
 
+    /// Creates a transaction request for the blob with the given header and signature values.
+    async fn tx_request(
+        &self,
+        retry_count: usize,
+        resp: &SignResponse,
+        block: &BuiltBlock,
+        v: u8,
+        r: FixedBytes<32>,
+        s: FixedBytes<32>,
+    ) -> Result<TransactionRequest, eyre::Error> {
+        // TODO: ENG-1082 Implement fills
+        let fills = vec![];
+
+        // Bump gas with each retry to replace the previous transaction while maintaining the same nonce
+        let gas_coefficient = 10 * (retry_count + 1) as u64;
+        let gas_limit = 1_000_000 + (gas_coefficient * 1_000_000);
+        debug!(retry_count, gas_coefficient, gas_limit, "calculated gas limit");
+
+        // Build the block header
+        let header: BlockHeader = BlockHeader {
+            hostBlockNumber: resp.req.host_block_number,
+            rollupChainId: U256::from(self.config.ru_chain_id),
+            gasLimit: resp.req.gas_limit,
+            rewardAddress: resp.req.ru_reward_address,
+            blockDataHash: *block.contents_hash(),
+        };
+        debug!(?header, "built block header");
+
+        // manually retrieve nonce
+        let nonce =
+            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
+        debug!(nonce, "manually setting transaction nonce");
+
+        // Create a blob transaction with the blob header and signature values and return it
+        let tx = self
+            .build_blob_tx(fills, header, v, r, s, block)?
+            .with_from(self.provider().default_signer_address())
+            .with_to(self.config.builder_helper_address)
+            .with_gas_limit(gas_limit);
+
+        debug!(?tx, "prepared transaction request");
+        Ok(tx)
+    }
+
+    /// Fills the transaction request with the provider and sends it to the network
+    /// and any additionally configured broadcast providers.
     async fn send_transaction(
         &self,
         resp: &SignResponse,
@@ -172,17 +254,21 @@ impl SubmitTask {
         debug!(
             host_block_number = %resp.req.host_block_number,
             gas_limit = %resp.req.gas_limit,
+            nonce = ?tx.nonce,
             "sending transaction to network"
         );
+        
 
+        // assign the nonce and fill the rest of the values
         let SendableTx::Envelope(tx) = self.provider().fill(tx).await? else {
             bail!("failed to fill transaction")
         };
+        debug!(tx_hash = %tx.tx_hash(), nonce = ?tx.nonce(), gas_limit = ?tx.gas_limit(), blob_gas_used = ?tx.blob_gas_used(), "filled blob transaction");
 
-        // Send the tx via the primary host_provider
+        // send the tx via the primary host_provider
         let fut = spawn_provider_send!(self.provider(), &tx);
 
-        // Spawn send_tx futures for all additional broadcast host_providers
+        // spawn send_tx futures for all additional broadcast host_providers
         for host_provider in self.config.connect_additional_broadcast() {
             spawn_provider_send!(&host_provider, &tx);
         }
@@ -209,9 +295,14 @@ impl SubmitTask {
         Ok(ControlFlow::Done)
     }
 
+    /// Handles the inbound block by constructing a signature request and submitting the transaction.
     #[instrument(skip_all)]
-    async fn handle_inbound(&self, block: &BuiltBlock) -> eyre::Result<ControlFlow> {
-        info!(txns = block.tx_count(), "handling inbound block");
+    async fn handle_inbound(
+        &self,
+        retry_count: usize,
+        block: &BuiltBlock,
+    ) -> eyre::Result<ControlFlow> {
+        info!(retry_count, txns = block.tx_count(), "handling inbound block");
         let Ok(sig_request) = self.construct_sig_request(block).await.inspect_err(|e| {
             error!(error = %e, "error constructing signature request");
         }) else {
@@ -226,9 +317,10 @@ impl SubmitTask {
 
         let signed = self.quincey.get_signature(&sig_request).await?;
 
-        self.submit_transaction(&signed, block).await
+        self.submit_transaction(retry_count, &signed, block).await
     }
 
+    /// Handles the retry logic for the inbound block.
     async fn retrying_handle_inbound(
         &self,
         block: &BuiltBlock,
@@ -236,37 +328,65 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let mut retries = 0;
         let building_start_time = Instant::now();
+        let (current_slot, start, end) = self.calculate_slot_window()?;
+        debug!(current_slot, start, end, "calculating target slot window");
 
+        // Retry loop
         let result = loop {
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
+            debug!(retries, "number of retries");
 
-            let result =
-                self.handle_inbound(block).instrument(span.clone()).await.inspect_err(|e| {
-                    error!(error = %e, "error handling inbound block");
-                })?;
+            let inbound_result = match self.handle_inbound(retries, block).instrument(span.clone()).await {
+                Ok(control_flow) => {
+                    debug!(?control_flow, retries, "successfully handled inbound block");
+                    control_flow
+                }
+                Err(err) => {
+                    retries += 1;
+                    error!(error = %err, "error handling inbound block");
+
+                    if err.to_string().contains("403") {
+                        debug!("403 error - skipping block");
+                        let (slot_number, start, end) = self.calculate_slot_window()?;
+                        debug!(slot_number, start, end, "403 sleep until skipping block");
+                        // TODO: Sleep until the end of the next slot and return retry
+                        return Ok(ControlFlow::Done);
+                    }
+                    ControlFlow::Retry
+                }
+            };
 
             let guard = span.entered();
 
-            match result {
+            match inbound_result {
                 ControlFlow::Retry => {
-                    retries += 1;
                     if retries > retry_limit {
                         counter!("builder.building_too_many_retries").increment(1);
+                        debug!("retries exceeded - skipping block");
                         return Ok(ControlFlow::Skip);
                     }
-                    error!("error handling inbound block: retrying");
                     drop(guard);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
+                    // Detect a slot change and break out of the loop in that case too
+                    let (this_slot, start, end) = self.calculate_slot_window()?;
+                    if this_slot != current_slot {
+                        debug!("slot changed - skipping block");
+                        break inbound_result;
+                    }
+
+                    // Otherwise retry the block
+                    debug!(retries, this_slot, start, end, "retrying block");
                     continue;
                 }
                 ControlFlow::Skip => {
                     counter!("builder.skipped_blocks").increment(1);
-                    break result;
+                    debug!(retries, "skipping block");
+                    break inbound_result;
                 }
                 ControlFlow::Done => {
                     counter!("builder.submitted_successful_blocks").increment(1);
-                    break result;
+                    debug!(retries, "successfully submitted block");
+                    break inbound_result;
                 }
             }
         };
@@ -278,16 +398,38 @@ impl SubmitTask {
         Ok(result)
     }
 
+    /// Calculates and returns the slot number and its start and end timestamps for the current instant.
+    fn calculate_slot_window(&self) -> eyre::Result<(u64, u64, u64)> {
+        let now_ts = self.now();
+        let current_slot = self.config.slot_calculator.calculate_slot(now_ts);
+        let (start, end) = self.config.slot_calculator.calculate_slot_window(current_slot);
+        Ok((current_slot, start, end))
+    }
+
+    /// Returns the current timestamp in seconds since the UNIX epoch.
+    fn now(&self) -> u64 {
+        let now = std::time::SystemTime::now();
+        now.duration_since(UNIX_EPOCH).unwrap().as_secs()
+    }
+
+    /// Task future for the submit task
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<BuiltBlock>) {
         loop {
             let Some(block) = inbound.recv().await else {
                 debug!("upstream task gone");
                 break;
             };
+            debug!(?block, "submit channel received block");
 
+            // TODO: Pass a BlockEnv to this function to give retrying handle inbound access to the block
+            // env and thus the block number so that we can be sure that we try for only our assigned slots.
+
+            // Instead this needs to fire off a task that attempts to land the block for the given slot
+            // Once that slot is up, it's invalid for the next anyway, so this job can be ephemeral.
             if self.retrying_handle_inbound(&block, 3).await.is_err() {
+                debug!("error handling inbound block");
                 continue;
-            }
+            };
         }
     }
 
