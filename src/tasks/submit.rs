@@ -111,6 +111,7 @@ impl SubmitTask {
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let result = self.provider().get_block_number().await?;
         let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
+        debug!(next, "next host block height");
         Ok(next)
     }
 
@@ -146,9 +147,7 @@ impl SubmitTask {
                 error = ?maybe_error,
                 "error in transaction simulation"
             );
-            if let Err(e) = maybe_error {
-                return Err(e);
-            }
+            maybe_error?;
         }
 
         Ok(tx)
@@ -257,7 +256,6 @@ impl SubmitTask {
             nonce = ?tx.nonce,
             "sending transaction to network"
         );
-        
 
         // assign the nonce and fill the rest of the values
         let SendableTx::Envelope(tx) = self.provider().fill(tx).await? else {
@@ -285,6 +283,9 @@ impl SubmitTask {
             return Ok(ControlFlow::Skip);
         }
 
+        // Okay so the code gets all the way to this log
+        // but we don't see the tx hash in the logs or in the explorer,
+        // not even as a failed TX, just not at all.
         info!(
             tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
@@ -336,22 +337,31 @@ impl SubmitTask {
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
             debug!(retries, "number of retries");
 
-            let inbound_result = match self.handle_inbound(retries, block).instrument(span.clone()).await {
+            let inbound_result = match self
+                .handle_inbound(retries, block)
+                .instrument(span.clone())
+                .await
+            {
                 Ok(control_flow) => {
                     debug!(?control_flow, retries, "successfully handled inbound block");
                     control_flow
                 }
                 Err(err) => {
+                    // Log the retry attempt
                     retries += 1;
                     error!(error = %err, "error handling inbound block");
 
+                    // Delay until next slot if we get a 403 error
                     if err.to_string().contains("403") {
-                        debug!("403 error - skipping block");
-                        let (slot_number, start, end) = self.calculate_slot_window()?;
-                        debug!(slot_number, start, end, "403 sleep until skipping block");
-                        // TODO: Sleep until the end of the next slot and return retry
-                        return Ok(ControlFlow::Done);
+                        let (slot_number, _, end) = self.calculate_slot_window()?;
+                        let now = self.now();
+                        if end > now {
+                            let sleep_duration = std::time::Duration::from_secs(end - now);
+                            debug!(sleep_duration = ?sleep_duration, slot_number, "403 detected - sleeping until end of slot");
+                            tokio::time::sleep(sleep_duration).await;
+                        }
                     }
+
                     ControlFlow::Retry
                 }
             };
@@ -413,19 +423,36 @@ impl SubmitTask {
     }
 
     /// Task future for the submit task
+    /// NB: This task assumes that the simulator will only send it blocks for
+    /// slots that it's assigned.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<BuiltBlock>) {
+        // Holds a reference to the last block we attempted to submit
+        let mut last_block_attempted: u64 = 0;
+
         loop {
+            // Wait to receive a new block
             let Some(block) = inbound.recv().await else {
                 debug!("upstream task gone");
                 break;
             };
-            debug!(?block, "submit channel received block");
+            debug!(block_number = block.block_number(), ?block, "submit channel received block");
 
-            // TODO: Pass a BlockEnv to this function to give retrying handle inbound access to the block
-            // env and thus the block number so that we can be sure that we try for only our assigned slots.
+            // Check if a block number was set and skip if not
+            if block.block_number() == 0 {
+                debug!("block number is 0 - skipping");
+                continue;
+            }
 
-            // Instead this needs to fire off a task that attempts to land the block for the given slot
-            // Once that slot is up, it's invalid for the next anyway, so this job can be ephemeral.
+            // Only attempt each block number once
+            if block.block_number() == last_block_attempted {
+                debug!("block number is unchanged from last attempt - skipping");
+                continue;
+            }
+
+            // This means we have encountered a new block, so reset the last block attempted
+            last_block_attempted = block.block_number();
+            debug!(last_block_attempted, "resetting last block attempted");
+
             if self.retrying_handle_inbound(&block, 3).await.is_err() {
                 debug!("error handling inbound block");
                 continue;
