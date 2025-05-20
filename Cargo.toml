@@ -27,11 +27,17 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.3.4", features = ["perms"] }
 
-signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
+# signet-constants = { path = "../signet-sdk/crates/constants" }
+# signet-sim = { path = "../signet-sdk/crates/sim" }
+# signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
+# signet-types = { path = "../signet-sdk/crates/types" }
+# signet-zenith = { path = "../signet-sdk/crates/zenith" }
+
+signet-constants = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
+signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
 
 trevm = { version = "0.20.10", features = ["concurrent-db", "test-utils"] }
 
