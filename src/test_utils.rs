@@ -11,6 +11,7 @@ use init4_bin_base::{
     deps::tracing_subscriber::{
         EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
     },
+    perms::OAuthConfig,
     utils::calc::SlotCalculator,
 };
 use std::{
@@ -36,11 +37,13 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".into(),
         tx_pool_cache_duration: 5,
-        oauth_client_id: "some_client_id".into(),
-        oauth_client_secret: "some_client_secret".into(),
-        oauth_authenticate_url: "http://localhost:8080".into(),
-        oauth_token_url: "http://localhost:8080".into(),
-        oauth_token_refresh_interval: 300, // 5 minutes
+        oauth: OAuthConfig {
+            oauth_client_id: "some_client_id".into(),
+            oauth_client_secret: "some_client_secret".into(),
+            oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
+            oauth_token_url: "http://localhost:8080".parse().unwrap(),
+            oauth_token_refresh_interval: 300, // 5 minutes
+        },
         builder_helper_address: Address::default(),
         concurrency_limit: 1000,
         slot_calculator: SlotCalculator::new(
