@@ -25,7 +25,7 @@ path = "bin/submit_transaction.rs"
 integration = []
 
 [dependencies]
-init4-bin-base = "0.3"
+init4-bin-base = { version = "0.3.4", features = ["perms"] }
 
 signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
 signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
@@ -46,13 +46,6 @@ alloy = { version = "0.12.6", features = [
     "serde",
 ] }
 
-aws-config = "1.1.7"
-aws-sdk-kms = "1.15.0"
-
-hex = { package = "const-hex", version = "1", default-features = false, features = [
-    "alloc",
-] }
-
 serde = { version = "1.0.197", features = ["derive"] }
 
 axum = "0.7.5"
@@ -60,10 +53,13 @@ eyre = "0.6.12"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.11.24", features = ["blocking", "json"] }
 serde_json = "1.0"
-thiserror = "1.0.68"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 
-async-trait = "0.1.80"
-oauth2 = "4.4.2"
+oauth2 = "5"
 chrono = "0.4.41"
 tokio-stream = "0.1.17"
+url = "2.5.4"
+
+
+[patch.crates-io]
+init4-bin-base = { path = "../shared" }

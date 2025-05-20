@@ -1,8 +1,4 @@
-use crate::{
-    quincey::Quincey,
-    signer::{LocalOrAws, SignerError},
-    tasks::oauth::{Authenticator, SharedToken},
-};
+use crate::quincey::Quincey;
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -15,8 +11,14 @@ use alloy::{
     },
 };
 use eyre::Result;
-use init4_bin_base::utils::{calc::SlotCalculator, from_env::FromEnv};
-use oauth2::url;
+use init4_bin_base::{
+    perms::{Authenticator, OAuthConfig, SharedToken},
+    utils::{
+        calc::SlotCalculator,
+        from_env::FromEnv,
+        signer::{LocalOrAws, SignerError},
+    },
+};
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 
@@ -41,7 +43,7 @@ pub type HostProvider = FillProvider<
 
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
-#[derive(serde::Deserialize, Debug, Clone, FromEnv)]
+#[derive(Debug, Clone, FromEnv)]
 pub struct BuilderConfig {
     /// The chain ID of the host chain
     #[from_env(var = "HOST_CHAIN_ID", desc = "The chain ID of the host chain")]
@@ -129,30 +131,10 @@ pub struct BuilderConfig {
         desc = "Duration in seconds transactions can live in the tx-pool cache"
     )]
     pub tx_pool_cache_duration: u64,
-    /// OAuth client ID for the builder.
-    #[from_env(var = "OAUTH_CLIENT_ID", desc = "OAuth client ID for the builder")]
-    pub oauth_client_id: String,
-    /// OAuth client secret for the builder.
-    #[from_env(var = "OAUTH_CLIENT_SECRET", desc = "OAuth client secret for the builder")]
-    pub oauth_client_secret: String,
-    /// OAuth authenticate URL for the builder for performing OAuth logins.
-    #[from_env(
-        var = "OAUTH_AUTHENTICATE_URL",
-        desc = "OAuth authenticate URL for the builder for performing OAuth logins"
-    )]
-    pub oauth_authenticate_url: String,
-    /// OAuth token URL for the builder to get an OAuth2 access token
-    #[from_env(
-        var = "OAUTH_TOKEN_URL",
-        desc = "OAuth token URL for the builder to get an OAuth2 access token"
-    )]
-    pub oauth_token_url: String,
-    /// The oauth token refresh interval in seconds.
-    #[from_env(
-        var = "AUTH_TOKEN_REFRESH_INTERVAL",
-        desc = "The oauth token refresh interval in seconds"
-    )]
-    pub oauth_token_refresh_interval: u64,
+
+    /// Oauth2 configuration for the builder to connect to ini4 services.
+    pub oauth: OAuthConfig,
+
     /// The max number of simultaneous block simulations to run.
     #[from_env(
         var = "CONCURRENCY_LIMIT",
@@ -220,7 +202,7 @@ impl BuilderConfig {
         static ONCE: std::sync::OnceLock<SharedToken> = std::sync::OnceLock::new();
 
         ONCE.get_or_init(|| {
-            let authenticator = Authenticator::new(self).unwrap();
+            let authenticator = Authenticator::new(&self.oauth);
             let token = authenticator.token();
             authenticator.spawn();
             token

@@ -21,9 +21,6 @@ pub mod quincey;
 /// Implements the `/healthcheck` endpoint.
 pub mod service;
 
-/// Builder transaction signer.
-pub mod signer;
-
 /// Actor-based tasks used to construct a builder.
 pub mod tasks;
 
