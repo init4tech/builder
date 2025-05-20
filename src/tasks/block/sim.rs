@@ -4,7 +4,7 @@
 use super::cfg::PecorinoBlockEnv;
 use crate::{
     config::{BuilderConfig, RuProvider},
-    tasks::{block::cfg::PecorinoCfg, cache::Bundle},
+    tasks::cache::Bundle,
 };
 use alloy::{
     consensus::TxEnvelope,
@@ -12,10 +12,9 @@ use alloy::{
     network::Ethereum,
     providers::Provider,
 };
-use chrono::{DateTime, Utc};
 use eyre::{Context, bail};
 use init4_bin_base::{
-    deps::tracing::{debug, error, info, warn},
+    deps::tracing::{debug, error, warn},
     utils::calc::SlotCalculator,
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
@@ -96,18 +95,19 @@ impl Simulator {
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
             constants,
-            PecorinoCfg {},
-            block,
+            self.config.cfg_env(),
+            block.clone(),
             finish_by,
             self.config.concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
         );
 
-        let block = block_build.build().await;
-        debug!(block = ?block, "finished block simulation");
+        let mut built_block = block_build.build().await;
+        built_block.set_block_number(block.number);
+        debug!(block = ?built_block, "finished block simulation");
 
-        Ok(block)
+        Ok(built_block)
     }
 
     /// Spawns two tasks: one to handle incoming transactions and bundles,
@@ -236,14 +236,15 @@ impl Simulator {
             let sim_cache = cache.clone();
             let finish_by = self.calculate_deadline();
 
-            let block_env = match self.next_block_env(finish_by).await {
-                Ok(block) => block,
-                Err(err) => {
-                    error!(err = %err, "failed to configure next block");
-                    break;
-                }
-            };
-            info!(block_env = ?block_env, "created block");
+            // Wait for the block environment to be set
+            if self.block_env.changed().await.is_err() {
+                error!("block_env channel closed");
+                return;
+            }
+            
+            // If no env, skip this run
+            let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
+            debug!(block_env = ?block_env, "building on block env");
 
             match self.handle_build(constants, sim_cache, finish_by, block_env).await {
                 Ok(block) => {
