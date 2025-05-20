@@ -65,3 +65,4 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 async-trait = "0.1.80"
 oauth2 = "4.4.2"
 chrono = "0.4.41"
+tokio-stream = "0.1.17"
