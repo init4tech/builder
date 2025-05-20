@@ -59,7 +59,3 @@ oauth2 = "5"
 chrono = "0.4.41"
 tokio-stream = "0.1.17"
 url = "2.5.4"
-
-
-[patch.crates-io]
-init4-bin-base = { path = "../shared" }
