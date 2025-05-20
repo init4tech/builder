@@ -135,11 +135,8 @@ impl SubmitTask {
         resp: &SignResponse,
         block: &BuiltBlock,
     ) -> Result<TransactionRequest, eyre::Error> {
-        // Extract the signature components from the response
-        let (v, r, s) = extract_signature_components(&resp.sig);
-
         // Create the transaction request with the signature values
-        let tx: TransactionRequest = self.tx_request(retry_count, resp, block, v, r, s).await?;
+        let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block).await?;
 
         // Simulate the transaction with a call to the host provider
         if let Some(maybe_error) = self.sim_with_call(&tx).await {
@@ -200,22 +197,33 @@ impl SubmitTask {
     }
 
     /// Creates a transaction request for the blob with the given header and signature values.
-    async fn tx_request(
+    async fn new_tx_request(
         &self,
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        v: u8,
-        r: FixedBytes<32>,
-        s: FixedBytes<32>,
     ) -> Result<TransactionRequest, eyre::Error> {
         // TODO: ENG-1082 Implement fills
         let fills = vec![];
 
-        // Bump gas with each retry to replace the previous transaction while maintaining the same nonce
-        let gas_coefficient = 10 * (retry_count + 1) as u64;
-        let gas_limit = 1_000_000 + (gas_coefficient * 1_000_000);
-        debug!(retry_count, gas_coefficient, gas_limit, "calculated gas limit");
+        // Extract the signature components from the response
+        let (v, r, s) = extract_signature_components(&resp.sig);
+
+        // Bump gas with each retry to replace the previous
+        // transaction while maintaining the same nonce
+        // TODO: Clean this up if this works 
+        let gas_coefficient: u64 = (15 * (retry_count + 1)).try_into().unwrap();
+        let gas_limit: u64 = 1_500_000 + (gas_coefficient * 1_000_000);
+        let max_priority_fee_per_gas: u128 = (retry_count as u128);
+        debug!(
+            retry_count,
+            gas_coefficient, gas_limit, max_priority_fee_per_gas, "calculated gas limit"
+        );
+
+        // manually retrieve nonce
+        let nonce =
+            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
+        debug!(nonce, "assigned nonce");
 
         // Build the block header
         let header: BlockHeader = BlockHeader {
@@ -227,17 +235,14 @@ impl SubmitTask {
         };
         debug!(?header, "built block header");
 
-        // manually retrieve nonce
-        let nonce =
-            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
-        debug!(nonce, "manually setting transaction nonce");
-
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
             .build_blob_tx(fills, header, v, r, s, block)?
             .with_from(self.provider().default_signer_address())
             .with_to(self.config.builder_helper_address)
-            .with_gas_limit(gas_limit);
+            .with_gas_limit(gas_limit)
+            .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .with_nonce(nonce);
 
         debug!(?tx, "prepared transaction request");
         Ok(tx)
@@ -335,7 +340,6 @@ impl SubmitTask {
         // Retry loop
         let result = loop {
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
-            debug!(retries, "number of retries");
 
             let inbound_result = match self
                 .handle_inbound(retries, block)
@@ -349,17 +353,14 @@ impl SubmitTask {
                 Err(err) => {
                     // Log the retry attempt
                     retries += 1;
-                    error!(error = %err, "error handling inbound block");
 
                     // Delay until next slot if we get a 403 error
-                    if err.to_string().contains("403") {
-                        let (slot_number, _, end) = self.calculate_slot_window()?;
-                        let now = self.now();
-                        if end > now {
-                            let sleep_duration = std::time::Duration::from_secs(end - now);
-                            debug!(sleep_duration = ?sleep_duration, slot_number, "403 detected - sleeping until end of slot");
-                            tokio::time::sleep(sleep_duration).await;
-                        }
+                    if err.to_string().contains("403 Forbidden") {
+                        let (slot_number, _, _) = self.calculate_slot_window()?;
+                        debug!(slot_number, ?block, "403 detected - not assigned to slot");
+                        return Ok(ControlFlow::Skip);
+                    } else {
+                        error!(error = %err, "error handling inbound block");
                     }
 
                     ControlFlow::Retry
