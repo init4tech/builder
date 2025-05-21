@@ -4,7 +4,7 @@ use crate::{
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::{SimpleCoder, Transaction, constants::GWEI_TO_WEI},
+    consensus::SimpleCoder,
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{FixedBytes, TxHash, U256},
@@ -13,7 +13,7 @@ use alloy::{
     sol_types::{SolCall, SolError},
     transports::TransportError,
 };
-use eyre::{bail, eyre};
+use eyre::bail;
 use init4_bin_base::deps::{
     metrics::{counter, histogram},
     tracing::{self, Instrument, debug, debug_span, error, info, instrument, warn},
@@ -101,21 +101,11 @@ impl SubmitTask {
         let data = submitCall { fills, header, v, r, s }.abi_encode();
 
         let sidecar = block.encode_blob::<SimpleCoder>().build()?;
-        Ok(TransactionRequest::default()
-            .with_blob_sidecar(sidecar)
-            .with_input(data)
-            .with_max_priority_fee_per_gas((GWEI_TO_WEI * 16) as u128))
+
+        Ok(TransactionRequest::default().with_blob_sidecar(sidecar).with_input(data))
     }
 
-    /// Returns the next host block height.
-    async fn next_host_block_height(&self) -> eyre::Result<u64> {
-        let result = self.provider().get_block_number().await?;
-        let next = result.checked_add(1).ok_or_else(|| eyre!("next host block height overflow"))?;
-        debug!(next, "next host block height");
-        Ok(next)
-    }
-
-    /// Prepares and then sends the EIP-4844 transaction with a sidecar encoded with a rollup block to the network.
+    /// Prepares and sends the EIP-4844 transaction with a sidecar encoded with a rollup block to the network.
     async fn submit_transaction(
         &self,
         retry_count: usize,
@@ -158,19 +148,13 @@ impl SubmitTask {
         if let Err(TransportError::ErrorResp(e)) =
             self.provider().call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
         {
-            error!(
-                code = e.code,
-                message = %e.message,
-                data = ?e.data,
-                "error in transaction submission"
-            );
-
+            // NB: These errors are all handled the same way but are logged for debugging purposes
             if e.as_revert_data()
                 .map(|data| data.starts_with(&IncorrectHostBlock::SELECTOR))
                 .unwrap_or_default()
             {
                 debug!(%e, "incorrect host block");
-                return Some(Ok(ControlFlow::Retry));
+                return Some(Ok(ControlFlow::Skip));
             }
 
             if e.as_revert_data()
@@ -189,6 +173,12 @@ impl SubmitTask {
                 return Some(Ok(ControlFlow::Skip));
             }
 
+            error!(
+                code = e.code,
+                message = %e.message,
+                data = ?e.data,
+                "unknown error in host transaction simulation call"
+            );
             return Some(Ok(ControlFlow::Skip));
         }
 
@@ -205,22 +195,14 @@ impl SubmitTask {
     ) -> Result<TransactionRequest, eyre::Error> {
         // TODO: ENG-1082 Implement fills
         let fills = vec![];
-
         // Extract the signature components from the response
         let (v, r, s) = extract_signature_components(&resp.sig);
 
-        // Bump gas with each retry to replace the previous
-        // transaction while maintaining the same nonce
-        // TODO: Clean this up if this works 
-        let gas_coefficient: u64 = (15 * (retry_count + 1)).try_into().unwrap();
-        let gas_limit: u64 = 1_500_000 + (gas_coefficient * 1_000_000);
-        let max_priority_fee_per_gas: u128 = (retry_count as u128);
-        debug!(
-            retry_count,
-            gas_coefficient, gas_limit, max_priority_fee_per_gas, "calculated gas limit"
-        );
+        // Calculate gas limits based on retry attempts
+        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
+            calculate_gas_limits(retry_count);
 
-        // manually retrieve nonce
+        // manually retrieve nonce // TODO: Maybe this should be done in Env task and passed through elsewhere
         let nonce =
             self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
         debug!(nonce, "assigned nonce");
@@ -238,13 +220,12 @@ impl SubmitTask {
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
             .build_blob_tx(fills, header, v, r, s, block)?
-            .with_from(self.provider().default_signer_address())
             .with_to(self.config.builder_helper_address)
-            .with_gas_limit(gas_limit)
+            .with_max_fee_per_gas(max_fee_per_gas)
             .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
             .with_nonce(nonce);
 
-        debug!(?tx, "prepared transaction request");
         Ok(tx)
     }
 
@@ -255,23 +236,16 @@ impl SubmitTask {
         resp: &SignResponse,
         tx: TransactionRequest,
     ) -> Result<ControlFlow, eyre::Error> {
-        debug!(
-            host_block_number = %resp.req.host_block_number,
-            gas_limit = %resp.req.gas_limit,
-            nonce = ?tx.nonce,
-            "sending transaction to network"
-        );
-
         // assign the nonce and fill the rest of the values
         let SendableTx::Envelope(tx) = self.provider().fill(tx).await? else {
             bail!("failed to fill transaction")
         };
-        debug!(tx_hash = %tx.tx_hash(), nonce = ?tx.nonce(), gas_limit = ?tx.gas_limit(), blob_gas_used = ?tx.blob_gas_used(), "filled blob transaction");
+        debug!(tx_hash = ?tx.hash(), host_block_number = %resp.req.host_block_number, "sending transaction to network");
 
         // send the tx via the primary host_provider
         let fut = spawn_provider_send!(self.provider(), &tx);
 
-        // spawn send_tx futures for all additional broadcast host_providers
+        // spawn send_tx futures on retry attempts for all additional broadcast host_providers
         for host_provider in self.config.connect_additional_broadcast() {
             spawn_provider_send!(&host_provider, &tx);
         }
@@ -281,16 +255,19 @@ impl SubmitTask {
             error!("receipts task gone");
         }
 
-        // question mark unwraps join error, which would be an internal panic
-        // then if let checks for rpc error
         if let Err(e) = fut.await? {
-            error!(error = %e, "Primary tx broadcast failed. Skipping transaction.");
+            // Detect and handle transaction underprice errors
+            if matches!(e, TransportError::ErrorResp(ref err) if err.code == -32000 && err.message.contains("replacement transaction underpriced"))
+            {
+                debug!(?tx, "underpriced transaction error - retrying tx with gas bump");
+                return Ok(ControlFlow::Retry);
+            }
+
+            // Unknown error, log and skip
+            error!(error = %e, "Primary tx broadcast failed");
             return Ok(ControlFlow::Skip);
         }
 
-        // Okay so the code gets all the way to this log
-        // but we don't see the tx hash in the logs or in the explorer,
-        // not even as a failed TX, just not at all.
         info!(
             tx_hash = %tx.tx_hash(),
             ru_chain_id = %resp.req.ru_chain_id,
@@ -339,54 +316,38 @@ impl SubmitTask {
 
         // Retry loop
         let result = loop {
+            // Log the retry attempt
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
 
-            let inbound_result = match self
-                .handle_inbound(retries, block)
-                .instrument(span.clone())
-                .await
-            {
-                Ok(control_flow) => {
-                    debug!(?control_flow, retries, "successfully handled inbound block");
-                    control_flow
-                }
-                Err(err) => {
-                    // Log the retry attempt
-                    retries += 1;
+            let inbound_result =
+                match self.handle_inbound(retries, block).instrument(span.clone()).await {
+                    Ok(control_flow) => control_flow,
+                    Err(err) => {
+                        // Delay until next slot if we get a 403 error
+                        if err.to_string().contains("403 Forbidden") {
+                            let (slot_number, _, _) = self.calculate_slot_window()?;
+                            debug!(slot_number, "403 detected - skipping slot");
+                            return Ok(ControlFlow::Skip);
+                        } else {
+                            error!(error = %err, "error handling inbound block");
+                        }
 
-                    // Delay until next slot if we get a 403 error
-                    if err.to_string().contains("403 Forbidden") {
-                        let (slot_number, _, _) = self.calculate_slot_window()?;
-                        debug!(slot_number, ?block, "403 detected - not assigned to slot");
-                        return Ok(ControlFlow::Skip);
-                    } else {
-                        error!(error = %err, "error handling inbound block");
+                        ControlFlow::Retry
                     }
-
-                    ControlFlow::Retry
-                }
-            };
+                };
 
             let guard = span.entered();
 
             match inbound_result {
                 ControlFlow::Retry => {
+                    retries += 1;
                     if retries > retry_limit {
                         counter!("builder.building_too_many_retries").increment(1);
                         debug!("retries exceeded - skipping block");
                         return Ok(ControlFlow::Skip);
                     }
                     drop(guard);
-
-                    // Detect a slot change and break out of the loop in that case too
-                    let (this_slot, start, end) = self.calculate_slot_window()?;
-                    if this_slot != current_slot {
-                        debug!("slot changed - skipping block");
-                        break inbound_result;
-                    }
-
-                    // Otherwise retry the block
-                    debug!(retries, this_slot, start, end, "retrying block");
+                    debug!(retries, start, end, "retrying block");
                     continue;
                 }
                 ControlFlow::Skip => {
@@ -421,6 +382,12 @@ impl SubmitTask {
     fn now(&self) -> u64 {
         let now = std::time::SystemTime::now();
         now.duration_since(UNIX_EPOCH).unwrap().as_secs()
+    }
+
+    /// Returns the next host block height.
+    async fn next_host_block_height(&self) -> eyre::Result<u64> {
+        let block_num = self.provider().get_block_number().await?;
+        Ok(block_num + 1)
     }
 
     /// Task future for the submit task
@@ -468,4 +435,28 @@ impl SubmitTask {
 
         (sender, handle)
     }
+}
+
+fn calculate_gas_limits(retry_count: usize) -> (u128, u128, u128) {
+    let base_fee_per_gas: u128 = 100_000_000_000;
+    let base_priority_fee_per_gas: u128 = 2_000_000_000;
+    let base_fee_per_blob_gas: u128 = 1_000_000_000;
+
+    let bump_multiplier = 1150u128.pow(retry_count as u32); // 15% bump
+    let blob_bump_multiplier = 2000u128.pow(retry_count as u32); // 100% bump (double each time) for blob gas
+    let bump_divisor = 1000u128.pow(retry_count as u32);
+
+    let max_fee_per_gas = base_fee_per_gas * bump_multiplier / bump_divisor;
+    let max_priority_fee_per_gas = base_priority_fee_per_gas * bump_multiplier / bump_divisor;
+    let max_fee_per_blob_gas = base_fee_per_blob_gas * blob_bump_multiplier / bump_divisor;
+
+    debug!(
+        retry_count,
+        max_fee_per_gas,
+        max_priority_fee_per_gas,
+        max_fee_per_blob_gas,
+        "calculated bumped gas parameters"
+    );
+
+    (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas)
 }
