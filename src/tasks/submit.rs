@@ -27,6 +27,14 @@ use signet_zenith::{
 use std::time::{Instant, UNIX_EPOCH};
 use tokio::{sync::mpsc, task::JoinHandle};
 
+// NB: Consider pulling the below gas parameters out into env vars
+/// Base maximum fee per gas to use as a starting point for retry bumps
+pub const BASE_FEE_PER_GAS: u128 = 10_000_000_000; // 10 Gwei
+/// Base max priority fee per gas to use as a starting point for retry bumps
+pub const BASE_MAX_PRIORITY_FEE_PER_GAS: u128 = 2_000_000_000; // 2 Gwei
+/// Base maximum fee per blob gas to use as a starting point for retry bumps
+pub const BASE_MAX_FEE_PER_BLOB_GAS: u128 = 1_000_000_000; // 1 Gwei
+
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
         {
@@ -88,7 +96,7 @@ impl SubmitTask {
         })
     }
 
-    /// Builds blob transaction from the provided header and signature values
+    /// Builds blob transaction and encodes the sidecar for it from the provided header and signature values
     fn build_blob_tx(
         &self,
         fills: Vec<FillPermit2>,
@@ -187,17 +195,23 @@ impl SubmitTask {
     ) -> Result<TransactionRequest, eyre::Error> {
         // TODO: ENG-1082 Implement fills
         let fills = vec![];
+
+        // manually retrieve nonce
+        let nonce =
+            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
+        debug!(nonce, "assigned nonce");
+
         // Extract the signature components from the response
         let (v, r, s) = extract_signature_components(&resp.sig);
 
         // Calculate gas limits based on retry attempts
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            calculate_gas_limits(retry_count);
-
-        // manually retrieve nonce // TODO: Maybe this should be done in Env task and passed through elsewhere
-        let nonce =
-            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
-        debug!(nonce, "assigned nonce");
+            calculate_gas_limits(
+                retry_count,
+                BASE_FEE_PER_GAS,
+                BASE_MAX_PRIORITY_FEE_PER_GAS,
+                BASE_MAX_FEE_PER_BLOB_GAS,
+            );
 
         // Build the block header
         let header: BlockHeader = BlockHeader {
@@ -429,18 +443,20 @@ impl SubmitTask {
     }
 }
 
-fn calculate_gas_limits(retry_count: usize) -> (u128, u128, u128) {
-    let base_fee_per_gas: u128 = 100_000_000_000;
-    let base_priority_fee_per_gas: u128 = 2_000_000_000;
-    let base_fee_per_blob_gas: u128 = 1_000_000_000;
-
+// Returns gas parameters based on retry counts. This uses
+fn calculate_gas_limits(
+    retry_count: usize,
+    base_max_fee_per_gas: u128,
+    base_max_priority_fee_per_gas: u128,
+    base_max_fee_per_blob_gas: u128,
+) -> (u128, u128, u128) {
     let bump_multiplier = 1150u128.pow(retry_count as u32); // 15% bump
     let blob_bump_multiplier = 2000u128.pow(retry_count as u32); // 100% bump (double each time) for blob gas
     let bump_divisor = 1000u128.pow(retry_count as u32);
 
-    let max_fee_per_gas = base_fee_per_gas * bump_multiplier / bump_divisor;
-    let max_priority_fee_per_gas = base_priority_fee_per_gas * bump_multiplier / bump_divisor;
-    let max_fee_per_blob_gas = base_fee_per_blob_gas * blob_bump_multiplier / bump_divisor;
+    let max_fee_per_gas = base_max_fee_per_gas * bump_multiplier / bump_divisor;
+    let max_priority_fee_per_gas = base_max_priority_fee_per_gas * bump_multiplier / bump_divisor;
+    let max_fee_per_blob_gas = base_max_fee_per_blob_gas * blob_bump_multiplier / bump_divisor;
 
     debug!(
         retry_count,
