@@ -6,29 +6,12 @@ use init4_bin_base::{
 };
 use oauth2::TokenResponse;
 use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
-use signet_bundle::SignetEthBundle;
+use signet_tx_cache::types::{TxCacheBundle, TxCacheBundlesResponse};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
     time::{self, Duration},
 };
-
-/// Holds a bundle from the cache with a unique ID and a Zenith bundle.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Bundle {
-    /// Cache identifier for the bundle.
-    pub id: String,
-    /// The corresponding Signet bundle.
-    pub bundle: SignetEthBundle,
-}
-
-/// Response from the tx-pool containing a list of bundles.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TxPoolBundleResponse {
-    /// Bundle responses are available on the bundles property.
-    pub bundles: Vec<Bundle>,
-}
 
 /// The BundlePoller polls the tx-pool for bundles.
 #[derive(Debug)]
@@ -60,7 +43,7 @@ impl BundlePoller {
     }
 
     /// Fetches bundles from the transaction cache and returns them.
-    pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<Bundle>> {
+    pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<TxCacheBundle>> {
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
         let Some(token) = self.token.read() else {
             warn!("No token available, skipping bundle fetch");
@@ -75,7 +58,7 @@ impl BundlePoller {
             .error_for_status()?
             .json()
             .await
-            .map(|resp: TxPoolBundleResponse| resp.bundles)
+            .map(|resp: TxCacheBundlesResponse| resp.bundles)
             .map_err(Into::into)
     }
 
@@ -84,7 +67,7 @@ impl BundlePoller {
         Duration::from_millis(self.poll_interval_ms)
     }
 
-    async fn task_future(mut self, outbound: UnboundedSender<Bundle>) {
+    async fn task_future(mut self, outbound: UnboundedSender<TxCacheBundle>) {
         loop {
             let span = debug_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
 
@@ -119,7 +102,7 @@ impl BundlePoller {
     }
 
     /// Spawns a task that sends bundles it finds to its channel sender.
-    pub fn spawn(self) -> (UnboundedReceiver<Bundle>, JoinHandle<()>) {
+    pub fn spawn(self) -> (UnboundedReceiver<TxCacheBundle>, JoinHandle<()>) {
         let (outbound, inbound) = unbounded_channel();
 
         let jh = tokio::spawn(self.task_future(outbound));
