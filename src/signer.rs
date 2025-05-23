@@ -15,6 +15,7 @@ pub enum LocalOrAws {
 }
 
 /// Error during signing
+#[allow(clippy::large_enum_variant)] // type about to be deleted
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
     /// Error during [`AwsSigner`] instantiation
@@ -44,6 +45,7 @@ impl LocalOrAws {
     /// # Panics
     ///
     /// Panics if the env var contents is not a valid secp256k1 private key.
+    #[allow(clippy::result_large_err)] // type about to be deleted
     fn wallet(private_key: &str) -> Result<PrivateKeySigner, SignerError> {
         let bytes = hex::decode(private_key.strip_prefix("0x").unwrap_or(private_key))?;
         Ok(PrivateKeySigner::from_slice(&bytes).unwrap())
