@@ -4,7 +4,7 @@ use crate::{
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::SimpleCoder,
+    consensus::{SimpleCoder, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{FixedBytes, TxHash, U256},
@@ -21,11 +21,18 @@ use init4_bin_base::deps::{
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::{
-    BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
+    BundleHelper::{self, submitCall, BlockHeader, FillPermit2},
     Zenith::{self, IncorrectHostBlock},
 };
 use std::time::{Instant, UNIX_EPOCH};
 use tokio::{sync::mpsc, task::JoinHandle};
+
+/// Base maximum fee per gas to use as a starting point for retry bumps
+pub const BASE_FEE_PER_GAS: u128 = 10 * GWEI_TO_WEI as u128;
+/// Base max priority fee per gas to use as a starting point for retry bumps
+pub const BASE_MAX_PRIORITY_FEE_PER_GAS: u128 = 2 * GWEI_TO_WEI as u128;
+/// Base maximum fee per blob gas to use as a starting point for retry bumps
+pub const BASE_MAX_FEE_PER_BLOB_GAS: u128 = 1 * GWEI_TO_WEI as u128;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -88,7 +95,7 @@ impl SubmitTask {
         })
     }
 
-    /// Builds blob transaction from the provided header and signature values
+    /// Builds blob transaction and encodes the sidecar for it from the provided header and signature values
     fn build_blob_tx(
         &self,
         fills: Vec<FillPermit2>,
@@ -187,17 +194,23 @@ impl SubmitTask {
     ) -> Result<TransactionRequest, eyre::Error> {
         // TODO: ENG-1082 Implement fills
         let fills = vec![];
+
+        // manually retrieve nonce
+        let nonce =
+            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
+        debug!(nonce, "assigned nonce");
+
         // Extract the signature components from the response
         let (v, r, s) = extract_signature_components(&resp.sig);
 
         // Calculate gas limits based on retry attempts
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            calculate_gas_limits(retry_count);
-
-        // manually retrieve nonce // TODO: Maybe this should be done in Env task and passed through elsewhere
-        let nonce =
-            self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
-        debug!(nonce, "assigned nonce");
+            calculate_gas_limits(
+                retry_count,
+                BASE_FEE_PER_GAS,
+                BASE_MAX_PRIORITY_FEE_PER_GAS,
+                BASE_MAX_FEE_PER_BLOB_GAS,
+            );
 
         // Build the block header
         let header: BlockHeader = BlockHeader {
@@ -249,9 +262,8 @@ impl SubmitTask {
 
         if let Err(e) = fut.await? {
             // Detect and handle transaction underprice errors
-            if matches!(e, TransportError::ErrorResp(ref err) if err.code == -32000 && err.message.contains("replacement transaction underpriced"))
-            {
-                debug!(?tx, "underpriced transaction error - retrying tx with gas bump");
+            if matches!(e, TransportError::ErrorResp(ref err) if err.code == -32603) {
+                debug!(tx_hash = ?tx.hash(), "underpriced transaction error - retrying tx with gas bump");
                 return Ok(ControlFlow::Retry);
             }
 
@@ -303,7 +315,7 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let mut retries = 0;
         let building_start_time = Instant::now();
-        let (current_slot, start, end) = self.calculate_slot_window()?;
+        let (current_slot, start, end) = self.calculate_slot_window();
         debug!(current_slot, start, end, "calculating target slot window");
 
         // Retry loop
@@ -317,7 +329,7 @@ impl SubmitTask {
                     Err(err) => {
                         // Delay until next slot if we get a 403 error
                         if err.to_string().contains("403 Forbidden") {
-                            let (slot_number, _, _) = self.calculate_slot_window()?;
+                            let (slot_number, _, _) = self.calculate_slot_window();
                             debug!(slot_number, "403 detected - skipping slot");
                             return Ok(ControlFlow::Skip);
                         } else {
@@ -363,11 +375,11 @@ impl SubmitTask {
     }
 
     /// Calculates and returns the slot number and its start and end timestamps for the current instant.
-    fn calculate_slot_window(&self) -> eyre::Result<(u64, u64, u64)> {
+    fn calculate_slot_window(&self) -> (u64, u64, u64) {
         let now_ts = self.now();
         let current_slot = self.config.slot_calculator.calculate_slot(now_ts);
         let (start, end) = self.config.slot_calculator.calculate_slot_window(current_slot);
-        Ok((current_slot, start, end))
+        (current_slot, start, end)
     }
 
     /// Returns the current timestamp in seconds since the UNIX epoch.
@@ -397,12 +409,6 @@ impl SubmitTask {
             };
             debug!(block_number = block.block_number(), ?block, "submit channel received block");
 
-            // Check if a block number was set and skip if not
-            if block.block_number() == 0 {
-                debug!("block number is 0 - skipping");
-                continue;
-            }
-
             // Only attempt each block number once
             if block.block_number() == last_block_attempted {
                 debug!("block number is unchanged from last attempt - skipping");
@@ -429,18 +435,20 @@ impl SubmitTask {
     }
 }
 
-fn calculate_gas_limits(retry_count: usize) -> (u128, u128, u128) {
-    let base_fee_per_gas: u128 = 100_000_000_000;
-    let base_priority_fee_per_gas: u128 = 2_000_000_000;
-    let base_fee_per_blob_gas: u128 = 1_000_000_000;
-
+// Returns gas parameters based on retry counts. This uses
+fn calculate_gas_limits(
+    retry_count: usize,
+    base_max_fee_per_gas: u128,
+    base_max_priority_fee_per_gas: u128,
+    base_max_fee_per_blob_gas: u128,
+) -> (u128, u128, u128) {
     let bump_multiplier = 1150u128.pow(retry_count as u32); // 15% bump
     let blob_bump_multiplier = 2000u128.pow(retry_count as u32); // 100% bump (double each time) for blob gas
     let bump_divisor = 1000u128.pow(retry_count as u32);
 
-    let max_fee_per_gas = base_fee_per_gas * bump_multiplier / bump_divisor;
-    let max_priority_fee_per_gas = base_priority_fee_per_gas * bump_multiplier / bump_divisor;
-    let max_fee_per_blob_gas = base_fee_per_blob_gas * blob_bump_multiplier / bump_divisor;
+    let max_fee_per_gas = base_max_fee_per_gas * bump_multiplier / bump_divisor;
+    let max_priority_fee_per_gas = base_max_priority_fee_per_gas * bump_multiplier / bump_divisor;
+    let max_fee_per_blob_gas = base_max_fee_per_blob_gas * blob_bump_multiplier / bump_divisor;
 
     debug!(
         retry_count,

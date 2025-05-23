@@ -82,7 +82,7 @@ impl Simulator {
         block: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
         let db = self.create_db().await.unwrap();
-        let number = block.number;
+        
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
             constants,
@@ -94,9 +94,8 @@ impl Simulator {
             self.config.rollup_block_gas_limit,
         );
 
-        let mut built_block = block_build.build().await;
-        built_block.set_block_number(number);
-        debug!(block = ?built_block, "finished block simulation");
+        let built_block = block_build.build().await;
+        debug!(block_number = ?built_block.block_number(), "finished building block");
 
         Ok(built_block)
     }
