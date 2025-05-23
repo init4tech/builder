@@ -27,12 +27,7 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.3.4", features = ["perms"] }
 
-# signet-constants = { path = "../signet-sdk/crates/constants" }
-# signet-sim = { path = "../signet-sdk/crates/sim" }
-# signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
-# signet-types = { path = "../signet-sdk/crates/types" }
-# signet-zenith = { path = "../signet-sdk/crates/zenith" }
-
+# TODO: Change sdk crate dependencies back to `main` after alloy / revm updates are merged
 signet-constants = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
 signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
 signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/block-number" }
