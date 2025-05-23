@@ -382,7 +382,7 @@ impl SubmitTask {
         let now = std::time::SystemTime::now();
         now.duration_since(UNIX_EPOCH).unwrap().as_secs()
     }
-    
+
     /// Returns the next host block height.
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let block_num = self.provider().get_block_number().await?;

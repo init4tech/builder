@@ -241,7 +241,7 @@ impl Simulator {
                 error!("block_env channel closed");
                 return;
             }
-            
+
             // If no env, skip this run
             let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
             debug!(block_env = ?block_env, "building on block env");
