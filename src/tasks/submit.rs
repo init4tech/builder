@@ -128,23 +128,16 @@ impl SubmitTask {
         // Create the transaction request with the signature values
         let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block).await?;
 
-        // Simulate the transaction with a call to the host provider
-        if let Some(maybe_error) = self.sim_with_call(&tx).await {
-            warn!(
-                error = ?maybe_error,
-                "error in transaction simulation"
-            );
-            maybe_error?;
+        // Simulate the transaction with a call to the host provider and report any errors
+        if let Err(err) = self.sim_with_call(&tx).await {
+            warn!(%err, "error in transaction simulation");
         }
 
         Ok(tx)
     }
 
     /// Simulates the transaction with a call to the host provider to check for reverts.
-    async fn sim_with_call(
-        &self,
-        tx: &TransactionRequest,
-    ) -> Option<Result<ControlFlow, eyre::Error>> {
+    async fn sim_with_call(&self, tx: &TransactionRequest) -> eyre::Result<()> {
         if let Err(TransportError::ErrorResp(e)) =
             self.provider().call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await
         {
@@ -154,7 +147,7 @@ impl SubmitTask {
                 .unwrap_or_default()
             {
                 debug!(%e, "incorrect host block");
-                return Some(Ok(ControlFlow::Skip));
+                bail!(e)
             }
 
             if e.as_revert_data()
@@ -162,7 +155,7 @@ impl SubmitTask {
                 .unwrap_or_default()
             {
                 debug!(%e, "bad signature");
-                return Some(Ok(ControlFlow::Skip));
+                bail!(e)
             }
 
             if e.as_revert_data()
@@ -170,7 +163,7 @@ impl SubmitTask {
                 .unwrap_or_default()
             {
                 debug!(%e, "one rollup block per host block");
-                return Some(Ok(ControlFlow::Skip));
+                bail!(e)
             }
 
             error!(
@@ -179,11 +172,10 @@ impl SubmitTask {
                 data = ?e.data,
                 "unknown error in host transaction simulation call"
             );
-            return Some(Ok(ControlFlow::Skip));
+            bail!(e)
         }
 
-        debug!(?tx, "successfully simulated transaction request");
-        None
+        Ok(())
     }
 
     /// Creates a transaction request for the blob with the given header and signature values.
