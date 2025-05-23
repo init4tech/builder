@@ -1,7 +1,10 @@
-use crate::{signer::LocalOrAws, tasks::oauth::SharedToken};
 use alloy::signers::Signer;
 use eyre::bail;
-use init4_bin_base::deps::tracing::{self, debug, info, instrument, trace};
+use init4_bin_base::{
+    deps::tracing::{self, debug, info, instrument, trace},
+    perms::SharedToken,
+    utils::signer::LocalOrAws,
+};
 use oauth2::TokenResponse;
 use reqwest::Client;
 use signet_types::{SignRequest, SignResponse};

@@ -7,9 +7,6 @@ pub mod cache;
 /// Tx submission metric task
 pub mod metrics;
 
-/// OAuth token refresh task
-pub mod oauth;
-
 /// Tx submission task
 pub mod submit;
 
