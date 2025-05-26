@@ -15,9 +15,6 @@ use trevm::revm::context::BlockEnv;
 /// the environment changes.
 #[derive(Debug)]
 pub struct CacheTask {
-    /// The shared sim cache to populate.
-    cache: SimCache,
-
     /// The channel to receive the block environment.
     env: watch::Receiver<Option<BlockEnv>>,
 
@@ -28,7 +25,16 @@ pub struct CacheTask {
 }
 
 impl CacheTask {
-    async fn task_future(mut self) {
+    /// Create a new cache task with the given cache and channels.
+    pub const fn new(
+        env: watch::Receiver<Option<BlockEnv>>,
+        bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
+        txns: mpsc::UnboundedReceiver<TxEnvelope>,
+    ) -> Self {
+        Self { env, bundles, txns }
+    }
+
+    async fn task_future(mut self, cache: SimCache) {
         loop {
             let mut basefee = 0;
             tokio::select! {
@@ -41,24 +47,26 @@ impl CacheTask {
                     if let Some(env) = self.env.borrow_and_update().as_ref() {
                         basefee = env.basefee;
                         info!(basefee, number = env.number, timestamp = env.timestamp, "block env changed, clearing cache");
-                        self.cache.clean(
+                        cache.clean(
                             env.number, env.timestamp
                         );
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
-                    self.cache.add_item(bundle.bundle, basefee);
+                    cache.add_item(bundle.bundle, basefee);
                 }
                 Some(txn) = self.txns.recv() => {
-                    self.cache.add_item(txn, basefee);
+                    cache.add_item(txn, basefee);
                 }
             }
         }
     }
 
     /// Spawn the cache task.
-    pub fn spawn(self) -> JoinHandle<()> {
-        let fut = self.task_future();
-        tokio::spawn(fut)
+    pub fn spawn(self) -> (SimCache, JoinHandle<()>) {
+        let sim_cache = SimCache::default();
+        let c = sim_cache.clone();
+        let fut = self.task_future(sim_cache);
+        (c, tokio::spawn(fut))
     }
 }

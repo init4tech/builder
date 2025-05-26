@@ -18,6 +18,11 @@ pub struct MetricsTask {
 }
 
 impl MetricsTask {
+    /// Create a new MetricsTask with the given provider
+    pub const fn new(host_provider: HostProvider) -> Self {
+        Self { host_provider }
+    }
+
     /// Given a transaction hash, record metrics on the result of the
     /// transaction mining
     pub fn log_tx(&self, tx_hash: TxHash) -> impl Future<Output = ()> + use<> {

@@ -1,4 +1,11 @@
-use crate::quincey::Quincey;
+use crate::{
+    quincey::Quincey,
+    tasks::{
+        block::cfg::SignetCfgEnv,
+        cache::{BundlePoller, CacheSystem, CacheTask, TxPoller},
+        env::EnvTask,
+    },
+};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -21,6 +28,8 @@ use init4_bin_base::{
 };
 use signet_zenith::Zenith;
 use std::borrow::Cow;
+use tokio::sync::watch;
+use trevm::revm::context::BlockEnv;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -132,7 +141,7 @@ pub struct BuilderConfig {
     )]
     pub tx_pool_cache_duration: u64,
 
-    /// Oauth2 configuration for the builder to connect to ini4 services.
+    /// Oauth2 configuration for the builder to connect to init4 services.
     pub oauth: OAuthConfig,
 
     /// The max number of simultaneous block simulations to run.
@@ -166,8 +175,13 @@ impl BuilderConfig {
 
     /// Connect to the Rollup rpc provider.
     pub fn connect_ru_provider(&self) -> RootProvider<Ethereum> {
-        let url = url::Url::parse(&self.ru_rpc_url).expect("failed to parse URL");
-        RootProvider::<Ethereum>::new_http(url)
+        static ONCE: std::sync::OnceLock<RootProvider<Ethereum>> = std::sync::OnceLock::new();
+
+        ONCE.get_or_init(|| {
+            let url = url::Url::parse(&self.ru_rpc_url).expect("failed to parse URL");
+            RootProvider::new_http(url)
+        })
+        .clone()
     }
 
     /// Connect to the Host rpc provider.
@@ -221,5 +235,37 @@ impl BuilderConfig {
         let token = self.oauth_token();
 
         Ok(Quincey::new_remote(client, url, token))
+    }
+
+    /// Create an [`EnvTask`] using this config.
+    pub fn env_task(&self) -> EnvTask {
+        let provider = self.connect_ru_provider();
+        EnvTask::new(self.clone(), provider)
+    }
+
+    /// Spawn a new [`CacheSystem`] using this config. This contains the
+    /// joinhandles for [`TxPoller`] and [`BundlePoller`] and [`CacheTask`], as
+    /// well as the [`SimCache`] and the block env watcher.
+    ///
+    /// [`SimCache`]: signet_sim::SimCache
+    pub fn spawn_cache_system(&self, block_env: watch::Receiver<Option<BlockEnv>>) -> CacheSystem {
+        // Tx Poller pulls transactions from the cache
+        let tx_poller = TxPoller::new(self);
+        let (tx_receiver, tx_poller) = tx_poller.spawn();
+
+        // Bundle Poller pulls bundles from the cache
+        let bundle_poller = BundlePoller::new(self, self.oauth_token());
+        let (bundle_receiver, bundle_poller) = bundle_poller.spawn();
+
+        // Set up the cache task
+        let cache_task = CacheTask::new(block_env.clone(), bundle_receiver, tx_receiver);
+        let (sim_cache, cache_task) = cache_task.spawn();
+
+        CacheSystem { cache_task, tx_poller, bundle_poller, sim_cache }
+    }
+
+    /// Create a [`SignetCfgEnv`] using this config.
+    pub const fn cfg_env(&self) -> SignetCfgEnv {
+        SignetCfgEnv { chain_id: self.ru_chain_id }
     }
 }

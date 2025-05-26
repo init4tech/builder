@@ -27,7 +27,6 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.3.4", features = ["perms"] }
 
-signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
 signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
 signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
 signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
@@ -56,6 +55,5 @@ serde_json = "1.0"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 
 oauth2 = "5"
-chrono = "0.4.41"
 tokio-stream = "0.1.17"
 url = "2.5.4"

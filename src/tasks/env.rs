@@ -7,7 +7,7 @@ use alloy::{
 };
 use init4_bin_base::deps::tracing::{self, Instrument, debug, error, info_span};
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
@@ -25,7 +25,7 @@ impl EnvTask {
     }
 
     /// Construct a BlockEnv by making calls to the provider.
-    pub fn construct_block_env(&self, previous: &Header) -> BlockEnv {
+    fn construct_block_env(&self, previous: &Header) -> BlockEnv {
         BlockEnv {
             number: previous.number + 1,
             beneficiary: self.config.builder_rewards_address,
@@ -45,7 +45,7 @@ impl EnvTask {
     }
 
     /// Construct the BlockEnv and send it to the sender.
-    pub async fn task_fut(self, sender: watch::Sender<Option<BlockEnv>>) {
+    async fn task_fut(self, sender: watch::Sender<Option<BlockEnv>>) {
         let span = info_span!("EnvTask::task_fut::init");
         let mut poller = match self.provider.watch_blocks().instrument(span.clone()).await {
             Ok(poller) => poller,
@@ -96,22 +96,24 @@ impl EnvTask {
                 }
             };
             span.record("number", previous.number);
+            debug!("retrieved latest block");
 
             let env = self.construct_block_env(&previous);
             debug!(?env, "constructed block env");
             if sender.send(Some(env)).is_err() {
                 // The receiver has been dropped, so we can stop the task.
+                debug!("receiver dropped, stopping task");
                 break;
             }
         }
     }
 
     /// Spawn the task and return a watch::Receiver for the BlockEnv.
-    pub fn spawn(self) -> watch::Receiver<Option<BlockEnv>> {
+    pub fn spawn(self) -> (watch::Receiver<Option<BlockEnv>>, JoinHandle<()>) {
         let (sender, receiver) = watch::channel(None);
         let fut = self.task_fut(sender);
-        tokio::spawn(fut);
+        let jh = tokio::spawn(fut);
 
-        receiver
+        (receiver, jh)
     }
 }
