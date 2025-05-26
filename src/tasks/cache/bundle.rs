@@ -1,6 +1,9 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
-use crate::{config::BuilderConfig, tasks::oauth::SharedToken};
-use init4_bin_base::deps::tracing::{Instrument, debug, debug_span, error, trace, warn};
+use crate::config::BuilderConfig;
+use init4_bin_base::{
+    deps::tracing::{Instrument, debug, debug_span, error, trace, warn},
+    perms::SharedToken,
+};
 use oauth2::TokenResponse;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
