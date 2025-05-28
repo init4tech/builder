@@ -35,7 +35,7 @@ use trevm::revm::context::BlockEnv;
 pub type RuProvider = RootProvider<Ethereum>;
 
 /// A [`Zenith`] contract instance using [`Provider`] as the provider.
-pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
+pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<P>;
 
 /// Type alias for the provider used to build and submit blocks to the host.
 pub type HostProvider = FillProvider<

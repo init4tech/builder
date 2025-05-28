@@ -21,21 +21,25 @@ path = "bin/builder.rs"
 name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
+[[bin]]
+name = "filler-example"
+path = "bin/filler.rs"
+
 [features]
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.3.4", features = ["perms"] }
+init4-bin-base = { git = "https://github.com/init4tech/bin-base", rev = "b6dbb93486cd7d139eb0dbf6cdef4be26f1cb9bf", features = ["perms", "alloy"] }
 
-signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "b8251ff0fec7cb14ca87e6f95c14f56bc2593049" }
+signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
+signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
 
-trevm = { version = "0.20.10", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.23.4", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "0.12.6", features = [
+alloy = { version = "1.0.5", features = [
     "full",
     "json-rpc",
     "signer-aws",
@@ -57,3 +61,6 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 oauth2 = "5"
 tokio-stream = "0.1.17"
 url = "2.5.4"
+
+chrono = "0.4.38"
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
