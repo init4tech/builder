@@ -21,7 +21,7 @@ use init4_bin_base::deps::{
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::{
-    BundleHelper::{self, submitCall, BlockHeader, FillPermit2},
+    BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
     Zenith::{self, IncorrectHostBlock},
 };
 use std::time::{Instant, UNIX_EPOCH};
@@ -32,7 +32,7 @@ pub const BASE_FEE_PER_GAS: u128 = 10 * GWEI_TO_WEI as u128;
 /// Base max priority fee per gas to use as a starting point for retry bumps
 pub const BASE_MAX_PRIORITY_FEE_PER_GAS: u128 = 2 * GWEI_TO_WEI as u128;
 /// Base maximum fee per blob gas to use as a starting point for retry bumps
-pub const BASE_MAX_FEE_PER_BLOB_GAS: u128 = 1 * GWEI_TO_WEI as u128;
+pub const BASE_MAX_FEE_PER_BLOB_GAS: u128 = GWEI_TO_WEI as u128;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {

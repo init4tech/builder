@@ -82,7 +82,7 @@ impl Simulator {
         block: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
         let db = self.create_db().await.unwrap();
-        
+
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
             constants,
