@@ -60,7 +60,7 @@ pub enum ControlFlow {
 }
 
 /// Submits sidecars in ethereum txns to mainnet ethereum
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SubmitTask {
     /// Zenith
     pub zenith: ZenithInstance,
