@@ -1,7 +1,10 @@
 use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     primitives::{Address, U256},
-    providers::{Provider as _, ProviderBuilder, WalletProvider},
+    providers::{
+        Provider as _, ProviderBuilder, WalletProvider,
+        fillers::{BlobGasFiller, SimpleNonceManager},
+    },
     rpc::types::eth::TransactionRequest,
 };
 use builder::config::HostProvider;
@@ -31,7 +34,12 @@ impl Config {
     async fn provider(&self) -> HostProvider {
         let signer = self.kms_key_id.connect_remote().await.unwrap();
 
-        ProviderBuilder::new()
+        ProviderBuilder::new_with_network()
+            .disable_recommended_fillers()
+            .filler(BlobGasFiller)
+            .with_gas_estimation()
+            .with_nonce_management(SimpleNonceManager::default())
+            .fetch_chain_id()
             .wallet(EthereumWallet::from(signer))
             .connect(&self.rpc_url)
             .await

@@ -13,7 +13,7 @@ use alloy::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
-            WalletFiller,
+            SimpleNonceManager, WalletFiller,
         },
     },
 };
@@ -35,19 +35,21 @@ use trevm::revm::context::BlockEnv;
 pub type RuProvider = RootProvider<Ethereum>;
 
 /// A [`Zenith`] contract instance using [`Provider`] as the provider.
-pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<(), P, alloy::network::Ethereum>;
+pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<P, alloy::network::Ethereum>;
 
 /// Type alias for the provider used to build and submit blocks to the host.
 pub type HostProvider = FillProvider<
     JoinFill<
         JoinFill<
-            Identity,
-            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+            JoinFill<
+                JoinFill<JoinFill<Identity, BlobGasFiller>, GasFiller>,
+                NonceFiller<SimpleNonceManager>,
+            >,
+            ChainIdFiller,
         >,
         WalletFiller<EthereumWallet>,
     >,
     RootProvider,
-    Ethereum,
 >;
 
 /// Configuration for a builder running a specific rollup on a specific host
@@ -187,7 +189,12 @@ impl BuilderConfig {
     /// Connect to the Host rpc provider.
     pub async fn connect_host_provider(&self) -> eyre::Result<HostProvider> {
         let builder_signer = self.connect_builder_signer().await?;
-        ProviderBuilder::new()
+        ProviderBuilder::new_with_network()
+            .disable_recommended_fillers()
+            .filler(BlobGasFiller)
+            .with_gas_estimation()
+            .with_nonce_management(SimpleNonceManager::default())
+            .fetch_chain_id()
             .wallet(EthereumWallet::from(builder_signer))
             .connect(&self.host_rpc_url)
             .await
