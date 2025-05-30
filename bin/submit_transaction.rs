@@ -11,7 +11,7 @@ use builder::config::HostProvider;
 use init4_bin_base::{
     deps::{
         metrics::{counter, histogram},
-        tracing,
+        tracing::{debug, error},
     },
     init4,
     utils::{from_env::FromEnv, signer::LocalOrAwsConfig},
@@ -52,16 +52,17 @@ async fn main() {
     let _guard = init4();
 
     let config = Config::from_env().unwrap();
-    tracing::trace!("connecting to provider");
+    debug!(?config.recipient_address, "connecting to provider");
+
     let provider = config.provider().await;
     let recipient_address = config.recipient_address;
     let sleep_time = config.sleep_time;
 
     loop {
-        tracing::debug!("attempting transaction");
+        debug!(?recipient_address, "attempting transaction");
         send_transaction(&provider, recipient_address).await;
 
-        tracing::debug!(sleep_time, "sleeping");
+        debug!(sleep_time, "sleeping");
         tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
     }
 }
@@ -78,18 +79,17 @@ async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
     let dispatch_start_time: Instant = Instant::now();
 
     // dispatch the transaction
-    tracing::debug!("dispatching transaction");
     let result = provider.send_transaction(tx).await.unwrap();
 
     // wait for the transaction to mine
     let receipt = match timeout(Duration::from_secs(240), result.get_receipt()).await {
         Ok(Ok(receipt)) => receipt,
         Ok(Err(e)) => {
-            tracing::error!(error = ?e, "failed to get transaction receipt");
+            error!(error = ?e, "failed to get transaction receipt");
             return;
         }
         Err(_) => {
-            tracing::error!("timeout waiting for transaction receipt");
+            error!("timeout waiting for transaction receipt");
             counter!("txn_submitter.tx_timeout").increment(1);
             return;
         }
@@ -99,6 +99,6 @@ async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
 
     // record metrics for how long it took to mine the transaction
     let mine_time = dispatch_start_time.elapsed().as_secs();
-    tracing::debug!(success = receipt.status(), mine_time, hash, "transaction mined");
+    debug!(success = receipt.status(), mine_time, hash, "transaction mined");
     histogram!("txn_submitter.tx_mine_time").record(mine_time as f64);
 }

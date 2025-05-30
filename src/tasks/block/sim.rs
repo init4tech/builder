@@ -94,10 +94,10 @@ impl Simulator {
             self.config.rollup_block_gas_limit,
         );
 
-        let block = block_build.build().await;
-        debug!(block = ?block, "finished block simulation");
+        let built_block = block_build.build().await;
+        debug!(block_number = ?built_block.block_number(), "finished building block");
 
-        Ok(block)
+        Ok(built_block)
     }
 
     /// Spawns the simulator task, which handles the setup and sets the deadline
@@ -155,8 +155,7 @@ impl Simulator {
 
             // If no env, skip this run
             let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
-
-            debug!(block_env = ?block_env, "building on block");
+            debug!(block_env = ?block_env, "building on block env");
 
             match self.handle_build(constants, sim_cache, finish_by, block_env).await {
                 Ok(block) => {

@@ -72,8 +72,9 @@ pub struct BuilderConfig {
     /// NOTE: should not include the host_rpc_url value
     #[from_env(
         var = "TX_BROADCAST_URLS",
-        desc = "Additional RPC URLs to which to broadcast transactions",
-        infallible
+        desc = "Additional RPC URLs to which the builder broadcasts transactions",
+        infallible,
+        optional
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
     /// address of the Zenith contract on Host.

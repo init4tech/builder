@@ -27,11 +27,11 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.4.1", features = ["perms"] }
 
-signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "bd183b627dcb0eb682da801093b13f1f8311446b" }
+signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
+signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
 
 trevm = { version = "0.23.4", features = ["concurrent-db", "test-utils"] }
 
