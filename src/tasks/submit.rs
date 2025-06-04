@@ -192,9 +192,6 @@ impl SubmitTask {
         resp: &SignResponse,
         block: &BuiltBlock,
     ) -> Result<TransactionRequest, eyre::Error> {
-        // TODO: ENG-1082 Implement fills
-        let fills = vec![];
-
         // manually retrieve nonce
         let nonce =
             self.provider().get_transaction_count(self.provider().default_signer_address()).await?;
@@ -221,6 +218,10 @@ impl SubmitTask {
             blockDataHash: *block.contents_hash(),
         };
         debug!(?header, "built block header");
+
+        // Extract fills from the built block
+        let fills = self.extract_fills(block);
+        debug!(?fills, "extracted fills");
 
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
@@ -392,6 +393,11 @@ impl SubmitTask {
     async fn next_host_block_height(&self) -> eyre::Result<u64> {
         let block_num = self.provider().get_block_number().await?;
         Ok(block_num + 1)
+    }
+
+    // This function converts &[SignedFill] into [FillPermit2]
+    fn extract_fills(&self, block: &BuiltBlock) -> Vec<FillPermit2> {
+        block.host_fills().iter().map(FillPermit2::from).collect()
     }
 
     /// Task future for the submit task
