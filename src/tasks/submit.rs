@@ -25,14 +25,13 @@ use signet_zenith::{
     Zenith::{self, IncorrectHostBlock},
 };
 use std::time::{Instant, UNIX_EPOCH};
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::mpsc::{self},
+    task::JoinHandle,
+};
+use trevm::revm::context::BlockEnv;
 
-/// Base maximum fee per gas to use as a starting point for retry bumps
-pub const BASE_FEE_PER_GAS: u128 = 10 * GWEI_TO_WEI as u128;
-/// Base max priority fee per gas to use as a starting point for retry bumps
-pub const BASE_MAX_PRIORITY_FEE_PER_GAS: u128 = 2 * GWEI_TO_WEI as u128;
-/// Base maximum fee per blob gas to use as a starting point for retry bumps
-pub const BASE_MAX_FEE_PER_BLOB_GAS: u128 = GWEI_TO_WEI as u128;
+use super::block::sim::SimResult;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -222,7 +221,7 @@ impl SubmitTask {
         })
     }
 
-    /// Builds blob transaction and encodes the sidecar for it from the provided header and signature values
+    /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
     fn build_blob_tx(
         &self,
         fills: Vec<FillPermit2>,
@@ -245,8 +244,9 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
+        block_env: &BlockEnv,
     ) -> eyre::Result<ControlFlow> {
-        let tx = self.prepare_tx(retry_count, resp, block).await?;
+        let tx = self.prepare_tx(retry_count, resp, block, block_env).await?;
 
         self.send_transaction(resp, tx).await
     }
@@ -258,9 +258,11 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
+        block_env: &BlockEnv,
     ) -> Result<TransactionRequest, eyre::Error> {
         // Create the transaction request with the signature values
-        let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block).await?;
+        let tx: TransactionRequest =
+            self.new_tx_request(retry_count, resp, block, block_env).await?;
 
         // Simulate the transaction with a call to the host provider and report any errors
         if let Err(err) = self.sim_with_call(&tx).await {
@@ -288,6 +290,7 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
+        block_env: &BlockEnv,
     ) -> Result<TransactionRequest, eyre::Error> {
         // manually retrieve nonce
         let nonce =
@@ -297,14 +300,8 @@ impl SubmitTask {
         // Extract the signature components from the response
         let (v, r, s) = extract_signature_components(&resp.sig);
 
-        // Calculate gas limits based on retry attempts
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            calculate_gas_limits(
-                retry_count,
-                BASE_FEE_PER_GAS,
-                BASE_MAX_PRIORITY_FEE_PER_GAS,
-                BASE_MAX_FEE_PER_BLOB_GAS,
-            );
+            calculate_gas(retry_count, block_env);
 
         // Build the block header
         let header: BlockHeader = BlockHeader {
@@ -386,6 +383,7 @@ impl SubmitTask {
         &self,
         retry_count: usize,
         block: &BuiltBlock,
+        block_env: &BlockEnv,
     ) -> eyre::Result<ControlFlow> {
         info!(retry_count, txns = block.tx_count(), "handling inbound block");
         let Ok(sig_request) = self.construct_sig_request(block).await.inspect_err(|e| {
@@ -397,18 +395,20 @@ impl SubmitTask {
         debug!(
             host_block_number = %sig_request.host_block_number,
             ru_chain_id = %sig_request.ru_chain_id,
+            tx_count = block.tx_count(),
             "constructed signature request for host block"
         );
 
         let signed = self.quincey.get_signature(&sig_request).await?;
 
-        self.submit_transaction(retry_count, &signed, block).await
+        self.submit_transaction(retry_count, &signed, block, block_env).await
     }
 
     /// Handles the retry logic for the inbound block.
     async fn retrying_handle_inbound(
         &self,
         block: &BuiltBlock,
+        block_env: &BlockEnv,
         retry_limit: usize,
     ) -> eyre::Result<ControlFlow> {
         let mut retries = 0;
@@ -418,11 +418,11 @@ impl SubmitTask {
 
         // Retry loop
         let result = loop {
-            // Log the retry attempt
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
 
             let inbound_result =
-                match self.handle_inbound(retries, block).instrument(span.clone()).await {
+                match self.handle_inbound(retries, block, block_env).instrument(span.clone()).await
+                {
                     Ok(control_flow) => control_flow,
                     Err(err) => {
                         // Delay until next slot if we get a 403 error
@@ -431,6 +431,7 @@ impl SubmitTask {
                             debug!(slot_number, "403 detected - skipping slot");
                             return Ok(ControlFlow::Skip);
                         } else {
+                            // Otherwise, log error and retry
                             error!(error = %err, "error handling inbound block");
                         }
 
@@ -500,29 +501,33 @@ impl SubmitTask {
     /// Task future for the submit task
     /// NB: This task assumes that the simulator will only send it blocks for
     /// slots that it's assigned.
-    async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<BuiltBlock>) {
+    async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         // Holds a reference to the last block we attempted to submit
         let mut last_block_attempted: u64 = 0;
 
         loop {
             // Wait to receive a new block
-            let Some(block) = inbound.recv().await else {
+            let Some(result) = inbound.recv().await else {
                 debug!("upstream task gone");
                 break;
             };
-            debug!(block_number = block.block_number(), ?block, "submit channel received block");
+
+            debug!(block_number = result.block.block_number(), "submit channel received block");
 
             // Only attempt each block number once
-            if block.block_number() == last_block_attempted {
-                debug!("block number is unchanged from last attempt - skipping");
+            if result.block.block_number() == last_block_attempted {
+                debug!(
+                    block_number = result.block.block_number(),
+                    "block number is unchanged from last attempt - skipping"
+                );
                 continue;
             }
 
             // This means we have encountered a new block, so reset the last block attempted
-            last_block_attempted = block.block_number();
+            last_block_attempted = result.block.block_number();
             debug!(last_block_attempted, "resetting last block attempted");
 
-            if self.retrying_handle_inbound(&block, 3).await.is_err() {
+            if self.retrying_handle_inbound(&result.block, &result.env, 3).await.is_err() {
                 debug!("error handling inbound block");
                 continue;
             };
@@ -530,36 +535,60 @@ impl SubmitTask {
     }
 
     /// Spawns the in progress block building task
-    pub fn spawn(self) -> (mpsc::UnboundedSender<BuiltBlock>, JoinHandle<()>) {
-        let (sender, inbound) = mpsc::unbounded_channel();
+    pub fn spawn(self) -> (mpsc::UnboundedSender<SimResult>, JoinHandle<()>) {
+        let (sender, inbound) = mpsc::unbounded_channel::<SimResult>();
         let handle = tokio::spawn(self.task_future(inbound));
 
         (sender, handle)
     }
 }
 
-// Returns gas parameters based on retry counts.
-fn calculate_gas_limits(
-    retry_count: usize,
-    base_max_fee_per_gas: u128,
-    base_max_priority_fee_per_gas: u128,
-    base_max_fee_per_blob_gas: u128,
-) -> (u128, u128, u128) {
-    let bump_multiplier = 1150u128.pow(retry_count as u32); // 15% bump
-    let blob_bump_multiplier = 2000u128.pow(retry_count as u32); // 100% bump (double each time) for blob gas
-    let bump_divisor = 1000u128.pow(retry_count as u32);
+/// Calculates gas parameters based on the block environment and retry count.
+fn calculate_gas(retry_count: usize, block_env: &BlockEnv) -> (u128, u128, u128) {
+    let fallback_blob_basefee = 500;
 
-    let max_fee_per_gas = base_max_fee_per_gas * bump_multiplier / bump_divisor;
-    let max_priority_fee_per_gas = base_max_priority_fee_per_gas * bump_multiplier / bump_divisor;
-    let max_fee_per_blob_gas = base_max_fee_per_blob_gas * blob_bump_multiplier / bump_divisor;
+    match block_env.blob_excess_gas_and_price {
+        Some(excess) => {
+            if excess.blob_gasprice == 0 {
+                warn!("blob excess gas price is zero, using default blob base fee");
+                return bump_gas_from_retries(
+                    retry_count,
+                    block_env.basefee,
+                    fallback_blob_basefee,
+                );
+            }
+
+            bump_gas_from_retries(retry_count, block_env.basefee, excess.blob_gasprice)
+        }
+        None => {
+            warn!("no blob excess gas and price in block env, using defaults");
+            bump_gas_from_retries(retry_count, block_env.basefee, fallback_blob_basefee)
+        }
+    }
+}
+
+/// Bumps the gas parameters based on the retry count, base fee, and blob base fee.
+pub fn bump_gas_from_retries(
+    retry_count: usize,
+    basefee: u64,
+    blob_basefee: u128,
+) -> (u128, u128, u128) {
+    const PRIORITY_FEE_BASE: u64 = 2 * GWEI_TO_WEI;
+    const BASE_MULTIPLIER: u128 = 2;
+    const BLOB_MULTIPLIER: u128 = 2;
+
+    // Increase priority fee by 20% per retry
+    let priority_fee =
+        PRIORITY_FEE_BASE * (12u64.pow(retry_count as u32) / 10u64.pow(retry_count as u32));
+
+    // Max fee includes basefee + priority + headroom (double basefee, etc.)
+    let max_fee_per_gas = (basefee as u128) * BASE_MULTIPLIER + (priority_fee as u128);
+    let max_fee_per_blob_gas = blob_basefee * BLOB_MULTIPLIER * (retry_count as u128 + 1);
 
     debug!(
         retry_count,
-        max_fee_per_gas,
-        max_priority_fee_per_gas,
-        max_fee_per_blob_gas,
-        "calculated bumped gas parameters"
+        max_fee_per_gas, priority_fee, max_fee_per_blob_gas, "calculated bumped gas parameters"
     );
 
-    (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas)
+    (max_fee_per_gas, priority_fee as u128, max_fee_per_blob_gas)
 }
