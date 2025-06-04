@@ -66,7 +66,6 @@ impl EnvTask {
             let Some(block) = blocks.last() else {
                 // This case occurs when there are no changes to the block,
                 // so we do nothing.
-                debug!("empty filter changes");
                 continue;
             };
             let span = info_span!("EnvTask::task_fut::loop", hash = %block, number = tracing::field::Empty);
@@ -96,10 +95,10 @@ impl EnvTask {
                 }
             };
             span.record("number", previous.number);
-            debug!("retrieved latest block");
 
             let env = self.construct_block_env(&previous);
-            debug!(?env, "constructed block env");
+            debug!(block_number = ?env.number, env.basefee, "constructed latest block env");
+
             if sender.send(Some(env)).is_err() {
                 // The receiver has been dropped, so we can stop the task.
                 debug!("receiver dropped, stopping task");
