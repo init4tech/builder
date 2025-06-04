@@ -222,7 +222,7 @@ impl SubmitTask {
         // Extract fills from the built block
         let fills = self.extract_fills(block);
         debug!(?fills, "extracted fills");
-        
+
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
             .build_blob_tx(fills, header, v, r, s, block)?
