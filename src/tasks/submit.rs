@@ -435,7 +435,7 @@ impl SubmitTask {
     }
 }
 
-// Returns gas parameters based on retry counts. This uses
+// Returns gas parameters based on retry counts.
 fn calculate_gas_limits(
     retry_count: usize,
     base_max_fee_per_gas: u128,
