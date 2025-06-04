@@ -39,6 +39,15 @@ pub struct Simulator {
     pub block_env: watch::Receiver<Option<BlockEnv>>,
 }
 
+/// SimResult bundles a BuiltBlock to the BlockEnv it was simulated against.
+#[derive(Debug, Clone)]
+pub struct SimResult {
+    /// The block built with the successfully simulated transactions
+    pub block: BuiltBlock,
+    /// The block environment the transactions were simulated against.
+    pub env: BlockEnv,
+}
+
 impl Simulator {
     /// Creates a new `Simulator` instance.
     ///
@@ -115,7 +124,7 @@ impl Simulator {
         self,
         constants: SignetSystemConstants,
         cache: SimCache,
-        submit_sender: mpsc::UnboundedSender<BuiltBlock>,
+        submit_sender: mpsc::UnboundedSender<SimResult>,
     ) -> JoinHandle<()> {
         debug!("starting simulator task");
 
@@ -140,7 +149,7 @@ impl Simulator {
         mut self,
         constants: SignetSystemConstants,
         cache: SimCache,
-        submit_sender: mpsc::UnboundedSender<BuiltBlock>,
+        submit_sender: mpsc::UnboundedSender<SimResult>,
     ) {
         loop {
             let sim_cache = cache.clone();
@@ -156,10 +165,10 @@ impl Simulator {
             let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
             debug!(block_env = ?block_env, "building on block env");
 
-            match self.handle_build(constants, sim_cache, finish_by, block_env).await {
+            match self.handle_build(constants, sim_cache, finish_by, block_env.clone()).await {
                 Ok(block) => {
-                    debug!(block = ?block, "built block");
-                    let _ = submit_sender.send(block);
+                    debug!(block = ?block.block_number(), "built block");
+                    let _ = submit_sender.send(SimResult { block, env: block_env });
                 }
                 Err(e) => {
                     error!(err = %e, "failed to build block");
