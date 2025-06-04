@@ -123,7 +123,7 @@ impl SimErrorResp {
 
     /// Attempts to decode the error payload as an [`IncorrectHostBlock`].
     pub fn as_incorrect_host_block(&self) -> Option<IncorrectHostBlock> {
-        self.as_revert_data().and_then(|data| IncorrectHostBlock::abi_decode(&data, true).ok())
+        self.as_revert_data().and_then(|data| IncorrectHostBlock::abi_decode(&data).ok())
     }
 
     /// True if the error is a [`Zenith::BadSignature`].
@@ -135,7 +135,7 @@ impl SimErrorResp {
 
     /// Attempts to decode the error payload as a [`Zenith::BadSignature`].
     pub fn as_bad_signature(&self) -> Option<Zenith::BadSignature> {
-        self.as_revert_data().and_then(|data| Zenith::BadSignature::abi_decode(&data, true).ok())
+        self.as_revert_data().and_then(|data| Zenith::BadSignature::abi_decode(&data).ok())
     }
 
     /// True if the error is a [`Zenith::OneRollupBlockPerHostBlock`].
@@ -149,7 +149,7 @@ impl SimErrorResp {
     /// [`Zenith::OneRollupBlockPerHostBlock`].
     pub fn as_one_rollup_block_per_host_block(&self) -> Option<Zenith::OneRollupBlockPerHostBlock> {
         self.as_revert_data()
-            .and_then(|data| Zenith::OneRollupBlockPerHostBlock::abi_decode(&data, true).ok())
+            .and_then(|data| Zenith::OneRollupBlockPerHostBlock::abi_decode(&data).ok())
     }
 
     /// True if the error is an unknown revert.
