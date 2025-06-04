@@ -395,13 +395,9 @@ impl SubmitTask {
         Ok(block_num + 1)
     }
 
-    // This function converts &[SignedFill] --> [FillPermit2]
+    // This function converts &[SignedFill] into [FillPermit2]
     fn extract_fills(&self, block: &BuiltBlock) -> Vec<FillPermit2> {
-        let mut fills = vec![];
-        for signed_fill in block.host_fills() {
-            fills.push(FillPermit2::from(signed_fill))
-        }
-        fills
+        block.host_fills().iter().map(FillPermit2::from).collect()
     }
 
     /// Task future for the submit task
