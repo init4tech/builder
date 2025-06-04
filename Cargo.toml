@@ -25,7 +25,7 @@ path = "bin/submit_transaction.rs"
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.4.1", features = ["perms"] }
+init4-bin-base = { version = "0.4.2", features = ["perms"] }
 
 signet-constants = { git = "https://github.com/init4tech/signet-sdk" }
 signet-sim = { git = "https://github.com/init4tech/signet-sdk" }
