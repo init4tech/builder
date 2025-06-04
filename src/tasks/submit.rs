@@ -417,7 +417,6 @@ impl SubmitTask {
 
         // Retry loop
         let result = loop {
-            // Log the retry attempt
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
 
             let inbound_result =
@@ -431,6 +430,7 @@ impl SubmitTask {
                             debug!(slot_number, "403 detected - skipping slot");
                             return Ok(ControlFlow::Skip);
                         } else {
+                            // Otherwise, log error and retry 
                             error!(error = %err, "error handling inbound block");
                         }
 
@@ -515,7 +515,7 @@ impl SubmitTask {
 
             // Only attempt each block number once
             if result.block.block_number() == last_block_attempted {
-                debug!("block number is unchanged from last attempt - skipping");
+                debug!(block_number = result.block.block_number(), "block number is unchanged from last attempt - skipping");
                 continue;
             }
 
@@ -541,20 +541,25 @@ impl SubmitTask {
 
 /// Calculates gas parameters based on the block environment and retry count.
 fn calculate_gas(retry_count: usize, block_env: &BlockEnv) -> (u128, u128, u128) {
-    if let Some(blob_excess) = block_env.blob_excess_gas_and_price {
-        debug!(?blob_excess, "using blob excess gas and price from block env");
-        let blob_basefee = blob_excess.blob_gasprice;
+    let fallback_blob_basefee = 500;
 
-        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            bump_gas_from_retries(retry_count, block_env.basefee, blob_basefee);
+    match block_env.blob_excess_gas_and_price {
+        Some(excess) => {
+            if excess.blob_gasprice == 0 {
+                warn!("blob excess gas price is zero, using default blob base fee");
+                return bump_gas_from_retries(
+                    retry_count,
+                    block_env.basefee,
+                    fallback_blob_basefee,
+                );
+            }
 
-        (max_fee_per_gas as u128, max_priority_fee_per_gas as u128, max_fee_per_blob_gas)
-    } else {
-        warn!("no blob excess gas and price in block env, using defaults");
-        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            bump_gas_from_retries(retry_count, block_env.basefee, 500);
-
-        (max_fee_per_gas as u128, max_priority_fee_per_gas as u128, max_fee_per_blob_gas)
+            bump_gas_from_retries(retry_count, block_env.basefee, excess.blob_gasprice)
+        }
+        None => {
+            warn!("no blob excess gas and price in block env, using defaults");
+            bump_gas_from_retries(retry_count, block_env.basefee, fallback_blob_basefee)
+        }
     }
 }
 
@@ -563,9 +568,9 @@ pub fn bump_gas_from_retries(
     retry_count: usize,
     basefee: u64,
     blob_basefee: u128,
-) -> (u64, u64, u128) {
+) -> (u128, u128, u128) {
     const PRIORITY_FEE_BASE: u64 = 2 * GWEI_TO_WEI;
-    const BASE_MULTIPLIER: u64 = 2;
+    const BASE_MULTIPLIER: u128 = 2;
     const BLOB_MULTIPLIER: u128 = 2;
 
     // Increase priority fee by 20% per retry
@@ -573,7 +578,7 @@ pub fn bump_gas_from_retries(
         PRIORITY_FEE_BASE * (12u64.pow(retry_count as u32) / 10u64.pow(retry_count as u32));
 
     // Max fee includes basefee + priority + headroom (double basefee, etc.)
-    let max_fee_per_gas = basefee * BASE_MULTIPLIER + priority_fee;
+    let max_fee_per_gas = (basefee as u128) * BASE_MULTIPLIER + (priority_fee as u128);
     let max_fee_per_blob_gas = blob_basefee * BLOB_MULTIPLIER * (retry_count as u128 + 1);
 
     debug!(
@@ -581,5 +586,5 @@ pub fn bump_gas_from_retries(
         max_fee_per_gas, priority_fee, max_fee_per_blob_gas, "calculated bumped gas parameters"
     );
 
-    (max_fee_per_gas, priority_fee, max_fee_per_blob_gas)
+    (max_fee_per_gas as u128, priority_fee as u128, max_fee_per_blob_gas)
 }
