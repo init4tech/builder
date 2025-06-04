@@ -548,7 +548,7 @@ fn calculate_gas(retry_count: usize, block_env: &BlockEnv) -> (u128, u128, u128)
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
             bump_gas_from_retries(retry_count, block_env.basefee, blob_basefee);
 
-        (max_fee_per_gas as u128, max_priority_fee_per_gas as u128, max_fee_per_blob_gas as u128)
+        (max_fee_per_gas as u128, max_priority_fee_per_gas as u128, max_fee_per_blob_gas)
     } else {
         warn!("no blob excess gas and price in block env, using defaults");
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
