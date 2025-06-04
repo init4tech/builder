@@ -12,7 +12,7 @@ use init4_bin_base::{
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::{
     sync::{
         mpsc::{self},
@@ -20,7 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::info;
+use tracing::{info, trace};
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -48,7 +48,7 @@ pub struct SimResult {
     /// The block built with the successfully simulated transactions
     pub block: BuiltBlock,
     /// The block environment the transactions were simulated against.
-    pub env: SimEnv,
+    pub env: BlockEnv,
 }
 
 impl Simulator {
@@ -189,7 +189,7 @@ impl Simulator {
             {
                 Ok(block) => {
                     debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
-                    let _ = submit_sender.send(SimResult { block, env: sim_env });
+                    let _ = submit_sender.send(SimResult { block, env: sim_env.block_env });
                 }
                 Err(e) => {
                     error!(err = %e, "failed to build block");
@@ -208,14 +208,17 @@ impl Simulator {
     pub fn calculate_deadline(&self) -> Instant {
         // Get the current timepoint within the slot.
         let timepoint = self.slot_calculator().current_timepoint_within_slot();
+        trace!(timepoint, "current timepoint within slot");
 
         // We have the timepoint in seconds into the slot. To find out what's
         // remaining, we need to subtract it from the slot duration
         let remaining = self.slot_calculator().slot_duration() - timepoint;
+        trace!(remaining, "time remaining in slot");
 
         // We add a 1500 ms buffer to account for sequencer stopping signing.
         let deadline =
             Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
+        trace!(deadline = ?self.instant_to_timestamp(deadline), "calculated deadline for block simulation");
 
         deadline.max(Instant::now())
     }
@@ -245,5 +248,24 @@ impl Simulator {
         // See: https://docs.rs/tokio/latest/tokio/attr.main.html
         let wrapped_db: AlloyDatabaseProvider = WrapDatabaseAsync::new(alloy_db).unwrap();
         Some(wrapped_db)
+    }
+
+    /// Converts an `Instant` to a UNIX timestamp in seconds and milliseconds.
+    pub fn instant_to_timestamp(&self, instant: Instant) -> (u64, u128) {
+        let now_instant = Instant::now();
+        let now_system = SystemTime::now();
+
+        let duration_from_now = now_instant.duration_since(instant);
+
+        // Subtract that duration from the system time
+        let target_system_time = now_system - duration_from_now;
+
+        let duration_since_epoch =
+            target_system_time.duration_since(UNIX_EPOCH).expect("Time went backwards");
+
+        let seconds = duration_since_epoch.as_secs();
+        let milliseconds = duration_since_epoch.as_millis();
+
+        (seconds, milliseconds)
     }
 }
