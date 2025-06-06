@@ -27,11 +27,11 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.4.2", features = ["perms"] }
 
-signet-constants = { git = "https://github.com/init4tech/signet-sdk" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk" }
+signet-constants = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/logging" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/logging" }
+signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/logging" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/logging" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "dylan/logging" }
 
 trevm = { version = "0.23.4", features = ["concurrent-db", "test-utils"] }
 
@@ -58,3 +58,4 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 oauth2 = "5"
 tokio-stream = "0.1.17"
 url = "2.5.4"
+tracing = "0.1.41"
