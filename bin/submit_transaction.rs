@@ -69,10 +69,19 @@ async fn main() {
 
 async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
     // construct simple transaction to send ETH to a recipient
+    let nonce = match provider.get_transaction_count(provider.default_signer_address()).await {
+        Ok(count) => count + 1,
+        Err(e) => {
+            error!(error = ?e, "failed to get transaction count");
+            return;
+        },
+    };
+
     let tx = TransactionRequest::default()
         .with_from(provider.default_signer_address())
         .with_to(recipient_address)
         .with_value(U256::from(1))
+        .with_nonce(nonce)
         .with_gas_limit(30_000);
 
     // start timer to measure how long it takes to mine the transaction
