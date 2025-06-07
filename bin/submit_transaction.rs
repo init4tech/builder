@@ -91,6 +91,7 @@ async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
     let dispatch_start_time: Instant = Instant::now();
 
     // dispatch the transaction
+    debug!(?tx.nonce, "sending transaction with nonce");
     let result = provider.send_transaction(tx).await.unwrap();
 
     // wait for the transaction to mine
