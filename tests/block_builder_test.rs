@@ -126,5 +126,5 @@ async fn test_spawn() {
     // Assert on the block
     let block = result.unwrap();
     assert!(block.is_some(), "Block channel closed without receiving a block");
-    assert!(block.unwrap().tx_count() == 2); // TODO: Why is this failing? I'm seeing EVM errors but haven't tracked them down yet.
+    assert!(block.unwrap().block.tx_count() == 2); // TODO: Why is this failing? I'm seeing EVM errors but haven't tracked them down yet.
 }

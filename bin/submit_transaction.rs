@@ -1,3 +1,5 @@
+//! A simple transaction submitter that sends a transaction to a recipient address
+//! on a regular interval for the purposes of roughly testing rollup mining.
 use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     primitives::{Address, U256},
@@ -67,18 +69,29 @@ async fn main() {
     }
 }
 
+/// Sends a transaction to the specified recipient address
 async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
     // construct simple transaction to send ETH to a recipient
+    let nonce = match provider.get_transaction_count(provider.default_signer_address()).await {
+        Ok(count) => count,
+        Err(e) => {
+            error!(error = ?e, "failed to get transaction count");
+            return;
+        }
+    };
+
     let tx = TransactionRequest::default()
         .with_from(provider.default_signer_address())
         .with_to(recipient_address)
         .with_value(U256::from(1))
+        .with_nonce(nonce)
         .with_gas_limit(30_000);
 
     // start timer to measure how long it takes to mine the transaction
     let dispatch_start_time: Instant = Instant::now();
 
     // dispatch the transaction
+    debug!(?tx.nonce, "sending transaction with nonce");
     let result = provider.send_transaction(tx).await.unwrap();
 
     // wait for the transaction to mine
@@ -95,10 +108,13 @@ async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
         }
     };
 
-    let hash = receipt.transaction_hash.to_string();
+    record_metrics(dispatch_start_time, receipt);
+}
 
-    // record metrics for how long it took to mine the transaction
+/// Record metrics for how long it took to mine the transaction
+fn record_metrics(dispatch_start_time: Instant, receipt: alloy::rpc::types::TransactionReceipt) {
     let mine_time = dispatch_start_time.elapsed().as_secs();
+    let hash = receipt.transaction_hash.to_string();
     debug!(success = receipt.status(), mine_time, hash, "transaction mined");
     histogram!("txn_submitter.tx_mine_time").record(mine_time as f64);
 }
