@@ -167,7 +167,7 @@ impl Simulator {
 
             match self.handle_build(constants, sim_cache, finish_by, block_env.clone()).await {
                 Ok(block) => {
-                    debug!(block = ?block.block_number(), "built block");
+                    debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built block");
                     let _ = submit_sender.send(SimResult { block, env: block_env });
                 }
                 Err(e) => {
