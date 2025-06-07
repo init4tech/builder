@@ -73,7 +73,7 @@ async fn main() {
 async fn send_transaction(provider: &HostProvider, recipient_address: Address) {
     // construct simple transaction to send ETH to a recipient
     let nonce = match provider.get_transaction_count(provider.default_signer_address()).await {
-        Ok(count) => count + 1,
+        Ok(count) => count + 2,
         Err(e) => {
             error!(error = ?e, "failed to get transaction count");
             return;
