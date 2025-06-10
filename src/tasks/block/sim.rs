@@ -9,7 +9,7 @@ use init4_bin_base::{
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tokio::{
     sync::{
         mpsc::{self},
@@ -94,7 +94,7 @@ impl Simulator {
     ) -> eyre::Result<BuiltBlock> {
         debug!(
             block_number = block_env.number,
-            deadline = ?self.instant_to_timestamp(finish_by),
+            ?finish_by,
             tx_count= sim_items.len(),
             "starting block build",
         );
@@ -208,13 +208,10 @@ impl Simulator {
         // We add a 1500 ms buffer to account for sequencer stopping signing.
         let deadline =
             Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
-        trace!(deadline = ?self.instant_to_timestamp(deadline), "calculated deadline for block simulation");
+        trace!(?deadline, "calculated deadline for block simulation");
 
         let buffered_deadline = deadline.max(Instant::now());
         trace!(?buffered_deadline, "final deadline for block simulation");
-
-        let timestamp = self.instant_to_timestamp(buffered_deadline);
-        trace!(?timestamp, "deadline converted to timestamp");
 
         buffered_deadline
     }
@@ -244,24 +241,5 @@ impl Simulator {
         // See: https://docs.rs/tokio/latest/tokio/attr.main.html
         let wrapped_db: AlloyDatabaseProvider = WrapDatabaseAsync::new(alloy_db).unwrap();
         Some(wrapped_db)
-    }
-
-    /// Converts an `Instant` to a UNIX timestamp in seconds and milliseconds.
-    pub fn instant_to_timestamp(&self, instant: Instant) -> (u64, u128) {
-        let now_instant = Instant::now();
-        let now_system = SystemTime::now();
-
-        let duration_from_now = now_instant.duration_since(instant);
-
-        // Subtract that duration from the system time
-        let target_system_time = now_system - duration_from_now;
-
-        let duration_since_epoch =
-            target_system_time.duration_since(UNIX_EPOCH).expect("Time went backwards");
-
-        let seconds = duration_since_epoch.as_secs();
-        let milliseconds = duration_since_epoch.as_millis();
-
-        (seconds, milliseconds)
     }
 }

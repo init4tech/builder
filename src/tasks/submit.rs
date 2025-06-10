@@ -509,9 +509,6 @@ impl SubmitTask {
     /// NB: This task assumes that the simulator will only send it blocks for
     /// slots that it's assigned.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
-        // Holds a reference to the last block we attempted to submit
-        let mut last_block_attempted: u64 = 0;
-
         loop {
             // Wait to receive a new block
             let Some(result) = inbound.recv().await else {
@@ -520,23 +517,10 @@ impl SubmitTask {
             };
             debug!(block_number = result.block.block_number(), "submit channel received block");
 
-            // Only attempt each block number once
-            if result.block.block_number() == last_block_attempted {
-                debug!(
-                    block_number = result.block.block_number(),
-                    "block number is unchanged from last attempt - skipping"
-                );
-                continue;
+            if let Err(e) = self.retrying_handle_inbound(&result.block, &result.env, 3).await {
+                error!(error = %e, "error handling inbound block");
+                continue;   
             }
-
-            // This means we have encountered a new block, so reset the last block attempted
-            last_block_attempted = result.block.block_number();
-            debug!(last_block_attempted, "resetting last block attempted");
-
-            if self.retrying_handle_inbound(&result.block, &result.env, 3).await.is_err() {
-                debug!("error handling inbound block");
-                continue;
-            };
         }
     }
 
