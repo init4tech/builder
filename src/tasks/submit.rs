@@ -413,6 +413,7 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let mut retries = 0;
         let building_start_time = Instant::now();
+
         let (current_slot, start, end) = self.calculate_slot_window();
         debug!(current_slot, start, end, "calculating target slot window");
 
@@ -467,9 +468,15 @@ impl SubmitTask {
         };
 
         // This is reached when `Done` or `Skip` is returned
-        histogram!("builder.block_build_time")
-            .record(building_start_time.elapsed().as_millis() as f64);
-        info!(?result, "finished block building");
+        let elapsed = building_start_time.elapsed().as_millis() as f64;
+        histogram!("builder.block_build_time").record(elapsed);
+        info!(
+            ?result,
+            tx_count = block.tx_count(),
+            block_number = block.block_number(),
+            build_time = ?elapsed,
+            "finished block building"
+        );
         Ok(result)
     }
 
@@ -508,10 +515,9 @@ impl SubmitTask {
         loop {
             // Wait to receive a new block
             let Some(result) = inbound.recv().await else {
-                debug!("upstream task gone");
+                debug!("upstream task gone - exiting submit task");
                 break;
             };
-
             debug!(block_number = result.block.block_number(), "submit channel received block");
 
             // Only attempt each block number once
