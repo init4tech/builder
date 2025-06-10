@@ -95,7 +95,7 @@ impl Simulator {
         debug!(
             block_number = block_env.number,
             ?finish_by,
-            tx_count= sim_items.len(),
+            tx_count = sim_items.len(),
             "starting block build",
         );
 
