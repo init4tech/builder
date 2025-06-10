@@ -517,6 +517,12 @@ impl SubmitTask {
             };
             debug!(block_number = result.block.block_number(), "submit channel received block");
 
+            // Don't submit empty blocks
+            if result.block.is_empty() {
+                debug!("received empty block - skipping");
+                continue;
+            }
+
             if let Err(e) = self.retrying_handle_inbound(&result.block, &result.env, 3).await {
                 error!(error = %e, "error handling inbound block");
                 continue;
