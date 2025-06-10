@@ -17,7 +17,6 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::trace;
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -207,9 +206,7 @@ impl Simulator {
         let deadline =
             Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
 
-        let buffered_deadline = deadline.max(Instant::now());
-
-        buffered_deadline
+        deadline.max(Instant::now())
     }
 
     /// Creates an `AlloyDB` instance from the rollup provider.
