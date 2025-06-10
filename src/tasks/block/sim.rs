@@ -20,7 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{info, trace};
+use tracing::info;
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -208,17 +208,14 @@ impl Simulator {
     pub fn calculate_deadline(&self) -> Instant {
         // Get the current timepoint within the slot.
         let timepoint = self.slot_calculator().current_timepoint_within_slot();
-        trace!(timepoint, "current timepoint within slot");
 
         // We have the timepoint in seconds into the slot. To find out what's
         // remaining, we need to subtract it from the slot duration
         let remaining = self.slot_calculator().slot_duration() - timepoint;
-        trace!(remaining, "time remaining in slot");
 
         // We add a 1500 ms buffer to account for sequencer stopping signing.
         let deadline =
             Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
-        trace!(?deadline, "calculated deadline for block simulation");
 
         deadline.max(Instant::now())
     }
