@@ -519,7 +519,7 @@ impl SubmitTask {
 
             if let Err(e) = self.retrying_handle_inbound(&result.block, &result.env, 3).await {
                 error!(error = %e, "error handling inbound block");
-                continue;   
+                continue;
             }
         }
     }
