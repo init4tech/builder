@@ -12,7 +12,6 @@ use init4_bin_base::{
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
-use tracing::info;
 use std::time::{Duration, Instant};
 use tokio::{
     sync::{
@@ -21,6 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use tracing::info;
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},

@@ -1,3 +1,4 @@
+use crate::tasks::block::sim::SimResult;
 use crate::{
     config::{HostProvider, ZenithInstance},
     quincey::Quincey,
@@ -29,7 +30,6 @@ use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
 };
-use crate::tasks::block::sim::SimResult;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -433,8 +433,7 @@ impl SubmitTask {
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
 
             let inbound_result =
-                match self.handle_inbound(retries, block).instrument(span.clone()).await
-                {
+                match self.handle_inbound(retries, block).instrument(span.clone()).await {
                     Ok(control_flow) => control_flow,
                     Err(err) => {
                         // Delay until next slot if we get a 403 error
