@@ -89,10 +89,11 @@ impl EnvTask {
                 info_span!("EnvTask::task_fut::loop", %block_hash, number = tracing::field::Empty);
 
             // Get the rollup header for rollup block simulation environment configuration
-            let rollup_header = match self.get_latest_rollup_header(&sender, block_hash, &span).await {
-                Some(value) => value,
-                None => continue,
-            };
+            let rollup_header =
+                match self.get_latest_rollup_header(&sender, block_hash, &span).await {
+                    Some(value) => value,
+                    None => continue,
+                };
             debug!(?rollup_header.number, "pulled rollup block for simulation");
 
             // Get the host header for blob transaction submission gas pricing
@@ -108,7 +109,10 @@ impl EnvTask {
 
             // Construct the block env using the previous block header
             let signet_env = self.construct_block_env(&host_header);
-            debug!(block_number = signet_env.number, signet_env.basefee, "constructed signet block env");
+            debug!(
+                block_number = signet_env.number,
+                signet_env.basefee, "constructed signet block env"
+            );
 
             if sender.send(Some(SimEnv { signet: signet_env, host: host_header })).is_err() {
                 // The receiver has been dropped, so we can stop the task.
