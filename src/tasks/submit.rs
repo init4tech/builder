@@ -1,10 +1,11 @@
 use crate::{
     config::{HostProvider, ZenithInstance},
     quincey::Quincey,
+    tasks::env::SimEnv,
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::{SimpleCoder, constants::GWEI_TO_WEI},
+    consensus::{Header, SimpleCoder, constants::GWEI_TO_WEI},
     eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Bytes, FixedBytes, TxHash, U256},
@@ -29,9 +30,8 @@ use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
 };
-use trevm::revm::context::BlockEnv;
 
-use super::block::sim::SimResult;
+use crate::tasks::block::sim::SimResult;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -208,13 +208,10 @@ impl SubmitTask {
     /// correct height, chain ID, gas limit, and rollup reward address.
     #[instrument(skip_all)]
     async fn construct_sig_request(&self, contents: &BuiltBlock) -> eyre::Result<SignRequest> {
-        let ru_chain_id = U256::from(self.config.ru_chain_id);
-        let next_block_height = self.next_host_block_height().await?;
-
         Ok(SignRequest {
-            host_block_number: U256::from(next_block_height),
+            host_block_number: U256::from(self.next_host_block_height().await?),
             host_chain_id: U256::from(self.config.host_chain_id),
-            ru_chain_id,
+            ru_chain_id: U256::from(self.config.ru_chain_id),
             gas_limit: U256::from(self.config.rollup_block_gas_limit),
             ru_reward_address: self.config.builder_rewards_address,
             contents: *contents.contents_hash(),
@@ -244,9 +241,9 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        block_env: &BlockEnv,
+        sim_env: &SimEnv,
     ) -> eyre::Result<ControlFlow> {
-        let tx = self.prepare_tx(retry_count, resp, block, block_env).await?;
+        let tx = self.prepare_tx(retry_count, resp, block, sim_env).await?;
 
         self.send_transaction(resp, tx).await
     }
@@ -258,11 +255,10 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        block_env: &BlockEnv,
+        sim_env: &SimEnv,
     ) -> Result<TransactionRequest, eyre::Error> {
         // Create the transaction request with the signature values
-        let tx: TransactionRequest =
-            self.new_tx_request(retry_count, resp, block, block_env).await?;
+        let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block, sim_env).await?;
 
         // Simulate the transaction with a call to the host provider and report any errors
         if let Err(err) = self.sim_with_call(&tx).await {
@@ -290,7 +286,7 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        block_env: &BlockEnv,
+        sim_env: &SimEnv,
     ) -> Result<TransactionRequest, eyre::Error> {
         // manually retrieve nonce
         let nonce =
@@ -301,7 +297,7 @@ impl SubmitTask {
         let (v, r, s) = extract_signature_components(&resp.sig);
 
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            calculate_gas(retry_count, block_env);
+            calculate_gas(retry_count, sim_env.host.clone());
 
         // Build the block header
         let header: BlockHeader = BlockHeader {
@@ -311,11 +307,11 @@ impl SubmitTask {
             rewardAddress: resp.req.ru_reward_address,
             blockDataHash: *block.contents_hash(),
         };
-        debug!(?header, "built block header");
+        debug!(?header.hostBlockNumber, "built rollup block header");
 
         // Extract fills from the built block
         let fills = self.extract_fills(block);
-        debug!(fill_count = fills.len(), "extracted fills");
+        debug!(fill_count = fills.len(), "extracted fills from rollup block");
 
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
@@ -383,7 +379,7 @@ impl SubmitTask {
         &self,
         retry_count: usize,
         block: &BuiltBlock,
-        block_env: &BlockEnv,
+        sim_env: &SimEnv,
     ) -> eyre::Result<ControlFlow> {
         info!(retry_count, txns = block.tx_count(), "handling inbound block");
         let Ok(sig_request) = self.construct_sig_request(block).await.inspect_err(|e| {
@@ -401,14 +397,14 @@ impl SubmitTask {
 
         let signed = self.quincey.get_signature(&sig_request).await?;
 
-        self.submit_transaction(retry_count, &signed, block, block_env).await
+        self.submit_transaction(retry_count, &signed, block, sim_env).await
     }
 
     /// Handles the retry logic for the inbound block.
     async fn retrying_handle_inbound(
         &self,
         block: &BuiltBlock,
-        block_env: &BlockEnv,
+        sim_env: &SimEnv,
         retry_limit: usize,
     ) -> eyre::Result<ControlFlow> {
         let mut retries = 0;
@@ -422,8 +418,7 @@ impl SubmitTask {
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
 
             let inbound_result =
-                match self.handle_inbound(retries, block, block_env).instrument(span.clone()).await
-                {
+                match self.handle_inbound(retries, block, sim_env).instrument(span.clone()).await {
                     Ok(control_flow) => control_flow,
                     Err(err) => {
                         // Delay until next slot if we get a 403 error
@@ -505,25 +500,28 @@ impl SubmitTask {
         block.host_fills().iter().map(FillPermit2::from).collect()
     }
 
-    /// Task future for the submit task
-    /// NB: This task assumes that the simulator will only send it blocks for
-    /// slots that it's assigned.
+    /// Task future for the submit task. This function runs the main loop of the task.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         loop {
             // Wait to receive a new block
-            let Some(result) = inbound.recv().await else {
+            let Some(sim_result) = inbound.recv().await else {
                 debug!("upstream task gone - exiting submit task");
                 break;
             };
-            debug!(block_number = result.block.block_number(), "submit channel received block");
+            debug!(block_number = sim_result.block.block_number(), "submit channel received block");
 
             // Don't submit empty blocks
-            if result.block.is_empty() {
-                debug!("received empty block - skipping");
+            if sim_result.block.is_empty() {
+                debug!(
+                    block_number = sim_result.block.block_number(),
+                    "received empty block - skipping"
+                );
                 continue;
             }
 
-            if let Err(e) = self.retrying_handle_inbound(&result.block, &result.env, 3).await {
+            if let Err(e) =
+                self.retrying_handle_inbound(&sim_result.block, &sim_result.env, 3).await
+            {
                 error!(error = %e, "error handling inbound block");
                 continue;
             }
@@ -534,33 +532,30 @@ impl SubmitTask {
     pub fn spawn(self) -> (mpsc::UnboundedSender<SimResult>, JoinHandle<()>) {
         let (sender, inbound) = mpsc::unbounded_channel::<SimResult>();
         let handle = tokio::spawn(self.task_future(inbound));
-
         (sender, handle)
     }
 }
 
 /// Calculates gas parameters based on the block environment and retry count.
-fn calculate_gas(retry_count: usize, block_env: &BlockEnv) -> (u128, u128, u128) {
+fn calculate_gas(retry_count: usize, prev_header: Header) -> (u128, u128, u128) {
     let fallback_blob_basefee = 500;
+    let fallback_basefee = 7;
 
-    match block_env.blob_excess_gas_and_price {
-        Some(excess) => {
-            if excess.blob_gasprice == 0 {
-                warn!("blob excess gas price is zero, using default blob base fee");
-                return bump_gas_from_retries(
-                    retry_count,
-                    block_env.basefee,
-                    fallback_blob_basefee,
-                );
-            }
+    let base_fee_per_gas = match prev_header.base_fee_per_gas {
+        Some(basefee) => basefee,
+        None => fallback_basefee,
+    };
 
-            bump_gas_from_retries(retry_count, block_env.basefee, excess.blob_gasprice)
-        }
-        None => {
-            warn!("no blob excess gas and price in block env, using defaults");
-            bump_gas_from_retries(retry_count, block_env.basefee, fallback_blob_basefee)
-        }
-    }
+    let parent_blob_basefee = prev_header.excess_blob_gas.unwrap_or(0) as u128;
+    let blob_basefee = if parent_blob_basefee > 0 {
+        // Use the parent blob base fee if available
+        parent_blob_basefee
+    } else {
+        // Fallback to a default value if no blob base fee is set
+        fallback_blob_basefee   
+    };
+
+    bump_gas_from_retries(retry_count, base_fee_per_gas, blob_basefee as u128)
 }
 
 /// Bumps the gas parameters based on the retry count, base fee, and blob base fee.

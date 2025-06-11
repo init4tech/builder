@@ -7,7 +7,7 @@ async fn test_bundle_poller_roundtrip() {
 
     let config = setup_test_config().unwrap();
     let env_task = config.env_task();
-    let (mut env_watcher, _jh) = env_task.spawn();
+    let (mut env_watcher, _jh) = env_task.await.spawn();
 
     env_watcher.changed().await.unwrap();
     let env = env_watcher.borrow_and_update();

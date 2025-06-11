@@ -9,7 +9,7 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
 
     let config = setup_test_config().unwrap();
 
-    let (block_env, _jh) = config.env_task().spawn();
+    let (block_env, _jh) = config.env_task().await.spawn();
     let cache = config.spawn_cache_system(block_env);
 
     tokio::time::sleep(Duration::from_secs(12)).await;

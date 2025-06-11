@@ -1,14 +1,22 @@
 //! `block.rs` contains the Simulator and everything that wires it into an
 //! actor that handles the simulation of a stream of bundles and transactions
 //! and turns them into valid Pecorino blocks for network submission.
-use crate::config::{BuilderConfig, RuProvider};
-use alloy::{eips::BlockId, network::Ethereum, providers::Provider};
+use crate::{
+    config::{BuilderConfig, RuProvider},
+    tasks::env::SimEnv,
+};
+use alloy::{
+    eips::BlockId,
+    network::Ethereum,
+    providers::Provider,
+};
 use init4_bin_base::{
     deps::tracing::{debug, error},
     utils::calc::SlotCalculator,
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
+use tracing::info;
 use std::time::{Duration, Instant};
 use tokio::{
     sync::{
@@ -35,7 +43,7 @@ pub struct Simulator {
     /// A provider that cannot sign transactions, used for interacting with the rollup.
     pub ru_provider: RuProvider,
     /// The block configuration environment on which to simulate
-    pub block_env: watch::Receiver<Option<BlockEnv>>,
+    pub sim_env: watch::Receiver<Option<SimEnv>>,
 }
 
 /// SimResult bundles a BuiltBlock to the BlockEnv it was simulated against.
@@ -44,7 +52,7 @@ pub struct SimResult {
     /// The block built with the successfully simulated transactions
     pub block: BuiltBlock,
     /// The block environment the transactions were simulated against.
-    pub env: BlockEnv,
+    pub env: SimEnv,
 }
 
 impl Simulator {
@@ -62,9 +70,9 @@ impl Simulator {
     pub fn new(
         config: &BuilderConfig,
         ru_provider: RuProvider,
-        block_env: watch::Receiver<Option<BlockEnv>>,
+        sim_env: watch::Receiver<Option<SimEnv>>,
     ) -> Self {
-        Self { config: config.clone(), ru_provider, block_env }
+        Self { config: config.clone(), ru_provider, sim_env }
     }
 
     /// Get the slot calculator.
@@ -73,6 +81,10 @@ impl Simulator {
     }
 
     /// Handles building a single block.
+    ///
+    /// Builds a block in the block environment with items from the simulation cache
+    /// against the database state. When the `finish_by` deadline is reached, it 
+    /// stops simulating and returns the block. 
     ///
     /// # Arguments
     ///
@@ -93,7 +105,6 @@ impl Simulator {
     ) -> eyre::Result<BuiltBlock> {
         debug!(
             block_number = block_env.number,
-            ?finish_by,
             tx_count = sim_items.len(),
             "starting block build",
         );
@@ -114,15 +125,15 @@ impl Simulator {
         let built_block = block_build.build().await;
         debug!(
             tx_count = built_block.tx_count(),
-            block_number = ?built_block.block_number(),
+            block_number = built_block.block_number(),
             "block simulation completed",
         );
 
         Ok(built_block)
     }
 
-    /// Spawns the simulator task, which handles the setup and sets the deadline
-    /// for the each round of simulation.
+    /// Spawns the simulator task, which ticks along the simulation loop
+    /// as it receives block environments.
     ///
     /// # Arguments
     ///
@@ -144,14 +155,16 @@ impl Simulator {
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
 
-    /// Continuously runs the block simulation and submission loop.
+    /// This function runs indefinitely, waiting for the block environment to be set and checking 
+    /// if the current slot is valid before building a block and sending it along for to the submit channel.
     ///
-    /// This function clones the simulation cache, calculates a deadline for block building,
-    /// attempts to build a block using the latest cache and constants, and submits the built
-    /// block through the provided channel. If an error occurs during block building or submission,
-    /// it logs the error and continues the loop.
-    ///
-    /// This function runs indefinitely and never returns.
+    /// If it is authorized for the current slot, then the simulator task
+    /// - clones the simulation cache,
+    /// - calculates a deadline for block building,
+    /// - attempts to build a block using the latest cache and constants,
+    /// - then submits the built block through the provided channel.
+    /// 
+    /// If an error occurs during block building or submission, it logs the error and continues the loop.
     ///
     /// # Arguments
     ///
@@ -166,19 +179,23 @@ impl Simulator {
     ) {
         loop {
             // Wait for the block environment to be set
-            if self.block_env.changed().await.is_err() {
-                error!("block_env channel closed");
+            if self.sim_env.changed().await.is_err() {
+                error!("block_env channel closed - shutting down simulator task");
                 return;
             }
+            let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
+            info!(block_number = sim_env.signet.number, "new block environment received");
 
-            let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
-
+            // Calculate the deadline for this block simulation.
+            // NB: This must happen _after_ taking a reference to the sim cache,
+            // waiting for a new block, and checking current slot authorization.
             let finish_by = self.calculate_deadline();
             let sim_cache = cache.clone();
-            match self.handle_build(constants, sim_cache, finish_by, block_env.clone()).await {
+            match self.handle_build(constants, sim_cache, finish_by, sim_env.signet.clone()).await
+            {
                 Ok(block) => {
-                    debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built block");
-                    let _ = submit_sender.send(SimResult { block, env: block_env });
+                    debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
+                    let _ = submit_sender.send(SimResult { block, env: sim_env });
                 }
                 Err(e) => {
                     error!(err = %e, "failed to build block");

@@ -6,7 +6,8 @@ use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
-use trevm::revm::context::BlockEnv;
+
+use crate::tasks::env::SimEnv;
 
 /// Cache task for the block builder.
 ///
@@ -16,8 +17,7 @@ use trevm::revm::context::BlockEnv;
 #[derive(Debug)]
 pub struct CacheTask {
     /// The channel to receive the block environment.
-    env: watch::Receiver<Option<BlockEnv>>,
-
+    env: watch::Receiver<Option<SimEnv>>,
     /// The channel to receive the transaction bundles.
     bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
     /// The channel to receive the transactions.
@@ -27,7 +27,7 @@ pub struct CacheTask {
 impl CacheTask {
     /// Create a new cache task with the given cache and channels.
     pub const fn new(
-        env: watch::Receiver<Option<BlockEnv>>,
+        env: watch::Receiver<Option<SimEnv>>,
         bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
         txns: mpsc::UnboundedReceiver<TxEnvelope>,
     ) -> Self {
@@ -45,10 +45,10 @@ impl CacheTask {
                         break;
                     }
                     if let Some(env) = self.env.borrow_and_update().as_ref() {
-                        basefee = env.basefee;
-                        info!(basefee, number = env.number, timestamp = env.timestamp, "block env changed, clearing cache");
+                        basefee = env.signet.basefee;
+                        info!(basefee, env.signet.number, env.signet.timestamp, "rollup block env changed, clearing cache");
                         cache.clean(
-                            env.number, env.timestamp
+                            env.signet.number, env.signet.timestamp
                         );
                     }
                 }
