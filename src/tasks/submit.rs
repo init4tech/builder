@@ -552,10 +552,10 @@ fn calculate_gas(retry_count: usize, prev_header: Header) -> (u128, u128, u128) 
         parent_blob_basefee
     } else {
         // Fallback to a default value if no blob base fee is set
-        fallback_blob_basefee   
+        fallback_blob_basefee
     };
 
-    bump_gas_from_retries(retry_count, base_fee_per_gas, blob_basefee as u128)
+    bump_gas_from_retries(retry_count, base_fee_per_gas, blob_basefee)
 }
 
 /// Bumps the gas parameters based on the retry count, base fee, and blob base fee.

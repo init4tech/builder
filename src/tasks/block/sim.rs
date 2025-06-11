@@ -5,18 +5,13 @@ use crate::{
     config::{BuilderConfig, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::{
-    eips::BlockId,
-    network::Ethereum,
-    providers::Provider,
-};
+use alloy::{eips::BlockId, network::Ethereum, providers::Provider};
 use init4_bin_base::{
     deps::tracing::{debug, error},
     utils::calc::SlotCalculator,
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
-use tracing::info;
 use std::time::{Duration, Instant};
 use tokio::{
     sync::{
@@ -25,6 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use tracing::info;
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -83,8 +79,8 @@ impl Simulator {
     /// Handles building a single block.
     ///
     /// Builds a block in the block environment with items from the simulation cache
-    /// against the database state. When the `finish_by` deadline is reached, it 
-    /// stops simulating and returns the block. 
+    /// against the database state. When the `finish_by` deadline is reached, it
+    /// stops simulating and returns the block.
     ///
     /// # Arguments
     ///
@@ -103,11 +99,7 @@ impl Simulator {
         finish_by: Instant,
         block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
-        debug!(
-            block_number = block_env.number,
-            tx_count = sim_items.len(),
-            "starting block build",
-        );
+        debug!(block_number = block_env.number, tx_count = sim_items.len(), "starting block build",);
 
         let db = self.create_db().await.unwrap();
 
@@ -155,7 +147,7 @@ impl Simulator {
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
 
-    /// This function runs indefinitely, waiting for the block environment to be set and checking 
+    /// This function runs indefinitely, waiting for the block environment to be set and checking
     /// if the current slot is valid before building a block and sending it along for to the submit channel.
     ///
     /// If it is authorized for the current slot, then the simulator task
@@ -163,7 +155,7 @@ impl Simulator {
     /// - calculates a deadline for block building,
     /// - attempts to build a block using the latest cache and constants,
     /// - then submits the built block through the provided channel.
-    /// 
+    ///
     /// If an error occurs during block building or submission, it logs the error and continues the loop.
     ///
     /// # Arguments
@@ -191,8 +183,7 @@ impl Simulator {
             // waiting for a new block, and checking current slot authorization.
             let finish_by = self.calculate_deadline();
             let sim_cache = cache.clone();
-            match self.handle_build(constants, sim_cache, finish_by, sim_env.signet.clone()).await
-            {
+            match self.handle_build(constants, sim_cache, finish_by, sim_env.signet.clone()).await {
                 Ok(block) => {
                     debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
                     let _ = submit_sender.send(SimResult { block, env: sim_env });
