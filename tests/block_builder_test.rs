@@ -42,7 +42,7 @@ async fn test_handle_build() {
     // Create a rollup provider
     let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-    let block_env = config.env_task().spawn().0;
+    let block_env = config.env_task().await.spawn().0;
 
     let block_builder = Simulator::new(&config, ru_provider.clone(), block_env);
 

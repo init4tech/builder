@@ -22,7 +22,7 @@ async fn main() -> eyre::Result<()> {
     let constants = SignetSystemConstants::pecorino();
 
     // Spawn the EnvTask
-    let env_task = config.env_task();
+    let env_task = config.env_task().await;
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
