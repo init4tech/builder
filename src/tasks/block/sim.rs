@@ -12,6 +12,7 @@ use init4_bin_base::{
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
+use tracing::info;
 use std::time::{Duration, Instant};
 use tokio::{
     sync::{
@@ -20,7 +21,6 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::info;
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -48,7 +48,7 @@ pub struct SimResult {
     /// The block built with the successfully simulated transactions
     pub block: BuiltBlock,
     /// The block environment the transactions were simulated against.
-    pub env: BlockEnv,
+    pub env: SimEnv,
 }
 
 impl Simulator {
@@ -189,7 +189,7 @@ impl Simulator {
             {
                 Ok(block) => {
                     debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
-                    let _ = submit_sender.send(SimResult { block, env: sim_env.block_env });
+                    let _ = submit_sender.send(SimResult { block, env: sim_env });
                 }
                 Err(e) => {
                     error!(err = %e, "failed to build block");
