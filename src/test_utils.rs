@@ -45,6 +45,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             1740681556, // pecorino start timestamp as sane default
             0, 1,
         ),
+        block_confirmation_buffer: todo!(),
     };
     Ok(config)
 }
