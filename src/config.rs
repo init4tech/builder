@@ -132,13 +132,6 @@ pub struct BuilderConfig {
     )]
     pub builder_key: String,
 
-    /// Buffer in seconds in which the `submitBlock` transaction must confirm on the Host chain.
-    #[from_env(
-        var = "BLOCK_CONFIRMATION_BUFFER",
-        desc = "Buffer in seconds in which the `submitBlock` transaction must confirm on the Host chain"
-    )]
-    pub block_confirmation_buffer: u64,
-
     /// Address on Rollup to which Builder will receive user transaction fees.
     #[from_env(
         var = "BUILDER_REWARDS_ADDRESS",
