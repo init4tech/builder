@@ -103,15 +103,15 @@ impl SubmitTask {
             error!("receipts task gone");
         }
 
-        if let Err(e) = fut.await? {
+        if let Err(error) = fut.await? {
             // Detect and handle transaction underprice errors
-            if matches!(e, TransportError::ErrorResp(ref err) if err.code == -32603) {
+            if matches!(error, TransportError::ErrorResp(ref err) if err.code == -32603) {
                 debug!(tx_hash = ?tx.hash(), "underpriced transaction error - retrying tx with gas bump");
                 return Ok(ControlFlow::Retry);
             }
 
             // Unknown error, log and skip
-            error!(error = %e, "Primary tx broadcast failed");
+            error!(%error, "Primary tx broadcast failed");
             return Ok(ControlFlow::Skip);
         }
 
