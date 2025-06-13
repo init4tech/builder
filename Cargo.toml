@@ -25,13 +25,13 @@ path = "bin/submit_transaction.rs"
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.4.1", features = ["perms"] }
+init4-bin-base = { version = "0.4.2", features = ["perms"] }
 
-signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "ba5894f6fac35299d495ae115cd465a1f0791637" }
+signet-constants = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", branch = "main" }
 
 trevm = { version = "0.23.4", features = ["concurrent-db", "test-utils"] }
 
@@ -43,6 +43,7 @@ alloy = { version = "1.0.5", features = [
     "rlp",
     "node-bindings",
     "serde",
+    "getrandom"
 ] }
 
 serde = { version = "1.0.197", features = ["derive"] }
@@ -57,3 +58,4 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 oauth2 = "5"
 tokio-stream = "0.1.17"
 url = "2.5.4"
+tracing = "0.1.41"

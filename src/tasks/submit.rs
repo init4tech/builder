@@ -16,7 +16,7 @@ use alloy::{
 use eyre::bail;
 use init4_bin_base::deps::{
     metrics::{counter, histogram},
-    tracing::{self, Instrument, debug, debug_span, error, info, instrument, warn},
+    tracing::{Instrument, debug, debug_span, error, info, instrument, warn},
 };
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
@@ -221,7 +221,7 @@ impl SubmitTask {
 
         // Extract fills from the built block
         let fills = self.extract_fills(block);
-        debug!(?fills, "extracted fills");
+        debug!(fill_count = fills.len(), "extracted fills");
 
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self

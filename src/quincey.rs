@@ -1,7 +1,7 @@
 use alloy::signers::Signer;
 use eyre::bail;
 use init4_bin_base::{
-    deps::tracing::{self, debug, info, instrument, trace},
+    deps::tracing::{debug, info, instrument, trace},
     perms::SharedToken,
     utils::signer::LocalOrAws,
 };
