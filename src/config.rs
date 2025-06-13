@@ -245,7 +245,7 @@ impl BuilderConfig {
     }
 
     /// Create an [`EnvTask`] using this config.
-    pub async fn env_task(&self) -> EnvTask {
+    pub fn env_task(&self) -> EnvTask {
         let ru_provider = self.connect_ru_provider();
         EnvTask::new(self.clone(), ru_provider)
     }

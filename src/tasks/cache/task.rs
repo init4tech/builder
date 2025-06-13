@@ -6,7 +6,6 @@ use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
-
 use crate::tasks::env::SimEnv;
 
 /// Cache task for the block builder.
