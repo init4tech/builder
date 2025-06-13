@@ -1,7 +1,7 @@
-use crate::config::{BuilderConfig, HostProvider, RuProvider};
+use crate::config::{BuilderConfig, RuProvider};
 use alloy::{
     consensus::Header,
-    eips::{BlockId, BlockNumberOrTag, eip1559::BaseFeeParams},
+    eips::eip1559::BaseFeeParams,
     primitives::{B256, U256},
     providers::Provider,
 };
@@ -18,27 +18,21 @@ pub struct EnvTask {
     config: BuilderConfig,
     /// Rollup provider is used to get the latest rollup block header for simulation.
     ru_provider: RuProvider,
-    /// Host provider is used to get the previous block header for gas estimation.
-    host_provider: HostProvider,
 }
 
 /// Contains a signet BlockEnv and its corresponding host Header.
 #[derive(Debug, Clone)]
 pub struct SimEnv {
     /// The signet block environment, for rollup block simulation.
-    pub signet: BlockEnv,
-    /// The host environment header, for host transaction submission pricing.
-    pub host: Header,
+    pub block_env: BlockEnv,
+    /// The header of the previous rollup block.
+    pub prev_header: Header,
 }
 
 impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
-    pub const fn new(
-        config: BuilderConfig,
-        ru_provider: RuProvider,
-        host_provider: HostProvider,
-    ) -> Self {
-        Self { config, ru_provider, host_provider }
+    pub const fn new(config: BuilderConfig, ru_provider: RuProvider) -> Self {
+        Self { config, ru_provider }
     }
 
     /// Construct a [`BlockEnv`] by from the previous block header.
@@ -89,53 +83,32 @@ impl EnvTask {
                 info_span!("EnvTask::task_fut::loop", %block_hash, number = tracing::field::Empty);
 
             // Get the rollup header for rollup block simulation environment configuration
-            let rollup_header =
-                match self.get_latest_rollup_header(&sender, block_hash, &span).await {
-                    Some(value) => value,
-                    None => continue,
-                };
-            debug!(?rollup_header.number, "pulled rollup block for simulation");
-
-            // Get the host header for blob transaction submission gas pricing
-            let host_header = match self.get_host_header().await {
-                Ok(header) => header,
-                Err(_) => {
-                    error!("failed to get host header - skipping block");
+            let rollup_header = match self
+                .get_latest_rollup_header(&sender, block_hash, &span)
+                .await
+            {
+                Some(value) => value,
+                None => {
+                    // If we failed to get the rollup header, we skip this iteration.
+                    debug!(%block_hash, "failed to get rollup header - continuint to next block");
                     continue;
                 }
             };
-            debug!(?host_header.base_fee_per_gas, "pulled previous host header for gas calculation");
+            debug!(rollup_header.number, "pulled rollup block for simulation");
             span.record("rollup_block_number", rollup_header.number);
 
             // Construct the block env using the previous block header
-            let signet_env = self.construct_block_env(&host_header);
-            debug!(
-                block_number = signet_env.number,
-                signet_env.basefee, "constructed signet block env"
-            );
+            let signet_env = self.construct_block_env(&rollup_header);
+            debug!(signet_env.number, signet_env.basefee, "constructed signet block env");
 
-            if sender.send(Some(SimEnv { signet: signet_env, host: host_header })).is_err() {
+            if sender
+                .send(Some(SimEnv { block_env: signet_env, prev_header: rollup_header }))
+                .is_err()
+            {
                 // The receiver has been dropped, so we can stop the task.
                 debug!("receiver dropped, stopping task");
                 break;
             }
-        }
-    }
-
-    /// Gets the latest host [`Header`].
-    /// NB: This doesn't need to correlate perfectly with the rollup blocks,
-    /// since we only use the previous host block [`Header`] for gas estimation.
-    async fn get_host_header(&self) -> eyre::Result<Header> {
-        let previous = self
-            .host_provider
-            .get_block(BlockId::Number(BlockNumberOrTag::Latest))
-            .into_future()
-            .await?;
-        debug!(?previous, "got host block for hash");
-
-        match previous {
-            Some(block) => Ok(block.header.inner),
-            None => Err(eyre::eyre!("host block not found")),
         }
     }
 

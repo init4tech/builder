@@ -1,12 +1,11 @@
 use crate::{
     config::{HostProvider, ZenithInstance},
     quincey::Quincey,
-    tasks::env::SimEnv,
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::{Header, SimpleCoder, constants::GWEI_TO_WEI},
-    eips::BlockNumberOrTag,
+    consensus::{constants::GWEI_TO_WEI, Header, SimpleCoder},
+    eips::{BlockId, BlockNumberOrTag},
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Bytes, FixedBytes, TxHash, U256},
     providers::{Provider as _, SendableTx, WalletProvider},
@@ -196,6 +195,8 @@ pub struct SubmitTask {
     pub config: crate::config::BuilderConfig,
     /// Channel over which to send pending transactions
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
+    /// Host provider for sending transactions and fetching block & header info
+    pub host_provider: HostProvider,
 }
 
 impl SubmitTask {
@@ -241,9 +242,8 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        sim_env: &SimEnv,
     ) -> eyre::Result<ControlFlow> {
-        let tx = self.prepare_tx(retry_count, resp, block, sim_env).await?;
+        let tx = self.prepare_tx(retry_count, resp, block).await?;
 
         self.send_transaction(resp, tx).await
     }
@@ -255,10 +255,12 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        sim_env: &SimEnv,
     ) -> Result<TransactionRequest, eyre::Error> {
+        // Get the latest host block header for gas estimation
+        let host_header = self.latest_host_header().await?;
+
         // Create the transaction request with the signature values
-        let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block, sim_env).await?;
+        let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block, host_header).await?;
 
         // Simulate the transaction with a call to the host provider and report any errors
         if let Err(err) = self.sim_with_call(&tx).await {
@@ -266,6 +268,21 @@ impl SubmitTask {
         }
 
         Ok(tx)
+    }
+
+    /// Gets the host header from the host provider by fetching the latest block.
+    async fn latest_host_header(&self) -> eyre::Result<Header> {
+        let previous = self
+            .host_provider
+            .get_block(BlockId::Number(BlockNumberOrTag::Latest))
+            .into_future()
+            .await?;
+        debug!(?previous, "got host block for hash");
+
+        match previous {
+            Some(block) => Ok(block.header.inner),
+            None => Err(eyre::eyre!("host block not found")),
+        }
     }
 
     /// Simulates the transaction with a call to the host provider to check for reverts.
@@ -286,7 +303,7 @@ impl SubmitTask {
         retry_count: usize,
         resp: &SignResponse,
         block: &BuiltBlock,
-        sim_env: &SimEnv,
+        host_header: Header,
     ) -> Result<TransactionRequest, eyre::Error> {
         // manually retrieve nonce
         let nonce =
@@ -297,7 +314,7 @@ impl SubmitTask {
         let (v, r, s) = extract_signature_components(&resp.sig);
 
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            calculate_gas(retry_count, sim_env.host.clone());
+            calculate_gas(retry_count, host_header);
 
         // Build the block header
         let header: BlockHeader = BlockHeader {
@@ -379,7 +396,6 @@ impl SubmitTask {
         &self,
         retry_count: usize,
         block: &BuiltBlock,
-        sim_env: &SimEnv,
     ) -> eyre::Result<ControlFlow> {
         info!(retry_count, txns = block.tx_count(), "handling inbound block");
         let Ok(sig_request) = self.construct_sig_request(block).await.inspect_err(|e| {
@@ -397,14 +413,13 @@ impl SubmitTask {
 
         let signed = self.quincey.get_signature(&sig_request).await?;
 
-        self.submit_transaction(retry_count, &signed, block, sim_env).await
+        self.submit_transaction(retry_count, &signed, block).await
     }
 
     /// Handles the retry logic for the inbound block.
     async fn retrying_handle_inbound(
         &self,
         block: &BuiltBlock,
-        sim_env: &SimEnv,
         retry_limit: usize,
     ) -> eyre::Result<ControlFlow> {
         let mut retries = 0;
@@ -418,7 +433,7 @@ impl SubmitTask {
             let span = debug_span!("SubmitTask::retrying_handle_inbound", retries);
 
             let inbound_result =
-                match self.handle_inbound(retries, block, sim_env).instrument(span.clone()).await {
+                match self.handle_inbound(retries, block).instrument(span.clone()).await {
                     Ok(control_flow) => control_flow,
                     Err(err) => {
                         // Delay until next slot if we get a 403 error
@@ -520,7 +535,7 @@ impl SubmitTask {
             }
 
             if let Err(e) =
-                self.retrying_handle_inbound(&sim_result.block, &sim_result.env, 3).await
+                self.retrying_handle_inbound(&sim_result.block, 3).await
             {
                 error!(error = %e, "error handling inbound block");
                 continue;

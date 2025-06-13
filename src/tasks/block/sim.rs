@@ -176,14 +176,14 @@ impl Simulator {
                 return;
             }
             let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
-            info!(block_number = sim_env.signet.number, "new block environment received");
+            info!(sim_env.block_env.number, "new block environment received");
 
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,
             // waiting for a new block, and checking current slot authorization.
             let finish_by = self.calculate_deadline();
             let sim_cache = cache.clone();
-            match self.handle_build(constants, sim_cache, finish_by, sim_env.signet.clone()).await {
+            match self.handle_build(constants, sim_cache, finish_by, sim_env.block_env.clone()).await {
                 Ok(block) => {
                     debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
                     let _ = submit_sender.send(SimResult { block, env: sim_env });

@@ -247,9 +247,7 @@ impl BuilderConfig {
     /// Create an [`EnvTask`] using this config.
     pub async fn env_task(&self) -> EnvTask {
         let ru_provider = self.connect_ru_provider();
-        let host_provider =
-            self.connect_host_provider().await.expect("failed to configure host provider");
-        EnvTask::new(self.clone(), ru_provider, host_provider)
+        EnvTask::new(self.clone(), ru_provider)
     }
 
     /// Spawn a new [`CacheSystem`] using this config. This contains the
