@@ -183,7 +183,10 @@ impl Simulator {
             // waiting for a new block, and checking current slot authorization.
             let finish_by = self.calculate_deadline();
             let sim_cache = cache.clone();
-            match self.handle_build(constants, sim_cache, finish_by, sim_env.block_env.clone()).await {
+            match self
+                .handle_build(constants, sim_cache, finish_by, sim_env.block_env.clone())
+                .await
+            {
                 Ok(block) => {
                     debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
                     let _ = submit_sender.send(SimResult { block, env: sim_env });

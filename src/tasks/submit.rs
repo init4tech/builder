@@ -4,7 +4,7 @@ use crate::{
     utils::extract_signature_components,
 };
 use alloy::{
-    consensus::{constants::GWEI_TO_WEI, Header, SimpleCoder},
+    consensus::{Header, SimpleCoder, constants::GWEI_TO_WEI},
     eips::{BlockId, BlockNumberOrTag},
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Bytes, FixedBytes, TxHash, U256},
@@ -260,7 +260,8 @@ impl SubmitTask {
         let host_header = self.latest_host_header().await?;
 
         // Create the transaction request with the signature values
-        let tx: TransactionRequest = self.new_tx_request(retry_count, resp, block, host_header).await?;
+        let tx: TransactionRequest =
+            self.new_tx_request(retry_count, resp, block, host_header).await?;
 
         // Simulate the transaction with a call to the host provider and report any errors
         if let Err(err) = self.sim_with_call(&tx).await {
@@ -534,9 +535,7 @@ impl SubmitTask {
                 continue;
             }
 
-            if let Err(e) =
-                self.retrying_handle_inbound(&sim_result.block, 3).await
-            {
+            if let Err(e) = self.retrying_handle_inbound(&sim_result.block, 3).await {
                 error!(error = %e, "error handling inbound block");
                 continue;
             }
