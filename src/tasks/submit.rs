@@ -2,7 +2,7 @@ use crate::tasks::block::sim::SimResult;
 use crate::{
     config::{HostProvider, ZenithInstance},
     quincey::Quincey,
-    utils::extract_signature_components,
+    utils::{self, extract_signature_components},
 };
 use alloy::{
     consensus::{Header, SimpleCoder, constants::GWEI_TO_WEI},
@@ -17,15 +17,16 @@ use alloy::{
 use eyre::bail;
 use init4_bin_base::deps::{
     metrics::{counter, histogram},
-    tracing::{Instrument, debug, debug_span, error, info, instrument, warn},
+    tracing::{Instrument, debug, debug_span, error, info, instrument, trace, warn},
 };
+use signet_constants::SignetSystemConstants;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::{
     BundleHelper::{self, BlockHeader, FillPermit2, submitCall},
     Zenith::{self, IncorrectHostBlock},
 };
-use std::time::{Instant, UNIX_EPOCH};
+use std::time::Instant;
 use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
@@ -190,6 +191,8 @@ pub struct SubmitTask {
     pub zenith: ZenithInstance,
     /// Quincey
     pub quincey: Quincey,
+    /// Constants
+    pub constants: SignetSystemConstants,
     /// Config
     pub config: crate::config::BuilderConfig,
     /// Channel over which to send pending transactions
@@ -206,16 +209,18 @@ impl SubmitTask {
 
     /// Constructs the signing request from the in-progress block passed to it and assigns the
     /// correct height, chain ID, gas limit, and rollup reward address.
-    #[instrument(skip_all)]
-    async fn construct_sig_request(&self, contents: &BuiltBlock) -> eyre::Result<SignRequest> {
-        Ok(SignRequest {
-            host_block_number: U256::from(self.next_host_block_height().await?),
+    fn construct_sig_request(&self, contents: &BuiltBlock) -> SignRequest {
+        let host_block_number =
+            self.constants.rollup_block_to_host_block_num(contents.block_number());
+
+        SignRequest {
+            host_block_number: U256::from(host_block_number),
             host_chain_id: U256::from(self.config.host_chain_id),
             ru_chain_id: U256::from(self.config.ru_chain_id),
             gas_limit: U256::from(self.config.rollup_block_gas_limit),
             ru_reward_address: self.config.builder_rewards_address,
             contents: *contents.contents_hash(),
-        })
+        }
     }
 
     /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
@@ -327,7 +332,7 @@ impl SubmitTask {
         debug!(?header.hostBlockNumber, "built rollup block header");
 
         // Extract fills from the built block
-        let fills = self.extract_fills(block);
+        let fills = utils::convert_fills(block);
         debug!(fill_count = fills.len(), "extracted fills from rollup block");
 
         // Create a blob transaction with the blob header and signature values and return it
@@ -398,11 +403,7 @@ impl SubmitTask {
         block: &BuiltBlock,
     ) -> eyre::Result<ControlFlow> {
         info!(retry_count, txns = block.tx_count(), "handling inbound block");
-        let Ok(sig_request) = self.construct_sig_request(block).await.inspect_err(|e| {
-            error!(error = %e, "error constructing signature request");
-        }) else {
-            return Ok(ControlFlow::Skip);
-        };
+        let sig_request = self.construct_sig_request(block);
 
         debug!(
             host_block_number = %sig_request.host_block_number,
@@ -492,27 +493,10 @@ impl SubmitTask {
 
     /// Calculates and returns the slot number and its start and end timestamps for the current instant.
     fn calculate_slot_window(&self) -> (u64, u64, u64) {
-        let now_ts = self.now();
+        let now_ts = utils::now();
         let current_slot = self.config.slot_calculator.calculate_slot(now_ts);
         let (start, end) = self.config.slot_calculator.calculate_slot_window(current_slot);
         (current_slot, start, end)
-    }
-
-    /// Returns the current timestamp in seconds since the UNIX epoch.
-    fn now(&self) -> u64 {
-        let now = std::time::SystemTime::now();
-        now.duration_since(UNIX_EPOCH).unwrap().as_secs()
-    }
-
-    /// Returns the next host block height.
-    async fn next_host_block_height(&self) -> eyre::Result<u64> {
-        let block_num = self.provider().get_block_number().await?;
-        Ok(block_num + 1)
-    }
-
-    // This function converts &[SignedFill] into [FillPermit2]
-    fn extract_fills(&self, block: &BuiltBlock) -> Vec<FillPermit2> {
-        block.host_fills().iter().map(FillPermit2::from).collect()
     }
 
     /// Task future for the submit task. This function runs the main loop of the task.
@@ -589,7 +573,7 @@ pub fn bump_gas_from_retries(
     let max_fee_per_gas = (basefee as u128) * BASE_MULTIPLIER + (priority_fee as u128);
     let max_fee_per_blob_gas = blob_basefee * BLOB_MULTIPLIER * (retry_count as u128 + 1);
 
-    debug!(
+    trace!(
         retry_count,
         max_fee_per_gas, priority_fee, max_fee_per_blob_gas, "calculated bumped gas parameters"
     );
