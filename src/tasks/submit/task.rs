@@ -130,9 +130,9 @@ impl SubmitTask {
         retry_limit: usize,
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
-
-        let (current_slot, start, end) = self.calculate_slot_window();
-        debug!(current_slot, start, end, "calculating target slot window");
+        let now = utils::now();
+        let (initial_slot, start, end) = self.calculate_slot_window();
+        debug!(initial_slot, start, end, now, "calculating target slot window");
 
         let mut req = bumpable.req().clone();
 
@@ -147,6 +147,9 @@ impl SubmitTask {
             let inbound_result = match self.send_transaction(req).instrument(span.clone()).await {
                 Ok(control_flow) => control_flow,
                 Err(error) => {
+                    if let Some(value) = self.slot_still_valid(initial_slot) {
+                        return value;
+                    }
                     // Log error and retry
                     error!(%error, "error handling inbound block");
                     ControlFlow::Retry
@@ -157,6 +160,9 @@ impl SubmitTask {
 
             match inbound_result {
                 ControlFlow::Retry => {
+                    if let Some(value) = self.slot_still_valid(initial_slot) {
+                        return value;
+                    }
                     // bump the req
                     req = bumpable.bumped();
                     if bumpable.bump_count() > retry_limit {
@@ -190,6 +196,19 @@ impl SubmitTask {
             "finished block submitting"
         );
         Ok(result)
+    }
+
+    /// Checks if a slot is still valid during submission retries.
+    fn slot_still_valid(&self, initial_slot: u64) -> Option<Result<ControlFlow, eyre::Error>> {
+        let (current_slot, _, _) = self.calculate_slot_window();
+        if current_slot != initial_slot {
+            // If the slot has changed, skip the block
+            debug!(current_slot, initial_slot, "slot changed before submission - skipping block");
+            counter!("builder.slot_missed").increment(1);
+            return Some(Ok(ControlFlow::Skip));
+        }
+        debug!(current_slot, "slot still valid - continuing submission");
+        None
     }
 
     /// Calculates and returns the slot number and its start and end timestamps for the current instant.
@@ -266,6 +285,12 @@ impl SubmitTask {
             {
                 Ok(bumpable) => bumpable,
                 Err(error) => {
+                    if error.to_string().contains("403 Forbidden") {
+                        // Don't error as this is expected behavior
+                        warn!(%error, "403 Forbidden detected - skipping block");
+                        continue
+                    }
+
                     error!(%error, "failed to prepare transaction for submission");
                     continue;
                 }
