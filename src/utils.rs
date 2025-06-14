@@ -7,6 +7,7 @@ use alloy::{
 use signet_sim::BuiltBlock;
 use signet_zenith::BundleHelper::FillPermit2;
 use std::time::UNIX_EPOCH;
+use tracing::debug;
 
 /// Returns the current timestamp in seconds since the UNIX epoch.
 pub(crate) fn now() -> u64 {
@@ -40,14 +41,11 @@ pub fn populate_initial_gas(req: &mut TransactionRequest, prev_header: &Header) 
     let base_fee_per_gas = prev_header
         .next_block_base_fee(BaseFeeParams::ethereum())
         .expect("signet deployed after 1559 active") as u128;
-
-    let blob_basefee = prev_header
-        .next_block_blob_fee(BlobParams::prague())
-        .expect("signet deployed after 4844 active");
+    let blob_basefee = prev_header.next_block_blob_fee(BlobParams::prague());
 
     req.max_priority_fee_per_gas = Some(STARTING_MPFPG);
     req.max_fee_per_gas = Some((base_fee_per_gas * 1025 / 1024) + STARTING_MPFPG);
-    req.max_fee_per_blob_gas = Some(blob_basefee);
+    req.max_fee_per_blob_gas = Some(blob_basefee.unwrap_or(BlobParams::prague().min_blob_fee));
 }
 
 #[cfg(test)]
