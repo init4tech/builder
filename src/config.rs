@@ -51,6 +51,10 @@ pub type HostProvider = FillProvider<
     RootProvider,
 >;
 
+/// The default concurrency limit for the builder if the system call
+/// fails and no user-specified value is set.
+pub const DEFAULT_CONCURRENCY_LIMIT: usize = 8;
+
 /// Configuration for a builder running a specific rollup on a specific host
 /// chain.
 #[derive(Debug, Clone, FromEnv)]
@@ -152,7 +156,7 @@ pub struct BuilderConfig {
         var = "CONCURRENCY_LIMIT",
         desc = "The max number of simultaneous block simulations to run"
     )]
-    pub concurrency_limit: usize,
+    pub concurrency_limit: Option<usize>,
 
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
@@ -275,5 +279,23 @@ impl BuilderConfig {
     /// Create a [`SignetCfgEnv`] using this config.
     pub const fn cfg_env(&self) -> SignetCfgEnv {
         SignetCfgEnv { chain_id: self.ru_chain_id }
+    }
+
+    /// Memoizes the concurrency limit for the current system. Uses [`std::thread::available_parallelism`] if no
+    /// value is set. If that for some reason fails, it returns the default concurrency limit.
+    pub fn concurrency_limit(&self) -> usize {
+        static ONCE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+        if let Some(limit) = self.concurrency_limit {
+            if limit > 0 {
+                return limit;
+            }
+        }
+
+        *ONCE.get_or_init(|| {
+            std::thread::available_parallelism()
+                .map(|p| p.get())
+                .unwrap_or(DEFAULT_CONCURRENCY_LIMIT)
+        })
     }
 }
