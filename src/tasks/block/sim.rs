@@ -100,6 +100,7 @@ impl Simulator {
         block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
         debug!(block_number = block_env.number, tx_count = sim_items.len(), "starting block build",);
+        let concurrency_limit = self.config.concurrency_limit();
 
         let db = self.create_db().await.unwrap();
 
@@ -109,7 +110,7 @@ impl Simulator {
             self.config.cfg_env(),
             block_env,
             finish_by,
-            self.config.concurrency_limit,
+            concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
         );
