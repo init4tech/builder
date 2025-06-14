@@ -288,7 +288,7 @@ impl SubmitTask {
                     if error.to_string().contains("403 Forbidden") {
                         // Don't error as this is expected behavior
                         warn!(%error, "403 Forbidden detected - skipping block");
-                        continue
+                        continue;
                     }
 
                     error!(%error, "failed to prepare transaction for submission");
