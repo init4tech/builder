@@ -7,7 +7,6 @@ use alloy::{
 use signet_sim::BuiltBlock;
 use signet_zenith::BundleHelper::FillPermit2;
 use std::time::UNIX_EPOCH;
-use tracing::debug;
 
 /// Returns the current timestamp in seconds since the UNIX epoch.
 pub(crate) fn now() -> u64 {
