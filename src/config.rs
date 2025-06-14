@@ -55,20 +55,33 @@ pub type HostProvider = FillProvider<
 /// chain.
 #[derive(Debug, Clone, FromEnv)]
 pub struct BuilderConfig {
-    /// The chain ID of the host chain
+    /// The chain ID of the host chain.
     #[from_env(var = "HOST_CHAIN_ID", desc = "The chain ID of the host chain")]
     pub host_chain_id: u64,
-    /// The chain ID of the rollup chain
+
+    /// The chain ID of the rollup chain.
     #[from_env(var = "RU_CHAIN_ID", desc = "The chain ID of the rollup chain")]
     pub ru_chain_id: u64,
+
     /// URL for Host RPC node.
     #[from_env(var = "HOST_RPC_URL", desc = "URL for Host RPC node", infallible)]
     pub host_rpc_url: Cow<'static, str>,
+
     /// URL for the Rollup RPC node.
     #[from_env(var = "ROLLUP_RPC_URL", desc = "URL for Rollup RPC node", infallible)]
     pub ru_rpc_url: Cow<'static, str>,
-    /// Additional RPC URLs to which to broadcast transactions.
-    /// NOTE: should not include the host_rpc_url value
+
+    /// URL of the tx pool to poll for incoming transactions.
+    #[from_env(
+        var = "TX_POOL_URL",
+        desc = "URL of the tx pool to poll for incoming transactions",
+        infallible
+    )]
+    pub tx_pool_url: Cow<'static, str>,
+
+    /// Additional RPC URLs to which the builder should broadcast transactions.
+    /// * Should not include the `HOST_RPC_URL` value, as that is already sent to by default.
+    /// * Setting this can incur `already known` errors.
     #[from_env(
         var = "TX_BROADCAST_URLS",
         desc = "Additional RPC URLs to which the builder broadcasts transactions",
@@ -76,26 +89,31 @@ pub struct BuilderConfig {
         optional
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
-    /// address of the Zenith contract on Host.
+
+    /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
     pub zenith_address: Address,
-    /// address of the Builder Helper contract on Host.
+
+    /// Address of the Builder Helper contract on Host.
     #[from_env(
         var = "BUILDER_HELPER_ADDRESS",
         desc = "address of the Builder Helper contract on Host"
     )]
     pub builder_helper_address: Address,
+
     /// URL for remote Quincey Sequencer server to sign blocks.
-    /// Disregarded if a sequencer_signer is configured.
+    /// NB: Disregarded if a sequencer_signer is configured.
     #[from_env(
         var = "QUINCEY_URL",
         desc = "URL for remote Quincey Sequencer server to sign blocks",
         infallible
     )]
     pub quincey_url: Cow<'static, str>,
+
     /// Port for the Builder server.
     #[from_env(var = "BUILDER_PORT", desc = "Port for the Builder server")]
     pub builder_port: u16,
+
     /// Key to access Sequencer Wallet - AWS Key ID _OR_ local private key.
     /// Set IFF using local Sequencer signing instead of remote Quincey signing.
     #[from_env(
@@ -105,6 +123,7 @@ pub struct BuilderConfig {
         optional
     )]
     pub sequencer_key: Option<String>,
+
     /// Key to access Builder transaction submission wallet - AWS Key ID _OR_ local private key.
     #[from_env(
         var = "BUILDER_KEY",
@@ -112,12 +131,6 @@ pub struct BuilderConfig {
         infallible
     )]
     pub builder_key: String,
-    /// Buffer in seconds in which the `submitBlock` transaction must confirm on the Host chain.
-    #[from_env(
-        var = "BLOCK_CONFIRMATION_BUFFER",
-        desc = "Buffer in seconds in which the `submitBlock` transaction must confirm on the Host chain"
-    )]
-    pub block_confirmation_buffer: u64,
 
     /// Address on Rollup to which Builder will receive user transaction fees.
     #[from_env(
@@ -125,23 +138,11 @@ pub struct BuilderConfig {
         desc = "Address on Rollup to which Builder will receive user transaction fees"
     )]
     pub builder_rewards_address: Address,
+
     /// Gas limit for RU block.
     /// NOTE: a "smart" builder would determine this programmatically by simulating the block.
     #[from_env(var = "ROLLUP_BLOCK_GAS_LIMIT", desc = "Gas limit for RU block")]
     pub rollup_block_gas_limit: u64,
-    /// URL of the tx pool to poll for incoming transactions.
-    #[from_env(
-        var = "TX_POOL_URL",
-        desc = "URL of the tx pool to poll for incoming transactions",
-        infallible
-    )]
-    pub tx_pool_url: Cow<'static, str>,
-    /// Duration in seconds transactions can live in the tx-pool cache.
-    #[from_env(
-        var = "TX_POOL_CACHE_DURATION",
-        desc = "Duration in seconds transactions can live in the tx-pool cache"
-    )]
-    pub tx_pool_cache_duration: u64,
 
     /// Oauth2 configuration for the builder to connect to init4 services.
     pub oauth: OAuthConfig,

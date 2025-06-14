@@ -29,11 +29,9 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         builder_port: 8080,
         sequencer_key: None,
         builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
-        block_confirmation_buffer: 1,
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".into(),
-        tx_pool_cache_duration: 5,
         oauth: OAuthConfig {
             oauth_client_id: "some_client_id".into(),
             oauth_client_secret: "some_client_secret".into(),
