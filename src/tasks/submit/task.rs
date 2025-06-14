@@ -236,14 +236,17 @@ impl SubmitTask {
                 self.config.clone(),
                 self.constants,
             );
-            let bumpable =
-                match prep.prep_transaction(&sim_result.env.prev_header).instrument(span.clone()).await {
-                    Ok(bumpable) => bumpable,
-                    Err(error) => {
-                        error!(%error, "failed to prepare transaction for submission");
-                        continue;
-                    }
-                };
+            let bumpable = match prep
+                .prep_transaction(&sim_result.env.prev_header)
+                .instrument(span.clone())
+                .await
+            {
+                Ok(bumpable) => bumpable,
+                Err(error) => {
+                    error!(%error, "failed to prepare transaction for submission");
+                    continue;
+                }
+            };
 
             // Simulate the transaction to check for reverts
             if let Err(error) = self.sim_with_call(bumpable.req()).instrument(span.clone()).await {
