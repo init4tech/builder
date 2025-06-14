@@ -58,19 +58,19 @@ pub struct BuilderConfig {
     /// The chain ID of the host chain.
     #[from_env(var = "HOST_CHAIN_ID", desc = "The chain ID of the host chain")]
     pub host_chain_id: u64,
-    
+
     /// The chain ID of the rollup chain.
     #[from_env(var = "RU_CHAIN_ID", desc = "The chain ID of the rollup chain")]
     pub ru_chain_id: u64,
-    
+
     /// URL for Host RPC node.
     #[from_env(var = "HOST_RPC_URL", desc = "URL for Host RPC node", infallible)]
     pub host_rpc_url: Cow<'static, str>,
-    
+
     /// URL for the Rollup RPC node.
     #[from_env(var = "ROLLUP_RPC_URL", desc = "URL for Rollup RPC node", infallible)]
     pub ru_rpc_url: Cow<'static, str>,
-    
+
     /// URL of the tx pool to poll for incoming transactions.
     #[from_env(
         var = "TX_POOL_URL",
@@ -89,18 +89,18 @@ pub struct BuilderConfig {
         optional
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
-    
+
     /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
     pub zenith_address: Address,
-    
+
     /// Address of the Builder Helper contract on Host.
     #[from_env(
         var = "BUILDER_HELPER_ADDRESS",
         desc = "address of the Builder Helper contract on Host"
     )]
     pub builder_helper_address: Address,
-    
+
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
     #[from_env(
@@ -113,7 +113,7 @@ pub struct BuilderConfig {
     /// Port for the Builder server.
     #[from_env(var = "BUILDER_PORT", desc = "Port for the Builder server")]
     pub builder_port: u16,
-    
+
     /// Key to access Sequencer Wallet - AWS Key ID _OR_ local private key.
     /// Set IFF using local Sequencer signing instead of remote Quincey signing.
     #[from_env(
@@ -138,7 +138,7 @@ pub struct BuilderConfig {
         desc = "Address on Rollup to which Builder will receive user transaction fees"
     )]
     pub builder_rewards_address: Address,
-    
+
     /// Gas limit for RU block.
     /// NOTE: a "smart" builder would determine this programmatically by simulating the block.
     #[from_env(var = "ROLLUP_BLOCK_GAS_LIMIT", desc = "Gas limit for RU block")]
