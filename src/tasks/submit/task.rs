@@ -220,7 +220,7 @@ impl SubmitTask {
             }
 
             // Prep the span we'll use for the transaction submission
-            let hbn = sim_result.env.host.number;
+            let hbn = sim_result.env.block_env.number;
             let span = debug_span!(
                 "SubmitTask::tx_submission",
                 tx_count = sim_result.block.tx_count(),
@@ -237,7 +237,7 @@ impl SubmitTask {
                 self.constants,
             );
             let bumpable =
-                match prep.prep_transaction(&sim_result.env.host).instrument(span.clone()).await {
+                match prep.prep_transaction(&sim_result.env.prev_header).instrument(span.clone()).await {
                     Ok(bumpable) => bumpable,
                     Err(error) => {
                         error!(%error, "failed to prepare transaction for submission");
