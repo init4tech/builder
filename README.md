@@ -40,7 +40,6 @@ flowchart TD
     A2_BuilderConfig -.host_provider.-> MetricsTaskActor
     A2_BuilderConfig -.host_provider.->SubmitTaskActor
     A2_BuilderConfig -.ru_provider.-> SimulatorTaskActor
-    A2_BuilderConfig -.host_provider.-> EnvTaskActor
     A2_BuilderConfig -.ru_provider.-> EnvTaskActor
 
     A3["📥 Transactions &
