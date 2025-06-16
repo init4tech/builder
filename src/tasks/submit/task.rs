@@ -146,17 +146,18 @@ impl SubmitTask {
         let result = loop {
             debug!(retries = bumpable.bump_count(), nonce = ?req.nonce, "attempting transaction send");
 
-            let inbound_result = match self.send_transaction(req.clone()).await {
-                Ok(control_flow) => control_flow,
-                Err(error) => {
-                    if let Some(value) = self.slot_still_valid(expected_slot) {
-                        return value;
+            let inbound_result =
+                match self.send_transaction(req.clone()).instrument(span.clone()).await {
+                    Ok(control_flow) => control_flow,
+                    Err(error) => {
+                        if let Some(value) = self.slot_still_valid(expected_slot) {
+                            return value;
+                        }
+                        // Log error and retry
+                        error!(%error, "error handling inbound block");
+                        ControlFlow::Retry
                     }
-                    // Log error and retry
-                    error!(%error, "error handling inbound block");
-                    ControlFlow::Retry
-                }
-            };
+                };
 
             match inbound_result {
                 ControlFlow::Retry => {
