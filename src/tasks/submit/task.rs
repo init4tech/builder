@@ -208,24 +208,45 @@ impl SubmitTask {
                 debug!("upstream task gone - exiting submit task");
                 break;
             };
-            debug!(block_number = sim_result.block.block_number(), "submit channel received block");
+            let ru_block_number = sim_result.block.block_number();
+            let host_block_number = self.constants.rollup_block_to_host_block_num(ru_block_number);
+
+            let span = debug_span!(
+                "SubmitTask::loop",
+                ru_block_number,
+                host_block_number,
+                block_tx_count = sim_result.block.tx_count(),
+            );
+            let guard = span.enter();
+
+            debug!(ru_block_number, "submit channel received block");
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
-                debug!(
-                    block_number = sim_result.block.block_number(),
-                    "received empty block - skipping"
-                );
+                debug!(ru_block_number, "received empty block - skipping");
                 continue;
             }
 
+            drop(guard);
+
+            let Ok(Some(prev_host)) = self
+                .provider()
+                .get_block_by_number(host_block_number.into())
+                .into_future()
+                .instrument(span.clone())
+                .await
+            else {
+                let _guard = span.enter();
+                warn!(ru_block_number, host_block_number, "failed to get previous host block");
+                continue;
+            };
+
             // Prep the span we'll use for the transaction submission
-            let hbn = sim_result.env.block_env.number;
             let span = debug_span!(
                 "SubmitTask::tx_submission",
                 tx_count = sim_result.block.tx_count(),
-                host_block_number = hbn,
-                rollup_block_number = self.constants.host_block_to_rollup_block_num(hbn),
+                host_block_number,
+                ru_block_number,
             );
 
             // Prepare the transaction request for submission
@@ -236,17 +257,14 @@ impl SubmitTask {
                 self.config.clone(),
                 self.constants,
             );
-            let bumpable = match prep
-                .prep_transaction(&sim_result.env.prev_header)
-                .instrument(span.clone())
-                .await
-            {
-                Ok(bumpable) => bumpable,
-                Err(error) => {
-                    error!(%error, "failed to prepare transaction for submission");
-                    continue;
-                }
-            };
+            let bumpable =
+                match prep.prep_transaction(&prev_host.header).instrument(span.clone()).await {
+                    Ok(bumpable) => bumpable,
+                    Err(error) => {
+                        error!(%error, "failed to prepare transaction for submission");
+                        continue;
+                    }
+                };
 
             // Simulate the transaction to check for reverts
             if let Err(error) = self.sim_with_call(bumpable.req()).instrument(span.clone()).await {
