@@ -227,6 +227,7 @@ impl SubmitTask {
                 continue;
             }
 
+            // drop guard before await
             drop(guard);
 
             let Ok(Some(prev_host)) = self
@@ -242,7 +243,8 @@ impl SubmitTask {
             };
 
             // Prep the span we'll use for the transaction submission
-            let span = debug_span!(
+            let submission_span = debug_span!(
+                parent: span,
                 "SubmitTask::tx_submission",
                 tx_count = sim_result.block.tx_count(),
                 host_block_number,
@@ -257,23 +259,30 @@ impl SubmitTask {
                 self.config.clone(),
                 self.constants,
             );
-            let bumpable =
-                match prep.prep_transaction(&prev_host.header).instrument(span.clone()).await {
-                    Ok(bumpable) => bumpable,
-                    Err(error) => {
-                        error!(%error, "failed to prepare transaction for submission");
-                        continue;
-                    }
-                };
+            let bumpable = match prep
+                .prep_transaction(&prev_host.header)
+                .instrument(submission_span.clone())
+                .await
+            {
+                Ok(bumpable) => bumpable,
+                Err(error) => {
+                    error!(%error, "failed to prepare transaction for submission");
+                    continue;
+                }
+            };
 
             // Simulate the transaction to check for reverts
-            if let Err(error) = self.sim_with_call(bumpable.req()).instrument(span.clone()).await {
+            if let Err(error) =
+                self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
+            {
                 error!(%error, "simulation failed for transaction");
                 continue;
             };
 
             // Now send the transaction
-            if let Err(error) = self.retrying_send(bumpable, 3).instrument(span.clone()).await {
+            if let Err(error) =
+                self.retrying_send(bumpable, 3).instrument(submission_span.clone()).await
+            {
                 error!(%error, "error dispatching block to host chain");
                 continue;
             }
