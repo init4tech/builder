@@ -40,7 +40,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             oauth_token_refresh_interval: 300, // 5 minutes
         },
         builder_helper_address: Address::default(),
-        concurrency_limit: 1000,
+        concurrency_limit: None, // NB: Defaults to available parallelism
         slot_calculator: SlotCalculator::new(
             1740681556, // pecorino start timestamp as sane default
             0, 1,
