@@ -1,4 +1,18 @@
 use alloy::primitives::{B256, Signature};
+use signet_sim::BuiltBlock;
+use signet_zenith::BundleHelper::FillPermit2;
+use std::time::UNIX_EPOCH;
+
+/// Returns the current timestamp in seconds since the UNIX epoch.
+pub(crate) fn now() -> u64 {
+    let now = std::time::SystemTime::now();
+    now.duration_since(UNIX_EPOCH).unwrap().as_secs()
+}
+
+// This function converts &[SignedFill] into [FillPermit2]
+pub(crate) fn convert_fills(block: &BuiltBlock) -> Vec<FillPermit2> {
+    block.host_fills().iter().map(FillPermit2::from).collect()
+}
 
 /// Extracts the components of a signature.
 /// Currently alloy has no function for extracting the components of a signature.
