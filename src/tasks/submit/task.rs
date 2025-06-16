@@ -17,11 +17,12 @@ use alloy::{
 use eyre::bail;
 use init4_bin_base::deps::{
     metrics::{counter, histogram},
-    tracing::{Instrument, debug, debug_span, error, info, warn},
+    tracing::{debug, debug_span, error, info, warn},
 };
 use signet_constants::SignetSystemConstants;
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::Instrument;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -130,21 +131,22 @@ impl SubmitTask {
         retry_limit: usize,
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
-        let now = utils::now();
         let (expected_slot, start, end) = self.calculate_slot_window();
-        debug!(expected_slot, start, end, now, "calculating target slot window");
+        debug!(expected_slot, start, end, "calculating target slot window");
 
         let mut req = bumpable.req().clone();
 
+        let span = debug_span!(
+            "SubmitTask::retrying_send",
+            initial_nonce = ?bumpable.req().nonce,
+        );
+        let _guard = span.enter();
+
         // Retry loop
         let result = loop {
-            let span = debug_span!(
-                "SubmitTask::retrying_send",
-                retries = bumpable.bump_count(),
-                nonce = bumpable.req().nonce,
-            );
+            debug!(retries = bumpable.bump_count(), nonce = ?req.nonce, "attempting transaction send");
 
-            let inbound_result = match self.send_transaction(req).instrument(span.clone()).await {
+            let inbound_result = match self.send_transaction(req.clone()).await {
                 Ok(control_flow) => control_flow,
                 Err(error) => {
                     if let Some(value) = self.slot_still_valid(expected_slot) {
@@ -155,8 +157,6 @@ impl SubmitTask {
                     ControlFlow::Retry
                 }
             };
-
-            let guard = span.entered();
 
             match inbound_result {
                 ControlFlow::Retry => {
@@ -170,7 +170,6 @@ impl SubmitTask {
                         debug!("retries exceeded - skipping block");
                         return Ok(ControlFlow::Skip);
                     }
-                    drop(guard);
                     debug!(retries = bumpable.bump_count(), start, end, "retrying block");
                     continue;
                 }
@@ -230,44 +229,37 @@ impl SubmitTask {
             let ru_block_number = sim_result.block.block_number();
             let host_block_number = self.constants.rollup_block_to_host_block_num(ru_block_number);
 
-            let span = debug_span!(
-                "SubmitTask::loop",
-                ru_block_number,
-                host_block_number,
-                block_tx_count = sim_result.block.tx_count(),
-            );
-            let guard = span.enter();
-
-            debug!(ru_block_number, "submit channel received block");
-
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
                 debug!(ru_block_number, "received empty block - skipping");
                 continue;
             }
 
-            // drop guard before await
-            drop(guard);
+            // Create a span for the entire block processing operation
+            let span = debug_span!(
+                "SubmitTask::loop",
+                ru_block_number,
+                host_block_number,
+                block_tx_count = sim_result.block.tx_count(),
+            );
+            let _guard = span.enter();
+            debug!(ru_block_number, "submit channel received block");
 
+            let prev_host_number = host_block_number - 1;
             let Ok(Some(prev_host)) = self
                 .provider()
-                .get_block_by_number(host_block_number.into())
+                .get_block_by_number(prev_host_number.into())
                 .into_future()
                 .instrument(span.clone())
                 .await
             else {
-                let _guard = span.enter();
                 warn!(ru_block_number, host_block_number, "failed to get previous host block");
                 continue;
             };
 
-            // Prep the span we'll use for the transaction submission
-            let submission_span = debug_span!(
-                parent: span,
-                "SubmitTask::tx_submission",
+            debug!(
                 tx_count = sim_result.block.tx_count(),
-                host_block_number,
-                ru_block_number,
+                host_block_number, ru_block_number, "preparing transaction submission"
             );
 
             // Prepare the transaction request for submission
@@ -278,30 +270,23 @@ impl SubmitTask {
                 self.config.clone(),
                 self.constants,
             );
-            let bumpable = match prep
-                .prep_transaction(&prev_host.header)
-                .instrument(submission_span.clone())
-                .await
-            {
-                Ok(bumpable) => bumpable,
-                Err(error) => {
-                    error!(%error, "failed to prepare transaction for submission");
-                    continue;
-                }
-            };
+            let bumpable =
+                match prep.prep_transaction(&prev_host.header).instrument(span.clone()).await {
+                    Ok(bumpable) => bumpable,
+                    Err(error) => {
+                        error!(%error, "failed to prepare transaction for submission");
+                        continue;
+                    }
+                };
 
             // Simulate the transaction to check for reverts
-            if let Err(error) =
-                self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
-            {
+            if let Err(error) = self.sim_with_call(bumpable.req()).instrument(span.clone()).await {
                 error!(%error, "simulation failed for transaction");
                 continue;
             };
 
             // Now send the transaction
-            if let Err(error) =
-                self.retrying_send(bumpable, 3).instrument(submission_span.clone()).await
-            {
+            if let Err(error) = self.retrying_send(bumpable, 3).instrument(span.clone()).await {
                 error!(%error, "error dispatching block to host chain");
                 continue;
             }
