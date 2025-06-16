@@ -131,8 +131,8 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
         let now = utils::now();
-        let (initial_slot, start, end) = self.calculate_slot_window();
-        debug!(initial_slot, start, end, now, "calculating target slot window");
+        let (expected_slot, start, end) = self.calculate_slot_window();
+        debug!(expected_slot, start, end, now, "calculating target slot window");
 
         let mut req = bumpable.req().clone();
 
@@ -147,7 +147,7 @@ impl SubmitTask {
             let inbound_result = match self.send_transaction(req).instrument(span.clone()).await {
                 Ok(control_flow) => control_flow,
                 Err(error) => {
-                    if let Some(value) = self.slot_still_valid(initial_slot) {
+                    if let Some(value) = self.slot_still_valid(expected_slot) {
                         return value;
                     }
                     // Log error and retry
@@ -160,7 +160,7 @@ impl SubmitTask {
 
             match inbound_result {
                 ControlFlow::Retry => {
-                    if let Some(value) = self.slot_still_valid(initial_slot) {
+                    if let Some(value) = self.slot_still_valid(expected_slot) {
                         return value;
                     }
                     // bump the req
