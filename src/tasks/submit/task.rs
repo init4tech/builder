@@ -139,18 +139,17 @@ impl SubmitTask {
         let result = loop {
             debug!(retries = bumpable.bump_count(), nonce = ?req.nonce, "attempting transaction send");
 
-            let inbound_result =
-                match self.send_transaction(req.clone()).await {
-                    Ok(control_flow) => control_flow,
-                    Err(error) => {
-                        if let Some(value) = self.slot_still_valid(expected_slot) {
-                            return value;
-                        }
-                        // Log error and retry
-                        error!(%error, "error handling inbound block");
-                        ControlFlow::Retry
+            let inbound_result = match self.send_transaction(req.clone()).await {
+                Ok(control_flow) => control_flow,
+                Err(error) => {
+                    if let Some(value) = self.slot_still_valid(expected_slot) {
+                        return value;
                     }
-                };
+                    // Log error and retry
+                    error!(%error, "error handling inbound block");
+                    ControlFlow::Retry
+                }
+            };
 
             match inbound_result {
                 ControlFlow::Retry => {
@@ -240,11 +239,8 @@ impl SubmitTask {
             debug!(ru_block_number, "submit channel received block");
 
             let prev_host_number = host_block_number - 1;
-            let Ok(Some(prev_host)) = self
-                .provider()
-                .get_block_by_number(prev_host_number.into())
-                .into_future()
-                .await
+            let Ok(Some(prev_host)) =
+                self.provider().get_block_by_number(prev_host_number.into()).into_future().await
             else {
                 warn!(ru_block_number, host_block_number, "failed to get previous host block");
                 continue;
@@ -263,14 +259,13 @@ impl SubmitTask {
                 self.config.clone(),
                 self.constants,
             );
-            let bumpable =
-                match prep.prep_transaction(&prev_host.header).await {
-                    Ok(bumpable) => bumpable,
-                    Err(error) => {
-                        error!(%error, "failed to prepare transaction for submission");
-                        continue;
-                    }
-                };
+            let bumpable = match prep.prep_transaction(&prev_host.header).await {
+                Ok(bumpable) => bumpable,
+                Err(error) => {
+                    error!(%error, "failed to prepare transaction for submission");
+                    continue;
+                }
+            };
 
             // Simulate the transaction to check for reverts
             if let Err(error) = self.sim_with_call(bumpable.req()).await {
