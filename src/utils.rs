@@ -1,4 +1,9 @@
-use alloy::primitives::{B256, Signature};
+use alloy::{
+    consensus::{Header, constants::GWEI_TO_WEI},
+    eips::{eip1559::BaseFeeParams, eip7840::BlobParams},
+    primitives::{B256, Signature},
+    rpc::types::TransactionRequest,
+};
 use signet_sim::BuiltBlock;
 use signet_zenith::BundleHelper::FillPermit2;
 use std::time::UNIX_EPOCH;
@@ -25,6 +30,23 @@ pub fn extract_signature_components(sig: &Signature) -> (u8, B256, B256) {
     let r = sig.r().into();
     let s = sig.s().into();
     (v, r, s)
+}
+
+/// Populates the initial gas parameters for a transaction request based on the
+/// previous block header.
+pub fn populate_initial_gas(req: &mut TransactionRequest, prev_header: &Header) {
+    const STARTING_MPFPG: u128 = 2 * GWEI_TO_WEI as u128;
+
+    let base_fee_per_gas = prev_header
+        .next_block_base_fee(BaseFeeParams::ethereum())
+        .expect("signet deployed after 1559 active") as u128;
+    let blob_basefee = prev_header
+        .next_block_blob_fee(BlobParams::prague())
+        .expect("signet deployed after 4844 active");
+
+    req.max_priority_fee_per_gas = Some(STARTING_MPFPG);
+    req.max_fee_per_gas = Some((base_fee_per_gas * 1025 / 1024) + STARTING_MPFPG);
+    req.max_fee_per_blob_gas = Some(blob_basefee);
 }
 
 #[cfg(test)]

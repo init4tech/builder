@@ -45,7 +45,6 @@ async fn main() -> eyre::Result<()> {
         config: config.clone(),
         constants,
         outbound_tx_channel: tx_channel,
-        host_provider: host_provider.clone(),
     };
 
     // Set up tx submission
