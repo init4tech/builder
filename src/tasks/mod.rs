@@ -10,5 +10,5 @@ pub mod metrics;
 /// Tx submission task
 pub mod submit;
 
-/// Constructs the simualtion environment.
+/// Constructs the simulation environment.
 pub mod env;

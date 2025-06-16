@@ -1,7 +1,10 @@
 //! `block.rs` contains the Simulator and everything that wires it into an
 //! actor that handles the simulation of a stream of bundles and transactions
 //! and turns them into valid Pecorino blocks for network submission.
-use crate::config::{BuilderConfig, RuProvider};
+use crate::{
+    config::{BuilderConfig, RuProvider},
+    tasks::env::SimEnv,
+};
 use alloy::{eips::BlockId, network::Ethereum, providers::Provider};
 use init4_bin_base::{
     deps::tracing::{debug, error},
@@ -17,6 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use tracing::info;
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -34,9 +38,17 @@ pub struct Simulator {
     pub config: BuilderConfig,
     /// A provider that cannot sign transactions, used for interacting with the rollup.
     pub ru_provider: RuProvider,
-
     /// The block configuration environment on which to simulate
-    pub block_env: watch::Receiver<Option<BlockEnv>>,
+    pub sim_env: watch::Receiver<Option<SimEnv>>,
+}
+
+/// SimResult bundles a BuiltBlock to the BlockEnv it was simulated against.
+#[derive(Debug, Clone)]
+pub struct SimResult {
+    /// The block built with the successfully simulated transactions
+    pub block: BuiltBlock,
+    /// The block environment the transactions were simulated against.
+    pub env: SimEnv,
 }
 
 impl Simulator {
@@ -46,6 +58,7 @@ impl Simulator {
     ///
     /// - `config`: The configuration for the builder.
     /// - `ru_provider`: A provider for interacting with the rollup.
+    /// - `block_env`: A receiver for the block environment to simulate against.
     ///
     /// # Returns
     ///
@@ -53,9 +66,9 @@ impl Simulator {
     pub fn new(
         config: &BuilderConfig,
         ru_provider: RuProvider,
-        block_env: watch::Receiver<Option<BlockEnv>>,
+        sim_env: watch::Receiver<Option<SimEnv>>,
     ) -> Self {
-        Self { config: config.clone(), ru_provider, block_env }
+        Self { config: config.clone(), ru_provider, sim_env }
     }
 
     /// Get the slot calculator.
@@ -65,11 +78,16 @@ impl Simulator {
 
     /// Handles building a single block.
     ///
+    /// Builds a block in the block environment with items from the simulation cache
+    /// against the database state. When the `finish_by` deadline is reached, it
+    /// stops simulating and returns the block.
+    ///
     /// # Arguments
     ///
     /// - `constants`: The system constants for the rollup.
     /// - `sim_items`: The simulation cache containing transactions and bundles.
     /// - `finish_by`: The deadline by which the block must be built.
+    /// - `block_env`: The block environment to simulate against.
     ///
     /// # Returns
     ///
@@ -79,14 +97,17 @@ impl Simulator {
         constants: SignetSystemConstants,
         sim_items: SimCache,
         finish_by: Instant,
-        block: BlockEnv,
+        block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
+        debug!(block_number = block_env.number, tx_count = sim_items.len(), "starting block build",);
+
         let db = self.create_db().await.unwrap();
+
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
             constants,
             self.config.cfg_env(),
-            block,
+            block_env,
             finish_by,
             self.config.concurrency_limit,
             sim_items,
@@ -94,13 +115,17 @@ impl Simulator {
         );
 
         let built_block = block_build.build().await;
-        debug!(block_number = ?built_block.block_number(), "finished building block");
+        debug!(
+            tx_count = built_block.tx_count(),
+            block_number = built_block.block_number(),
+            "block simulation completed",
+        );
 
         Ok(built_block)
     }
 
-    /// Spawns the simulator task, which handles the setup and sets the deadline
-    /// for the each round of simulation.
+    /// Spawns the simulator task, which ticks along the simulation loop
+    /// as it receives block environments.
     ///
     /// # Arguments
     ///
@@ -115,21 +140,23 @@ impl Simulator {
         self,
         constants: SignetSystemConstants,
         cache: SimCache,
-        submit_sender: mpsc::UnboundedSender<BuiltBlock>,
+        submit_sender: mpsc::UnboundedSender<SimResult>,
     ) -> JoinHandle<()> {
         debug!("starting simulator task");
 
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
 
-    /// Continuously runs the block simulation and submission loop.
+    /// This function runs indefinitely, waiting for the block environment to be set and checking
+    /// if the current slot is valid before building a block and sending it along for to the submit channel.
     ///
-    /// This function clones the simulation cache, calculates a deadline for block building,
-    /// attempts to build a block using the latest cache and constants, and submits the built
-    /// block through the provided channel. If an error occurs during block building or submission,
-    /// it logs the error and continues the loop.
+    /// If it is authorized for the current slot, then the simulator task
+    /// - clones the simulation cache,
+    /// - calculates a deadline for block building,
+    /// - attempts to build a block using the latest cache and constants,
+    /// - then submits the built block through the provided channel.
     ///
-    /// This function runs indefinitely and never returns.
+    /// If an error occurs during block building or submission, it logs the error and continues the loop.
     ///
     /// # Arguments
     ///
@@ -140,26 +167,29 @@ impl Simulator {
         mut self,
         constants: SignetSystemConstants,
         cache: SimCache,
-        submit_sender: mpsc::UnboundedSender<BuiltBlock>,
+        submit_sender: mpsc::UnboundedSender<SimResult>,
     ) {
         loop {
-            let sim_cache = cache.clone();
-            let finish_by = self.calculate_deadline();
-
             // Wait for the block environment to be set
-            if self.block_env.changed().await.is_err() {
-                error!("block_env channel closed");
+            if self.sim_env.changed().await.is_err() {
+                error!("block_env channel closed - shutting down simulator task");
                 return;
             }
+            let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
+            info!(sim_env.block_env.number, "new block environment received");
 
-            // If no env, skip this run
-            let Some(block_env) = self.block_env.borrow_and_update().clone() else { return };
-            debug!(block_env = ?block_env, "building on block env");
-
-            match self.handle_build(constants, sim_cache, finish_by, block_env).await {
+            // Calculate the deadline for this block simulation.
+            // NB: This must happen _after_ taking a reference to the sim cache,
+            // waiting for a new block, and checking current slot authorization.
+            let finish_by = self.calculate_deadline();
+            let sim_cache = cache.clone();
+            match self
+                .handle_build(constants, sim_cache, finish_by, sim_env.block_env.clone())
+                .await
+            {
                 Ok(block) => {
-                    debug!(block = ?block, "built block");
-                    let _ = submit_sender.send(block);
+                    debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
+                    let _ = submit_sender.send(SimResult { block, env: sim_env });
                 }
                 Err(e) => {
                     error!(err = %e, "failed to build block");
@@ -184,11 +214,10 @@ impl Simulator {
         let remaining = self.slot_calculator().slot_duration() - timepoint;
 
         // We add a 1500 ms buffer to account for sequencer stopping signing.
-
-        let candidate =
+        let deadline =
             Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
 
-        candidate.max(Instant::now())
+        deadline.max(Instant::now())
     }
 
     /// Creates an `AlloyDB` instance from the rollup provider.

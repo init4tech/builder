@@ -3,7 +3,7 @@ use crate::{
     tasks::{
         block::cfg::SignetCfgEnv,
         cache::{BundlePoller, CacheSystem, CacheTask, TxPoller},
-        env::EnvTask,
+        env::{EnvTask, SimEnv},
     },
 };
 use alloy::{
@@ -29,7 +29,6 @@ use init4_bin_base::{
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 use tokio::sync::watch;
-use trevm::revm::context::BlockEnv;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -247,8 +246,8 @@ impl BuilderConfig {
 
     /// Create an [`EnvTask`] using this config.
     pub fn env_task(&self) -> EnvTask {
-        let provider = self.connect_ru_provider();
-        EnvTask::new(self.clone(), provider)
+        let ru_provider = self.connect_ru_provider();
+        EnvTask::new(self.clone(), ru_provider)
     }
 
     /// Spawn a new [`CacheSystem`] using this config. This contains the
@@ -256,7 +255,7 @@ impl BuilderConfig {
     /// well as the [`SimCache`] and the block env watcher.
     ///
     /// [`SimCache`]: signet_sim::SimCache
-    pub fn spawn_cache_system(&self, block_env: watch::Receiver<Option<BlockEnv>>) -> CacheSystem {
+    pub fn spawn_cache_system(&self, block_env: watch::Receiver<Option<SimEnv>>) -> CacheSystem {
         // Tx Poller pulls transactions from the cache
         let tx_poller = TxPoller::new(self);
         let (tx_receiver, tx_poller) = tx_poller.spawn();

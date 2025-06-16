@@ -35,12 +35,17 @@ async fn main() -> eyre::Result<()> {
     let zenith = config.connect_zenith(host_provider.clone());
 
     // Set up the metrics task
-    let metrics = MetricsTask { host_provider };
+    let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
     // Make a Tx submission task
-    let submit =
-        SubmitTask { zenith, quincey, config: config.clone(), outbound_tx_channel: tx_channel };
+    let submit = SubmitTask {
+        zenith,
+        quincey,
+        config: config.clone(),
+        outbound_tx_channel: tx_channel,
+        host_provider: host_provider.clone(),
+    };
 
     // Set up tx submission
     let (submit_channel, submit_jh) = submit.spawn();
