@@ -22,7 +22,6 @@ use init4_bin_base::deps::{
 use signet_constants::SignetSystemConstants;
 use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::Instrument;
 
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -136,18 +135,12 @@ impl SubmitTask {
 
         let mut req = bumpable.req().clone();
 
-        let span = debug_span!(
-            "SubmitTask::retrying_send",
-            initial_nonce = ?bumpable.req().nonce,
-        );
-        let _guard = span.enter();
-
         // Retry loop
         let result = loop {
             debug!(retries = bumpable.bump_count(), nonce = ?req.nonce, "attempting transaction send");
 
             let inbound_result =
-                match self.send_transaction(req.clone()).instrument(span.clone()).await {
+                match self.send_transaction(req.clone()).await {
                     Ok(control_flow) => control_flow,
                     Err(error) => {
                         if let Some(value) = self.slot_still_valid(expected_slot) {
@@ -251,7 +244,6 @@ impl SubmitTask {
                 .provider()
                 .get_block_by_number(prev_host_number.into())
                 .into_future()
-                .instrument(span.clone())
                 .await
             else {
                 warn!(ru_block_number, host_block_number, "failed to get previous host block");
@@ -272,7 +264,7 @@ impl SubmitTask {
                 self.constants,
             );
             let bumpable =
-                match prep.prep_transaction(&prev_host.header).instrument(span.clone()).await {
+                match prep.prep_transaction(&prev_host.header).await {
                     Ok(bumpable) => bumpable,
                     Err(error) => {
                         error!(%error, "failed to prepare transaction for submission");
@@ -281,13 +273,13 @@ impl SubmitTask {
                 };
 
             // Simulate the transaction to check for reverts
-            if let Err(error) = self.sim_with_call(bumpable.req()).instrument(span.clone()).await {
+            if let Err(error) = self.sim_with_call(bumpable.req()).await {
                 error!(%error, "simulation failed for transaction");
                 continue;
             };
 
             // Now send the transaction
-            if let Err(error) = self.retrying_send(bumpable, 3).instrument(span.clone()).await {
+            if let Err(error) = self.retrying_send(bumpable, 3).await {
                 error!(%error, "error dispatching block to host chain");
                 continue;
             }
