@@ -252,9 +252,12 @@ impl SubmitTask {
             // drop guard before await
             drop(guard);
 
+            // Fetch the previous host block, not the current host block which is currently being built
+            let prev_host_block = host_block_number - 1;
+
             let Ok(Some(prev_host)) = self
                 .provider()
-                .get_block_by_number(host_block_number.into())
+                .get_block_by_number(prev_host_block.into())
                 .into_future()
                 .instrument(span.clone())
                 .await
