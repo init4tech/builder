@@ -17,6 +17,7 @@ use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::BundleHelper;
 use std::sync::OnceLock;
+use tracing::Instrument;
 
 /// Preparation logic for transactions issued to the host chain by the
 /// [`SubmitTask`].
@@ -134,7 +135,7 @@ impl<'a> SubmitPrep<'a> {
 
     /// Prepares a transaction for submission to the host chain.
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
-        let req = self.new_tx_request().await?;
+        let req = self.new_tx_request().in_current_span().await?;
         Ok(Bumpable::new(req, prev_host))
     }
 }
