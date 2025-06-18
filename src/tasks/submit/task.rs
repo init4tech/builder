@@ -267,7 +267,7 @@ impl SubmitTask {
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
-                parent: span,
+                parent: &span,
                 "SubmitTask::task_future::transaction_submission",
                 tx_count = sim_result.block.tx_count(),
                 host_block_number,
