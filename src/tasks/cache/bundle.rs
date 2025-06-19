@@ -1,5 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
+use eyre::bail;
 use init4_bin_base::{
     deps::tracing::{Instrument, debug, debug_span, error, trace, warn},
     perms::SharedToken,
@@ -47,7 +48,7 @@ impl BundlePoller {
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
         let Some(token) = self.token.read() else {
             warn!("No token available, skipping bundle fetch");
-            return Ok(vec![]);
+            bail!("No token available, skipping bundle fetch");
         };
 
         self.client
@@ -89,10 +90,12 @@ impl BundlePoller {
                 .await
                 .inspect_err(|err| debug!(%err, "Error fetching bundles"))
             {
+                let _guard = span.entered();
                 debug!(count = ?bundles.len(), "found bundles");
                 for bundle in bundles.into_iter() {
                     if let Err(err) = outbound.send(bundle) {
                         error!(err = ?err, "Failed to send bundle - channel is dropped");
+                        break;
                     }
                 }
             }
