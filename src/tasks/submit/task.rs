@@ -139,6 +139,7 @@ impl SubmitTask {
         // Retry loop
         let result = loop {
             let span = debug_span!(
+                parent: None,
                 "SubmitTask::retrying_send",
                 retries = bumpable.bump_count(),
                 nonce = bumpable.req().nonce,
@@ -231,11 +232,13 @@ impl SubmitTask {
             let host_block_number = self.constants.rollup_block_to_host_block_num(ru_block_number);
 
             let span = debug_span!(
-                "SubmitTask::loop",
+                parent: None,
+                "SubmitTask::task_future::transaction_prep",
                 ru_block_number,
                 host_block_number,
                 block_tx_count = sim_result.block.tx_count(),
             );
+
             let guard = span.enter();
 
             debug!(ru_block_number, "submit channel received block");
@@ -249,22 +252,26 @@ impl SubmitTask {
             // drop guard before await
             drop(guard);
 
+            // Fetch the previous host block, not the current host block which is currently being built
+            let prev_host_block = host_block_number - 1;
+
             let Ok(Some(prev_host)) = self
                 .provider()
-                .get_block_by_number(host_block_number.into())
+                .get_block_by_number(prev_host_block.into())
                 .into_future()
                 .instrument(span.clone())
                 .await
             else {
-                let _guard = span.enter();
-                warn!(ru_block_number, host_block_number, "failed to get previous host block");
+                span.in_scope(|| {
+                    warn!(ru_block_number, host_block_number, "failed to get previous host block")
+                });
                 continue;
             };
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
-                parent: span,
-                "SubmitTask::tx_submission",
+                parent: &span,
+                "SubmitTask::task_future::transaction_submission",
                 tx_count = sim_result.block.tx_count(),
                 host_block_number,
                 ru_block_number,
@@ -285,7 +292,9 @@ impl SubmitTask {
             {
                 Ok(bumpable) => bumpable,
                 Err(error) => {
-                    error!(%error, "failed to prepare transaction for submission");
+                    submission_span.in_scope(|| {
+                        error!(%error, "failed to prepare transaction for submission");
+                    });
                     continue;
                 }
             };
@@ -294,7 +303,9 @@ impl SubmitTask {
             if let Err(error) =
                 self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
             {
-                error!(%error, "simulation failed for transaction");
+                submission_span.in_scope(|| {
+                    error!(%error, "simulation failed for transaction");
+                });
                 continue;
             };
 
@@ -302,7 +313,9 @@ impl SubmitTask {
             if let Err(error) =
                 self.retrying_send(bumpable, 3).instrument(submission_span.clone()).await
             {
-                error!(%error, "error dispatching block to host chain");
+                submission_span.in_scope(|| {
+                    error!(%error, "error dispatching block to host chain");
+                });
                 continue;
             }
         }
