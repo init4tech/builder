@@ -2,7 +2,7 @@
 use crate::config::BuilderConfig;
 use eyre::bail;
 use init4_bin_base::{
-    deps::tracing::{Instrument, debug, debug_span, error, trace, warn},
+    deps::tracing::{Instrument, debug, debug_span, error, trace},
     perms::SharedToken,
 };
 use oauth2::TokenResponse;
