@@ -52,6 +52,7 @@ impl TxPoller {
             .get(url)
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
             .map(|resp: TxPoolResponse| resp.transactions)

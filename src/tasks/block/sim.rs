@@ -5,7 +5,7 @@ use crate::{
     config::{BuilderConfig, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::{eips::BlockId, network::Ethereum, providers::Provider};
+use alloy::{eips::BlockId, network::Ethereum};
 use init4_bin_base::{
     deps::tracing::{debug, error},
     utils::calc::SlotCalculator,
@@ -102,7 +102,7 @@ impl Simulator {
         debug!(block_number = block_env.number, tx_count = sim_items.len(), "starting block build",);
         let concurrency_limit = self.config.concurrency_limit();
 
-        let db = self.create_db().await.unwrap();
+        let db = self.create_db(block_env.number).unwrap();
 
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
@@ -226,19 +226,10 @@ impl Simulator {
     /// # Returns
     ///
     /// An `Option` containing the wrapped database or `None` if an error occurs.
-    async fn create_db(&self) -> Option<AlloyDatabaseProvider> {
-        // Fetch latest block number
-        let latest = match self.ru_provider.get_block_number().await {
-            Ok(block_number) => block_number,
-            Err(e) => {
-                error!(error = %e, "failed to get latest block number");
-                return None;
-            }
-        };
-
+    fn create_db(&self, latest_block_number: u64) -> Option<AlloyDatabaseProvider> {
         // Make an AlloyDB instance from the rollup provider with that latest block number
         let alloy_db: AlloyDB<Ethereum, RuProvider> =
-            AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest));
+            AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest_block_number));
 
         // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
         // This is safe to unwrap because the main function sets the proper runtime settings.
