@@ -1,5 +1,5 @@
 use crate::tasks::env::SimEnv;
-use alloy::{consensus::TxEnvelope, primitives::keccak256};
+use alloy::consensus::TxEnvelope;
 use init4_bin_base::deps::tracing::{debug, info};
 use signet_sim::SimCache;
 use signet_tx_cache::types::TxCacheBundle;
@@ -53,7 +53,6 @@ impl CacheTask {
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
-                    Self::log_bundle(&bundle);
                     cache.add_item(bundle.bundle, basefee);
                 }
                 Some(txn) = self.txns.recv() => {
@@ -70,26 +69,5 @@ impl CacheTask {
         let c = sim_cache.clone();
         let fut = self.task_future(sim_cache);
         (c, tokio::spawn(fut))
-    }
-
-    /// Utility to log a bundle and its contents.
-    fn log_bundle(bundle: &TxCacheBundle) {
-        let bundle_id = bundle.bundle().bundle.replacement_uuid.as_ref();
-        trace!(
-            bundle_id = ?bundle_id,
-            "ingesting bundle into cache"
-        );
-
-        for (i, tx) in bundle.bundle().txs().iter().enumerate() {
-            let hash = keccak256(tx);
-            trace!(bundle_id = ?bundle_id, tx = %hash, number = i, "bundle tx");
-        }
-
-        if let Some(ref fill) = bundle.bundle().host_fills {
-            trace!(bundle_id = ?bundle_id, fill_owner = %fill.permit.owner, fill_nonce = %fill.permit.permit.nonce, "bundle fill owner and nonce");
-            for output in fill.outputs.iter() {
-                trace!(bundle_id = ?bundle_id, token = ?output.token, recipient = ?output.recipient, "bundle fill token and recipient")
-            }
-        }
     }
 }
