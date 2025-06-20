@@ -47,7 +47,6 @@ impl BundlePoller {
     pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<TxCacheBundle>> {
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
         let Some(token) = self.token.read() else {
-            warn!("No token available, skipping bundle fetch");
             bail!("No token available, skipping bundle fetch");
         };
 
