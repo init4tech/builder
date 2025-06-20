@@ -7,7 +7,6 @@ use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
-use tracing::trace;
 
 /// Cache task for the block builder.
 ///
@@ -56,7 +55,6 @@ impl CacheTask {
                     cache.add_item(bundle.bundle, basefee);
                 }
                 Some(txn) = self.txns.recv() => {
-                    trace!(tx = %txn.hash(), "ingesting transaction into cache");
                     cache.add_item(txn, basefee);
                 }
             }
