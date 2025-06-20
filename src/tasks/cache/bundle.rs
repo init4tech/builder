@@ -1,5 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
+use alloy::primitives::keccak256;
 use eyre::bail;
 use init4_bin_base::{
     deps::tracing::{Instrument, debug, debug_span, error, trace},
@@ -92,6 +93,8 @@ impl BundlePoller {
                 let _guard = span.entered();
                 debug!(count = ?bundles.len(), "found bundles");
                 for bundle in bundles.into_iter() {
+                    Self::log_bundle(&bundle);
+
                     if let Err(err) = outbound.send(bundle) {
                         error!(err = ?err, "Failed to send bundle - channel is dropped");
                         break;
@@ -100,6 +103,27 @@ impl BundlePoller {
             }
 
             time::sleep(self.poll_duration()).await;
+        }
+    }
+
+    /// Utility to log a bundle and its contents.
+    fn log_bundle(bundle: &TxCacheBundle) {
+        let bundle_id = bundle.bundle().bundle.replacement_uuid.as_ref();
+        trace!(
+            bundle_id = ?bundle_id,
+            "found bundle in tx cache"
+        );
+
+        for (i, tx) in bundle.bundle().txs().iter().enumerate() {
+            let hash = keccak256(tx);
+            trace!(bundle_id = ?bundle_id, tx = %hash, number = i, "bundle tx");
+        }
+
+        if let Some(ref fill) = bundle.bundle().host_fills {
+            trace!(bundle_id = ?bundle_id, fill_owner = %fill.permit.owner, fill_nonce = %fill.permit.permit.nonce, "bundle fill owner and nonce");
+            for output in fill.outputs.iter() {
+                trace!(bundle_id = ?bundle_id, token = ?output.token, recipient = ?output.recipient, "bundle fill token and recipient")
+            }
         }
     }
 

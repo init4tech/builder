@@ -82,6 +82,8 @@ impl TxPoller {
                 let _guard = span.entered();
                 debug!(count = ?transactions.len(), "found transactions");
                 for tx in transactions.into_iter() {
+                    trace!(tx = %tx.hash(), "sending transaction to outbound channel");
+
                     if outbound.send(tx).is_err() {
                         // If there are no receivers, we can shut down
                         trace!("No receivers left, shutting down");
