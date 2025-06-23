@@ -102,7 +102,8 @@ impl Simulator {
         debug!(block_number = block_env.number, tx_count = sim_items.len(), "starting block build",);
         let concurrency_limit = self.config.concurrency_limit();
 
-        let db = self.create_db(block_env.number).unwrap();
+        // NB: Build AlloyDB from the previous block number's state, since block_env maps to the in-progress block
+        let db = self.create_db(block_env.number - 1).unwrap();
 
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
