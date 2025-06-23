@@ -1,4 +1,7 @@
-use builder::test_utils::{setup_logging, setup_test_config};
+use builder::{
+    tasks::cache::CacheSystem,
+    test_utils::{setup_logging, setup_test_config},
+};
 use init4_bin_base::deps::tracing::warn;
 use std::time::Duration;
 
@@ -10,7 +13,7 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     let config = setup_test_config().unwrap();
 
     let (block_env, _jh) = config.env_task().spawn();
-    let cache = config.spawn_cache_system(block_env);
+    let cache = CacheSystem::spawn(&config, block_env);
 
     tokio::time::sleep(Duration::from_secs(12)).await;
 
