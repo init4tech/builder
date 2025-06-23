@@ -26,7 +26,8 @@ async fn main() -> eyre::Result<()> {
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
-    let cache_system = CacheSystem::spawn(&config, block_env.clone());
+    let cache_system = CacheSystem::new(config.clone());
+    let (sim_cache, tx_jh, bundle_jh, cache_jh) = cache_system.spawn(block_env.clone());
 
     // Prep providers and contracts
     let (host_provider, quincey) =
@@ -52,7 +53,7 @@ async fn main() -> eyre::Result<()> {
 
     // Set up the simulator
     let sim = Simulator::new(&config, ru_provider.clone(), block_env);
-    let build_jh = sim.spawn_simulator_task(constants, cache_system.sim_cache, submit_channel);
+    let build_jh = sim.spawn_simulator_task(constants, sim_cache, submit_channel);
 
     // Start the healthcheck server
     let server = serve_builder(([0, 0, 0, 0], config.builder_port));
@@ -66,13 +67,13 @@ async fn main() -> eyre::Result<()> {
         _ = env_jh => {
             info!("env task finished");
         },
-        _ = cache_system.cache_task => {
+        _ = tx_jh => {
             info!("cache task finished");
         },
-        _ = cache_system.tx_poller => {
+        _ = bundle_jh => {
             info!("tx_poller finished");
         },
-        _ = cache_system.bundle_poller => {
+        _ = cache_jh => {
             info!("bundle_poller finished");
         },
         _ = submit_jh => {
