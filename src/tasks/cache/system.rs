@@ -22,11 +22,8 @@ impl CacheSystem {
         Self { config }
     }
 
-    /// Spawn a new [`CacheSystem`]. This contains the
-    /// joinhandles for [`TxPoller`] and [`BundlePoller`] and [`CacheTask`], as
-    /// well as the [`SimCache`] and the block env watcher.
-    ///
-    /// [`SimCache`]: signet_sim::SimCache
+    /// Spawn a new [`CacheSystem`], which spawns the
+    /// [`CacheTask`], [`TxPoller`], and [`BundlePoller`] internally.
     pub fn spawn(
         &self,
         block_env: watch::Receiver<Option<SimEnv>>,
