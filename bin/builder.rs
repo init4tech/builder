@@ -1,7 +1,7 @@
 use builder::{
     config::BuilderConfig,
     service::serve_builder,
-    tasks::{block::sim::Simulator, metrics::MetricsTask, submit::SubmitTask},
+    tasks::{block::sim::Simulator, cache::CacheTasks, metrics::MetricsTask, submit::SubmitTask},
 };
 use init4_bin_base::{
     deps::tracing::{info, info_span},
@@ -26,7 +26,8 @@ async fn main() -> eyre::Result<()> {
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
-    let cache_system = config.spawn_cache_system(block_env.clone());
+    let cache_tasks = CacheTasks::new(config.clone(), block_env.clone());
+    let cache_system = cache_tasks.spawn();
 
     // Prep providers and contracts
     let (host_provider, quincey) =
