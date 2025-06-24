@@ -26,8 +26,8 @@ async fn main() -> eyre::Result<()> {
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
-    let cache_tasks = CacheTasks::new(config.clone());
-    let cache_system = cache_tasks.spawn(block_env.clone());
+    let cache_tasks = CacheTasks::new(config.clone(), block_env.clone());
+    let cache_system = cache_tasks.spawn();
 
     // Prep providers and contracts
     let (host_provider, quincey) =

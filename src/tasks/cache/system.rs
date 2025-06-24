@@ -14,17 +14,19 @@ use crate::{
 pub struct CacheTasks {
     /// The builder config.
     pub config: BuilderConfig,
+    /// The block environment receiver.
+    pub block_env: watch::Receiver<Option<SimEnv>>,
 }
 
 impl CacheTasks {
     /// Create a new [`CacheSystem`] with the given components.
-    pub const fn new(config: BuilderConfig) -> Self {
-        Self { config }
+    pub const fn new(config: BuilderConfig, block_env: watch::Receiver<Option<SimEnv>>) -> Self {
+        Self { config, block_env }
     }
 
     /// Spawn a new [`CacheSystem`], which starts the
     /// [`CacheTask`], [`TxPoller`], and [`BundlePoller`] internally and yields their [`JoinHandle`]s.
-    pub fn spawn(&self, block_env: watch::Receiver<Option<SimEnv>>) -> CacheSystem {
+    pub fn spawn(&self) -> CacheSystem {
         // Tx Poller pulls transactions from the cache
         let tx_poller = TxPoller::new(&self.config);
         let (tx_receiver, tx_poller) = tx_poller.spawn();
@@ -34,7 +36,7 @@ impl CacheTasks {
         let (bundle_receiver, bundle_poller) = bundle_poller.spawn();
 
         // Set up the cache task
-        let cache_task = CacheTask::new(block_env.clone(), bundle_receiver, tx_receiver);
+        let cache_task = CacheTask::new(self.block_env.clone(), bundle_receiver, tx_receiver);
         let (sim_cache, cache_task) = cache_task.spawn();
 
         CacheSystem::new(sim_cache, tx_poller, bundle_poller, cache_task)

@@ -13,8 +13,8 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     let config = setup_test_config().unwrap();
 
     let (block_env, _jh) = config.env_task().spawn();
-    let cache_tasks = CacheTasks::new(config.clone());
-    let cache_system = cache_tasks.spawn(block_env);
+    let cache_tasks = CacheTasks::new(config.clone(), block_env);
+    let cache_system = cache_tasks.spawn();
 
     tokio::time::sleep(Duration::from_secs(12)).await;
 
