@@ -217,7 +217,7 @@ impl Simulator {
 
         // We add a 1500 ms buffer to account for sequencer stopping signing.
         let deadline =
-            Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(1500);
+            Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(2500);
 
         deadline.max(Instant::now())
     }
