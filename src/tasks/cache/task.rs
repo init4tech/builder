@@ -52,10 +52,15 @@ impl CacheTask {
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
-                    cache.add_item(bundle.bundle, basefee);
+                    let res = cache.add_bundle(bundle.bundle, basefee);
+                    // Skip bundles that fail to be added to the cache
+                    if let Err(e) = res {
+                        debug!(?e, "Failed to add bundle to cache");
+                        continue;
+                    }
                 }
                 Some(txn) = self.txns.recv() => {
-                    cache.add_item(txn, basefee);
+                    cache.add_tx(txn, basefee);
                 }
             }
         }

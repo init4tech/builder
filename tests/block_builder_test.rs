@@ -11,7 +11,7 @@ use builder::{
     tasks::block::sim::Simulator,
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
-use signet_sim::{SimCache, SimItem};
+use signet_sim::SimCache;
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
 
@@ -51,10 +51,10 @@ async fn test_handle_build() {
 
     // Add two transactions from two senders to the sim cache
     let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();
-    sim_items.add_item(SimItem::Tx(tx_1), 0);
+    sim_items.add_tx(tx_1, 0);
 
     let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
-    sim_items.add_item(SimItem::Tx(tx_2), 0);
+    sim_items.add_tx(tx_2, 0);
 
     // Setup the block env
     let finish_by = Instant::now() + Duration::from_secs(2);
