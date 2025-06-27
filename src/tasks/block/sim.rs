@@ -180,6 +180,9 @@ impl Simulator {
             let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
             info!(sim_env.block_env.number, "new block environment received");
 
+            // sleep for 3 seconds to allow for txs to come in.
+            tokio::time::sleep(Duration::from_secs(3)).await;
+
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,
             // waiting for a new block, and checking current slot authorization.
