@@ -1,11 +1,9 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use eyre::bail;
 use init4_bin_base::{
     deps::tracing::{Instrument, debug, debug_span, error, trace},
     perms::SharedToken,
 };
-use oauth2::TokenResponse;
 use reqwest::{Client, Url};
 use signet_tx_cache::types::{TxCacheBundle, TxCacheBundlesResponse};
 use tokio::{
@@ -46,13 +44,12 @@ impl BundlePoller {
     /// Fetches bundles from the transaction cache and returns them.
     pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<TxCacheBundle>> {
         let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
-        let Some(token) = self.token.read() else {
-            bail!("No token available, skipping bundle fetch");
-        };
+        let token =
+            self.token.secret().await.map_err(|e| eyre::eyre!("Failed to read token: {e}"))?;
 
         self.client
             .get(bundle_url)
-            .bearer_auth(token.access_token().secret())
+            .bearer_auth(token)
             .send()
             .await?
             .error_for_status()?

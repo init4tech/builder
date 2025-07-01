@@ -5,7 +5,6 @@ use init4_bin_base::{
     perms::SharedToken,
     utils::signer::LocalOrAws,
 };
-use oauth2::TokenResponse;
 use reqwest::Client;
 use signet_types::{SignRequest, SignResponse};
 
@@ -53,12 +52,13 @@ impl Quincey {
     async fn sup_remote(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
         let Self::Remote { client, url, token } = &self else { bail!("not a remote client") };
 
-        let Some(token) = token.read() else { bail!("no token available") };
+        let token =
+            token.secret().await.map_err(|e| eyre::eyre!("failed to retrieve token: {e}"))?;
 
         let resp: reqwest::Response = client
             .post(url.clone())
             .json(sig_request)
-            .bearer_auth(token.access_token().secret())
+            .bearer_auth(token)
             .send()
             .await?
             .error_for_status()?;
