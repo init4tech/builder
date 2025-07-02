@@ -220,6 +220,14 @@ impl Simulator {
         let deadline =
             Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(2500);
 
+        debug!(
+            timepoint,
+            remaining,
+            timestamp = chrono::Utc::now().timestamp(),
+            deadline = ?deadline,
+            "calculated deadline for block simulation"
+        );
+
         deadline.max(Instant::now())
     }
 
