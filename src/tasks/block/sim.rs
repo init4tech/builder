@@ -214,11 +214,11 @@ impl Simulator {
 
         // We have the timepoint in seconds into the slot. To find out what's
         // remaining, we need to subtract it from the slot duration
-        let remaining = self.slot_calculator().slot_duration() - timepoint;
+        // we also subtract 3 seconds to account for the sequencer stopping signing.
+        let remaining = (self.slot_calculator().slot_duration() - timepoint).saturating_sub(3);
 
         // We add a 2500 ms buffer to account for sequencer stopping signing.
-        let deadline =
-            Instant::now() + Duration::from_secs(remaining) - Duration::from_millis(2500);
+        let deadline = Instant::now() + Duration::from_secs(remaining);
 
         debug!(
             timepoint,
