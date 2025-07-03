@@ -217,14 +217,12 @@ impl Simulator {
         // we also subtract 3 seconds to account for the sequencer stopping signing.
         let remaining = (self.slot_calculator().slot_duration() - timepoint).saturating_sub(3);
 
-        // We add a 2500 ms buffer to account for sequencer stopping signing.
         let deadline = Instant::now() + Duration::from_secs(remaining);
 
         debug!(
             timepoint,
             remaining,
-            timestamp = chrono::Utc::now().timestamp(),
-            deadline = ?deadline,
+            timestamp = crate::utils::now(),
             "calculated deadline for block simulation"
         );
 
