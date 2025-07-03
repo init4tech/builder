@@ -209,7 +209,8 @@ impl Simulator {
     /// the time left in the current slot and adding that to the current timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
         // Get the current timepoint within the slot.
-        let timepoint = self.slot_calculator().current_timepoint_within_slot();
+        let timepoint =
+            self.slot_calculator().current_point_within_slot().expect("host chain has started");
 
         // We have the timepoint in seconds into the slot. To find out what's
         // remaining, we need to subtract it from the slot duration

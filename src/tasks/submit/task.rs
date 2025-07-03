@@ -20,7 +20,7 @@ use init4_bin_base::deps::{
     tracing::{Instrument, debug, debug_span, error, info, warn},
 };
 use signet_constants::SignetSystemConstants;
-use std::time::Instant;
+use std::{ops::Range, time::Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 macro_rules! spawn_provider_send {
@@ -131,8 +131,14 @@ impl SubmitTask {
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
         let now = utils::now();
-        let (expected_slot, start, end) = self.calculate_slot_window();
-        debug!(expected_slot, start, end, now, "calculating target slot window");
+        let (expected_slot, window) = self.calculate_slot_window();
+        debug!(
+            expected_slot,
+            start = window.start,
+            end = window.end,
+            now,
+            "calculating target slot window"
+        );
 
         let mut req = bumpable.req().clone();
 
@@ -172,7 +178,10 @@ impl SubmitTask {
                         return Ok(ControlFlow::Skip);
                     }
                     drop(guard);
-                    debug!(retries = bumpable.bump_count(), start, end, "retrying block");
+                    debug!(
+                        retries = bumpable.bump_count(),
+                        window.start, window.end, "retrying block"
+                    );
                     continue;
                 }
                 ControlFlow::Skip => {
@@ -200,8 +209,9 @@ impl SubmitTask {
     }
 
     /// Checks if a slot is still valid during submission retries.
-    fn slot_still_valid(&self, initial_slot: u64) -> Option<Result<ControlFlow, eyre::Error>> {
-        let (current_slot, _, _) = self.calculate_slot_window();
+    fn slot_still_valid(&self, initial_slot: usize) -> Option<Result<ControlFlow, eyre::Error>> {
+        let current_slot =
+            self.config.slot_calculator.current_slot().expect("host chain has started");
         if current_slot != initial_slot {
             // If the slot has changed, skip the block
             debug!(current_slot, initial_slot, "slot changed before submission - skipping block");
@@ -213,11 +223,16 @@ impl SubmitTask {
     }
 
     /// Calculates and returns the slot number and its start and end timestamps for the current instant.
-    fn calculate_slot_window(&self) -> (u64, u64, u64) {
+    fn calculate_slot_window(&self) -> (usize, Range<u64>) {
         let now_ts = utils::now();
-        let current_slot = self.config.slot_calculator.calculate_slot(now_ts);
-        let (start, end) = self.config.slot_calculator.calculate_slot_window(current_slot);
-        (current_slot, start, end)
+        let current_slot =
+            self.config.slot_calculator.current_slot().expect("host chain has started");
+        let window = self
+            .config
+            .slot_calculator
+            .slot_window_for_timestamp(now_ts)
+            .expect("host chain has started");
+        (current_slot, window)
     }
 
     /// Task future for the submit task. This function runs the main loop of the task.
