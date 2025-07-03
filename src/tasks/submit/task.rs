@@ -37,6 +37,21 @@ macro_rules! spawn_provider_send {
     };
 }
 
+macro_rules! check_slot_still_valid {
+    ($self:expr, $initial_slot:expr) => {
+        if !$self.slot_still_valid($initial_slot) {
+            debug!(
+                current_slot =
+                    $self.config.slot_calculator.current_slot().expect("host chain has started"),
+                initial_slot = $initial_slot,
+                "slot changed before submission - skipping block"
+            );
+            counter!("builder.slot_missed").increment(1);
+            return Ok(ControlFlow::Skip);
+        }
+    };
+}
+
 /// Control flow for transaction submission.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ControlFlow {
@@ -130,17 +145,8 @@ impl SubmitTask {
         retry_limit: usize,
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
-        let now = utils::now();
 
         let (expected_slot, window) = self.get_expected_slot_and_window();
-
-        debug!(
-            expected_slot,
-            start = window.start,
-            end = window.end,
-            now,
-            "calculating target slot window"
-        );
 
         let mut req = bumpable.req().clone();
 
@@ -151,27 +157,26 @@ impl SubmitTask {
                 "SubmitTask::retrying_send",
                 retries = bumpable.bump_count(),
                 nonce = bumpable.req().nonce,
+                expected_slot,
+                start = window.start,
+                end = window.end,
+                now = utils::now(),
             );
 
-            let inbound_result = match self.send_transaction(req).instrument(span.clone()).await {
-                Ok(control_flow) => control_flow,
-                Err(error) => {
-                    if let Some(value) = self.slot_still_valid(expected_slot) {
-                        return value;
-                    }
-                    // Log error and retry
-                    error!(%error, "error handling inbound block");
-                    ControlFlow::Retry
-                }
-            };
+            // Check at the top of the loop if the slot is still valid. This
+            // will prevent unnecessary retries if the slot has changed.
+            check_slot_still_valid!(self, expected_slot);
+
+            let inbound_result = self
+                .send_transaction(req)
+                .instrument(span.clone())
+                .await
+                .inspect_err(|e| error!(error = %e, "sending transaction"))
+                .unwrap_or(ControlFlow::Retry);
 
             let guard = span.entered();
-
             match inbound_result {
                 ControlFlow::Retry => {
-                    if let Some(value) = self.slot_still_valid(expected_slot) {
-                        return value;
-                    }
                     // bump the req
                     req = bumpable.bumped();
                     if bumpable.bump_count() > retry_limit {
@@ -221,17 +226,8 @@ impl SubmitTask {
     }
 
     /// Checks if a slot is still valid during submission retries.
-    fn slot_still_valid(&self, initial_slot: usize) -> Option<Result<ControlFlow, eyre::Error>> {
-        let current_slot =
-            self.config.slot_calculator.current_slot().expect("host chain has started");
-        if current_slot != initial_slot {
-            // If the slot has changed, skip the block
-            debug!(current_slot, initial_slot, "slot changed before submission - skipping block");
-            counter!("builder.slot_missed").increment(1);
-            return Some(Ok(ControlFlow::Skip));
-        }
-        debug!(current_slot, "slot still valid - continuing submission");
-        None
+    fn slot_still_valid(&self, initial_slot: usize) -> bool {
+        initial_slot == self.config.slot_calculator.current_slot().expect("host chain has started")
     }
 
     /// Task future for the submit task. This function runs the main loop of the task.
