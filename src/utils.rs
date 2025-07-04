@@ -6,12 +6,10 @@ use alloy::{
 };
 use signet_sim::BuiltBlock;
 use signet_zenith::BundleHelper::FillPermit2;
-use std::time::UNIX_EPOCH;
 
 /// Returns the current timestamp in seconds since the UNIX epoch.
 pub(crate) fn now() -> u64 {
-    let now = std::time::SystemTime::now();
-    now.duration_since(UNIX_EPOCH).unwrap().as_secs()
+    chrono::Utc::now().timestamp() as u64
 }
 
 // This function converts &[SignedFill] into [FillPermit2]
