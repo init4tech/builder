@@ -20,7 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::info;
+use tracing::{Instrument, info, instrument};
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -92,6 +92,11 @@ impl Simulator {
     /// # Returns
     ///
     /// A `Result` containing the built block or an error.
+    #[instrument(skip_all, fields(
+        block_number = block_env.number,
+        tx_count = sim_items.len(),
+        millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis()
+    ))]
     pub async fn handle_build(
         &self,
         constants: SignetSystemConstants,
@@ -99,7 +104,6 @@ impl Simulator {
         finish_by: Instant,
         block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
-        debug!(block_number = block_env.number, tx_count = sim_items.len(), "starting block build",);
         let concurrency_limit = self.config.concurrency_limit();
 
         // NB: Build AlloyDB from the previous block number's state, since block_env maps to the in-progress block
@@ -116,7 +120,7 @@ impl Simulator {
             self.config.rollup_block_gas_limit,
         );
 
-        let built_block = block_build.build().await;
+        let built_block = block_build.build().in_current_span().await;
         debug!(
             tx_count = built_block.tx_count(),
             block_number = built_block.block_number(),
@@ -205,8 +209,9 @@ impl Simulator {
     ///
     /// # Returns
     ///
-    /// An `Instant` representing the simulation deadline, as calculated by determining
-    /// the time left in the current slot and adding that to the current timestamp in UNIX seconds.
+    /// An `Instant` representing the simulation deadline, as calculated by
+    /// determining the time left in the current slot and adding that to the
+    /// current timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
         // Get the current timepoint within the slot.
         let timepoint =
@@ -218,14 +223,6 @@ impl Simulator {
         let remaining = (self.slot_calculator().slot_duration() - timepoint).saturating_sub(3);
 
         let deadline = Instant::now() + Duration::from_secs(remaining);
-
-        debug!(
-            timepoint,
-            remaining,
-            timestamp = crate::utils::now(),
-            "calculated deadline for block simulation"
-        );
-
         deadline.max(Instant::now())
     }
 

@@ -160,7 +160,7 @@ impl SubmitTask {
                 expected_slot,
                 start = window.start,
                 end = window.end,
-                now = utils::now(),
+                unix_now = utils::now(),
             );
 
             // Check at the top of the loop if the slot is still valid. This
