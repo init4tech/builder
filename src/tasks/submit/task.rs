@@ -171,7 +171,7 @@ impl SubmitTask {
                 .send_transaction(req)
                 .instrument(span.clone())
                 .await
-                .inspect_err(|e| error!(error = %e, "sending transaction"))
+                .inspect_err(|e| error!(error = %e, "error sending transaction"))
                 .unwrap_or(ControlFlow::Retry);
 
             let guard = span.entered();
