@@ -27,11 +27,11 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.6.0", features = ["perms"] }
 
-signet-constants = { version = "0.4.2" }
-signet-sim = { version = "0.4.2" }
-signet-tx-cache = { version = "0.4.2" }
-signet-types = { version = "0.4.2" }
-signet-zenith = { version = "0.4.2" }
+signet-constants = { version = "0.4.3" }
+signet-sim = { version = "0.4.3" }
+signet-tx-cache = { version = "0.4.3" }
+signet-types = { version = "0.4.3" }
+signet-zenith = { version = "0.4.3" }
 
 trevm = { version = "0.23.6", features = ["concurrent-db", "test-utils"] }
 
