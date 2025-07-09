@@ -88,6 +88,7 @@ impl SubmitTask {
     async fn sim_with_call(&self, tx: &TransactionRequest) -> eyre::Result<()> {
         match self.provider().call(tx.clone()).block(BlockNumberOrTag::Pending.into()).await {
             Err(TransportError::ErrorResp(e)) => {
+                debug!(?e, "submit simulation failed with error response");
                 let e = SimErrorResp::from(e);
                 bail!(e)
             }

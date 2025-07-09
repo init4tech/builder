@@ -2,7 +2,7 @@ use alloy::{primitives::Bytes, rpc::json_rpc::ErrorPayload, sol_types::SolError}
 use signet_zenith::Zenith::{self, IncorrectHostBlock};
 
 /// Represents the kind of revert that can occur during simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimRevertKind {
     /// Incorrect host block error
     IncorrectHostBlock,
@@ -11,13 +11,13 @@ pub enum SimRevertKind {
     /// One rollup block per host block error
     OneRollupBlockPerHostBlock,
     /// Unknown error
-    Unknown,
+    Unknown(Option<Bytes>),
 }
 
 impl From<Option<Bytes>> for SimRevertKind {
     fn from(data: Option<Bytes>) -> Self {
         let Some(data) = data else {
-            return Self::Unknown;
+            return Self::Unknown(data);
         };
 
         if data.starts_with(&IncorrectHostBlock::SELECTOR) {
@@ -27,7 +27,7 @@ impl From<Option<Bytes>> for SimRevertKind {
         } else if data.starts_with(&Zenith::OneRollupBlockPerHostBlock::SELECTOR) {
             Self::OneRollupBlockPerHostBlock
         } else {
-            Self::Unknown
+            Self::Unknown(Some(data))
         }
     }
 }
