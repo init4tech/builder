@@ -311,14 +311,14 @@ impl SubmitTask {
             };
 
             // Simulate the transaction to check for reverts
-            if let Err(error) =
-                self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
-            {
-                submission_span.in_scope(|| {
-                    error!(%error, "simulation failed for transaction");
-                });
-                continue;
-            };
+            // if let Err(error) =
+            //     self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
+            // {
+            //     submission_span.in_scope(|| {
+            //         error!(%error, "simulation failed for transaction");
+            //     });
+            //     continue;
+            // };
 
             // Now send the transaction
             if let Err(error) =
