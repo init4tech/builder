@@ -52,6 +52,7 @@ impl CacheTask {
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
+                    debug!(?bundle, "Received bundle from tx-pool");
                     let res = cache.add_bundle(bundle.bundle, basefee);
                     // Skip bundles that fail to be added to the cache
                     if let Err(e) = res {
