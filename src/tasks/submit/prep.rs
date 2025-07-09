@@ -110,7 +110,10 @@ impl<'a> SubmitPrep<'a> {
         };
         debug!(?header.hostBlockNumber, "built rollup block header");
 
-        let data = BundleHelper::submitCall { fills: self.fills(), header, v, r, s }.abi_encode();
+        let fills = self.fills();
+        debug!(?fills, "prepared fills for blob tx");
+
+        let data = BundleHelper::submitCall { fills, header, v, r, s }.abi_encode();
 
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
