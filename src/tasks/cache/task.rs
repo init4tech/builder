@@ -45,9 +45,9 @@ impl CacheTask {
                     }
                     if let Some(env) = self.env.borrow_and_update().as_ref() {
                         basefee = env.block_env.basefee;
-                        info!(basefee, env.block_env.number, env.block_env.timestamp, "rollup block env changed, clearing cache");
+                        info!(basefee, block_env_number = env.block_env.number.to::<u64>(), block_env_timestamp = env.block_env.timestamp.to::<u64>(), "rollup block env changed, clearing cache");
                         cache.clean(
-                            env.block_env.number, env.block_env.timestamp
+                            env.block_env.number.to(), env.block_env.timestamp.to()
                         );
                     }
                 }

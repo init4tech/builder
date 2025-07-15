@@ -38,10 +38,10 @@ impl EnvTask {
     /// Construct a [`BlockEnv`] by from the previous block header.
     fn construct_block_env(&self, previous: &Header) -> BlockEnv {
         BlockEnv {
-            number: previous.number + 1,
+            number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
             // NB: EXACTLY the same as the previous block
-            timestamp: previous.number + self.config.slot_calculator.slot_duration(),
+            timestamp: U256::from(previous.number + self.config.slot_calculator.slot_duration()),
             gas_limit: self.config.rollup_block_gas_limit,
             basefee: previous
                 .next_block_base_fee(BaseFeeParams::ethereum())
@@ -99,7 +99,11 @@ impl EnvTask {
 
             // Construct the block env using the previous block header
             let signet_env = self.construct_block_env(&rollup_header);
-            debug!(signet_env.number, signet_env.basefee, "constructed signet block env");
+            debug!(
+                signet_env_number = signet_env.number.to::<u64>(),
+                signet_env_basefee = signet_env.basefee,
+                "constructed signet block env"
+            );
 
             if sender
                 .send(Some(SimEnv { block_env: signet_env, prev_header: rollup_header }))
