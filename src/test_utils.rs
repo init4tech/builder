@@ -88,9 +88,9 @@ pub fn test_block_env(
     timestamp: u64,
 ) -> BlockEnv {
     BlockEnv {
-        number,
+        number: U256::from(number),
         beneficiary: Address::repeat_byte(1),
-        timestamp,
+        timestamp: U256::from(timestamp),
         gas_limit: config.rollup_block_gas_limit,
         basefee,
         difficulty: U256::ZERO,

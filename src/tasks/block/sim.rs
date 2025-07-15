@@ -93,7 +93,7 @@ impl Simulator {
     ///
     /// A `Result` containing the built block or an error.
     #[instrument(skip_all, fields(
-        block_number = block_env.number,
+        block_number = block_env.number.to::<u64>(),
         tx_count = sim_items.len(),
         millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis()
     ))]
@@ -107,7 +107,7 @@ impl Simulator {
         let concurrency_limit = self.config.concurrency_limit();
 
         // NB: Build AlloyDB from the previous block number's state, since block_env maps to the in-progress block
-        let db = self.create_db(block_env.number - 1).unwrap();
+        let db = self.create_db(block_env.number.to::<u64>() - 1).unwrap();
 
         let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
             db,
@@ -182,7 +182,8 @@ impl Simulator {
                 return;
             }
             let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
-            info!(sim_env.block_env.number, "new block environment received");
+            let block_number = sim_env.block_env.number.to::<u64>();
+            info!(block_number, "new block environment received");
 
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,
