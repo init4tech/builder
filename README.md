@@ -71,26 +71,31 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
-| Key                       | Required | Description                                                         |
-| ------------------------- | -------- | ------------------------------------------------------------------- |
-| `HOST_CHAIN_ID`           | Yes      | Host-chain ID (e.g. `3151908`)                                      |
-| `RU_CHAIN_ID`             | Yes      | Rollup-chain ID (e.g. `14174`)                                      |
-| `TX_POOL_URL`             | Yes      | Transaction pool URL (must end with `/`)                            |
-| `HOST_RPC_URL`            | Yes      | RPC endpoint for the host chain                                     |
-| `RU_RPC_URL`              | Yes      | RPC endpoint for the rollup chain                                   |
-| `TX_BROADCAST_URLS`       | No       | Additional endpoints for blob txs (comma-separated, slash required) |
-| `ZENITH_ADDRESS`          | Yes      | Zenith contract address                                             |
-| `BUILDER_HELPER_ADDRESS`  | Yes      | Builder helper contract address                                     |
-| `QUINCEY_URL`             | Yes      | Remote sequencer signing endpoint                                   |
-| `BUILDER_PORT`            | Yes      | HTTP port for the Builder (default: `8080`)                         |
-| `SEQUENCER_KEY`           | Yes      | AWS KMS key ID _or_ local private key for sequencer signing         |
-| `BUILDER_KEY`             | Yes      | AWS KMS key ID _or_ local private key for builder signing           |
-| `BUILDER_REWARDS_ADDRESS` | Yes      | Address receiving builder rewards                                   |
-| `ROLLUP_BLOCK_GAS_LIMIT`  | No       | Override for block gas limit                                        |
-| `CONCURRENCY_LIMIT`       | Yes      | Max concurrent tasks the simulator uses                             |
-| `SLOT_OFFSET`             | Yes      | Slot timing offset in seconds                                       |
-| `SLOT_DURATION`           | Yes      | Slot duration in seconds                                            |
-| `START_TIMESTAMP`         | Yes      | UNIX timestamp for slot 0                                           |
+| Key                           | Required | Description                                                         |
+| ----------------------------- | -------- | ------------------------------------------------------------------- |
+| `HOST_CHAIN_ID`               | Yes      | Host-chain ID (e.g. `3151908`)                                      |
+| `RU_CHAIN_ID`                 | Yes      | Rollup-chain ID (e.g. `14174`)                                      |
+| `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain                                     |
+| `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain                                   |
+| `TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)                            |
+| `TX_BROADCAST_URLS`           | No       | Additional endpoints for blob txs (comma-separated, slash required) |
+| `ZENITH_ADDRESS`              | Yes      | Zenith contract address                                             |
+| `BUILDER_HELPER_ADDRESS`      | Yes      | Builder helper contract address                                     |
+| `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint                                   |
+| `BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)                         |
+| `SEQUENCER_KEY`               | Yes      | AWS KMS key ID _or_ local private key for sequencer signing         |
+| `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing           |
+| `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards                                   |
+| `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit                                        |
+| `CONCURRENCY_LIMIT`           | Yes      | Max concurrent tasks the simulator uses                             |
+| `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder                                     |
+| `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder                                 |
+| `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins  |
+| `OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token       |
+| `AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.                        |
+| `SLOT_OFFSET`                 | Yes      | Slot timing offset in seconds                                       |
+| `SLOT_DURATION`               | Yes      | Slot duration in seconds                                            |
+| `START_TIMESTAMP`             | Yes      | UNIX timestamp for slot 0                                           |
 
 ---
 
