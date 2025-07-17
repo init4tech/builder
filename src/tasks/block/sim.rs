@@ -191,7 +191,7 @@ impl Simulator {
             let finish_by = self.calculate_deadline();
             let sim_cache = cache.clone();
             match self
-                .handle_build(constants, sim_cache, finish_by, sim_env.block_env.clone())
+                .handle_build(constants.clone(), sim_cache, finish_by, sim_env.block_env.clone())
                 .await
             {
                 Ok(block) => {

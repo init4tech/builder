@@ -293,7 +293,7 @@ impl SubmitTask {
                 self.provider().clone(),
                 self.quincey.clone(),
                 self.config.clone(),
-                self.constants,
+                self.constants.clone(),
             );
             let bumpable = match prep
                 .prep_transaction(&prev_host.header)
