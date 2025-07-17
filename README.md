@@ -87,7 +87,7 @@ The Builder is configured via environment variables. The following values are su
 | `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing           |
 | `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards                                   |
 | `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit                                        |
-| `CONCURRENCY_LIMIT`           | Yes      | Max concurrent tasks the simulator uses                             |
+| `CONCURRENCY_LIMIT`           | No      | Max concurrent tasks the simulator uses                             |
 | `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder                                     |
 | `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder                                 |
 | `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins  |
