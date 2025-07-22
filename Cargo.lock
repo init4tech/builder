@@ -589,7 +589,7 @@ dependencies = [
  "alloy-serde",
  "alloy-sol-types",
  "arbitrary",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -3386,15 +3386,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3478,7 +3469,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.2",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4386,7 +4377,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.104",
@@ -5578,9 +5569,9 @@ dependencies = [
 
 [[package]]
 name = "signet-constants"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66ac2b1a5db1ebff8deec89dfb7a627de285b0bcb92a81b5aaf18c1a1d10c493"
+checksum = "155484331ad8d969ecf5da461db7b6dbe10528738afb2dec95e7e6dfdef46a63"
 dependencies = [
  "alloy",
  "serde",
@@ -5617,9 +5608,9 @@ dependencies = [
 
 [[package]]
 name = "signet-sim"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46096ad8d2063134797d59bf6a7c27b5afd9c34834365baa6cb2bb64b1e47ba8"
+checksum = "d9cc953801cdfbd0cfa91a0e3626c5e6136c21f5e56e4217a155142102b589ed"
 dependencies = [
  "alloy",
  "parking_lot",
@@ -5651,9 +5642,9 @@ dependencies = [
 
 [[package]]
 name = "signet-types"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "566a6b153a3ce3b390ebf48d1c0ec05913822ad5e0390c527f00764f599c2405"
+checksum = "11df5b07de0fbac21a38d6480c17980c02d25551ab9cb2cc268d0182fdd62d3e"
 dependencies = [
  "alloy",
  "chrono",
