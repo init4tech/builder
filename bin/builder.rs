@@ -44,7 +44,7 @@ async fn main() -> eyre::Result<()> {
         zenith,
         quincey,
         config: config.clone(),
-        constants,
+        constants: constants.clone(),
         outbound_tx_channel: tx_channel,
     };
 
