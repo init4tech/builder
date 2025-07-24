@@ -90,7 +90,7 @@ impl EnvTask {
                 Some(value) => value,
                 None => {
                     // If we failed to get the rollup header, we skip this iteration.
-                    debug!(%block_hash, "failed to get rollup header - continuint to next block");
+                    debug!(%block_hash, "failed to get rollup header - continuing to next block");
                     continue;
                 }
             };
