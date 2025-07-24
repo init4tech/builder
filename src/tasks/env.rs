@@ -41,7 +41,7 @@ impl EnvTask {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
             // NB: EXACTLY the same as the previous block
-            timestamp: U256::from(previous.number + self.config.slot_calculator.slot_duration()),
+            timestamp: U256::from(previous.timestamp + self.config.slot_calculator.slot_duration()),
             gas_limit: self.config.rollup_block_gas_limit,
             basefee: previous
                 .next_block_base_fee(BaseFeeParams::ethereum())
