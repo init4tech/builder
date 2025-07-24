@@ -28,7 +28,7 @@ struct Config {
     kms_key_id: LocalOrAwsConfig,
     #[from_env(var = "RECIPIENT_ADDRESS", desc = "Recipient address")]
     recipient_address: Address,
-    #[from_env(var = "SLEEP_TIME", desc = "Time to sleep between transactions")]
+    #[from_env(var = "SLEEP_TIME", desc = "Time to sleep between transactions, in ms")]
     sleep_time: u64,
 }
 
@@ -65,7 +65,7 @@ async fn main() {
         send_transaction(&provider, recipient_address).await;
 
         debug!(sleep_time, "sleeping");
-        tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(sleep_time)).await;
     }
 }
 
