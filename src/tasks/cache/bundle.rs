@@ -12,6 +12,9 @@ use tokio::{
     time::{self, Duration},
 };
 
+/// Poll interval for the bundle poller in milliseconds.
+const POLL_INTERVAL_MS: u64 = 1000;
+
 /// The BundlePoller polls the tx-pool for bundles.
 #[derive(Debug)]
 pub struct BundlePoller {
@@ -29,7 +32,12 @@ pub struct BundlePoller {
 impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config.
     pub fn new(config: &BuilderConfig, token: SharedToken) -> Self {
-        Self { config: config.clone(), token, client: Client::new(), poll_interval_ms: 1000 }
+        Self {
+            config: config.clone(),
+            token,
+            client: Client::new(),
+            poll_interval_ms: POLL_INTERVAL_MS,
+        }
     }
 
     /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.

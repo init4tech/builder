@@ -53,11 +53,11 @@ impl MetricsTask {
 
                     // log whether the transaction reverted
                     if receipt.status() {
-                        counter!("metrics.tx_reverted").increment(1);
-                        debug!("tx reverted");
-                    } else {
                         counter!("metrics.tx_succeeded").increment(1);
                         debug!("tx succeeded");
+                    } else {
+                        counter!("metrics.tx_reverted").increment(1);
+                        debug!("tx reverted");
                     }
                 }
                 Err(PendingTransactionError::TxWatcher(WatchTxError::Timeout)) => {
