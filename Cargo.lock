@@ -1953,7 +1953,7 @@ dependencies = [
 
 [[package]]
 name = "builder"
-version = "0.3.0"
+version = "0.2.3"
 dependencies = [
  "alloy",
  "axum 0.7.9",
