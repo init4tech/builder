@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 
+/// Poll interval for the transaction poller in milliseconds.
+const POLL_INTERVAL_MS: u64 = 1000;
+
 /// Models a response from the transaction pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TxPoolResponse {
@@ -32,7 +35,7 @@ impl TxPoller {
     /// Returns a new [`TxPoller`] with the given config.
     /// * Defaults to 1000ms poll interval (1s).
     pub fn new(config: &BuilderConfig) -> Self {
-        Self { config: config.clone(), client: Client::new(), poll_interval_ms: 1000 }
+        Self { config: config.clone(), client: Client::new(), poll_interval_ms: POLL_INTERVAL_MS }
     }
 
     /// Returns a new [`TxPoller`] with the given config and cache polling interval in milliseconds.
