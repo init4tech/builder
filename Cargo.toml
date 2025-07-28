@@ -1,10 +1,10 @@
 [package]
 name = "builder"
-version = "0.2.0"
+version = "0.3.0"
 description = "signet builder example"
 
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.88"
 authors = ["init4"]
 license = "Apache-2.0 OR MIT"
 homepage = "https://github.com/init4tech/builder"
