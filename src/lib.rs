@@ -32,3 +32,4 @@ pub mod test_utils;
 
 // Anonymous import suppresses warnings about unused imports.
 use openssl as _;
+use orders as _;

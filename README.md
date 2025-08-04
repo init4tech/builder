@@ -131,7 +131,7 @@ The previous header's basefee is tracked through the build loop and used for gas
 
 ## 📤 Transaction Sender
 
-A binary (`bin/submit-transaction.rs`) for continously sending very small transactions for testing block construction.
+A binary (`bin/submit_transaction.rs`) for continously sending very small transactions for testing block construction.
 
 The following values are available for configuring the transaction sender:
 
@@ -139,7 +139,7 @@ The following values are available for configuring the transaction sender:
 | ------------------- | -------- | ------------------------------------------------ |
 | `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
 | `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent         |
-| `SLEEP_TIME`        | No       | Optional delay (in seconds) between transactions |
+| `SLEEP_TIME`        | Yes      | Optional delay (in seconds) between transactions |
 | `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
 | `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
 
@@ -148,6 +148,22 @@ The transaction submitter is located at `bin/submit_transaction.rs`.
 Run the transaction submitter with `cargo run --bin transaction-submitter`
 
 ---
+
+## 📤 Order Submitter
+
+A binary (`bin/submit_order.rs`) for continuously sending small example orders for testing block construction with fills.
+
+The following values need to be configured:
+
+| Key                 | Required | Description                                      |
+| ------------------- | -------- | ------------------------------------------------ |
+| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
+| `SEND_TO_ROLLUP`    | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST)         |
+| `SLEEP_TIME`        | Yes       | Optional delay (in seconds) between transactions |
+| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
+| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
+
+Run the order submitter with `cargo run --bin order-submitter`
 
 ## 🛠️ Development
 
