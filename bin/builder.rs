@@ -21,9 +21,14 @@ async fn main() -> eyre::Result<()> {
     let config = BuilderConfig::from_env()?.clone();
     let constants = SignetSystemConstants::pecorino();
 
+    // We connect the WS greedily, so we can fail early if the connection is
+    // invalid.
+    let ru_provider = config.connect_ru_provider().await?;
+
     // Spawn the EnvTask
     let env_task = config.env_task();
-    let (block_env, env_jh) = env_task.spawn();
+    let (block_env, env_jh) =
+        env_task.await.expect("ws validity checked in connect_ru_provider above").spawn();
 
     // Spawn the cache system
     let cache_tasks = CacheTasks::new(config.clone(), block_env.clone());
@@ -32,7 +37,6 @@ async fn main() -> eyre::Result<()> {
     // Prep providers and contracts
     let (host_provider, quincey) =
         tokio::try_join!(config.connect_host_provider(), config.connect_quincey())?;
-    let ru_provider = config.connect_ru_provider();
     let zenith = config.connect_zenith(host_provider.clone());
 
     // Set up the metrics task

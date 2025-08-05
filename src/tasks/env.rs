@@ -6,7 +6,6 @@ use alloy::{
     providers::Provider,
 };
 use init4_bin_base::deps::tracing::{self, Instrument, debug, error, info_span};
-use std::time::Duration;
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
@@ -58,39 +57,32 @@ impl EnvTask {
     /// Returns a sender that sends [`SimEnv`] for communicating the next block environment.
     async fn task_fut(self, sender: watch::Sender<Option<SimEnv>>) {
         let span = info_span!("EnvTask::task_fut::init");
-        let mut poller = match self.ru_provider.watch_blocks().instrument(span.clone()).await {
+
+        let mut blocks = match self.ru_provider.subscribe_blocks().await {
             Ok(poller) => poller,
             Err(err) => {
                 let _span = span.enter();
-                error!(%err, "Failed to watch blocks");
+                error!(%err, "Failed to subscribe to blocks");
                 return;
             }
-        };
+        }
+        .into_stream();
 
-        poller.set_poll_interval(Duration::from_millis(250));
-
-        let mut blocks = poller.into_stream();
-
-        while let Some(blocks) =
+        while let Some(block) =
             blocks.next().instrument(info_span!("EnvTask::task_fut::stream")).await
         {
-            let Some(block_hash) = blocks.last() else {
-                // This case occurs when there are no changes to the block,
-                // so we do nothing.
-                continue;
-            };
             let span =
-                info_span!("EnvTask::task_fut::loop", %block_hash, number = tracing::field::Empty);
+                info_span!("EnvTask::task_fut::loop", %block.hash, number = tracing::field::Empty);
 
             // Get the rollup header for rollup block simulation environment configuration
             let rollup_header = match self
-                .get_latest_rollup_header(&sender, block_hash, &span)
+                .get_latest_rollup_header(&sender, &block.hash, &span)
                 .await
             {
                 Some(value) => value,
                 None => {
                     // If we failed to get the rollup header, we skip this iteration.
-                    debug!(%block_hash, "failed to get rollup header - continuing to next block");
+                    debug!(%block.hash, "failed to get rollup header - continuing to next block");
                     continue;
                 }
             };

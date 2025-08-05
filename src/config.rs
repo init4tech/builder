@@ -12,6 +12,7 @@ use alloy::{
             SimpleNonceManager, WalletFiller,
         },
     },
+    rpc::client::BuiltInConnectionString,
 };
 use eyre::Result;
 use init4_bin_base::{
@@ -63,11 +64,19 @@ pub struct BuilderConfig {
     pub ru_chain_id: u64,
 
     /// URL for Host RPC node.
-    #[from_env(var = "HOST_RPC_URL", desc = "URL for Host RPC node", infallible)]
+    #[from_env(
+        var = "HOST_RPC_URL",
+        desc = "URL for Host RPC node. This MUST be a valid HTTP or WS URL, starting with http://, https://, ws:// or wss://",
+        infallible
+    )]
     pub host_rpc_url: Cow<'static, str>,
 
     /// URL for the Rollup RPC node.
-    #[from_env(var = "ROLLUP_RPC_URL", desc = "URL for Rollup RPC node", infallible)]
+    #[from_env(
+        var = "ROLLUP_RPC_URL",
+        desc = "URL for Rollup RPC node. This MUST be a valid WS url starting with ws:// or wss://. Http providers are not supported.",
+        infallible
+    )]
     pub ru_rpc_url: Cow<'static, str>,
 
     /// URL of the tx pool to poll for incoming transactions.
@@ -176,14 +185,25 @@ impl BuilderConfig {
     }
 
     /// Connect to the Rollup rpc provider.
-    pub fn connect_ru_provider(&self) -> RootProvider<Ethereum> {
-        static ONCE: std::sync::OnceLock<RootProvider<Ethereum>> = std::sync::OnceLock::new();
+    pub async fn connect_ru_provider(&self) -> eyre::Result<RootProvider<Ethereum>> {
+        static ONCE: tokio::sync::OnceCell<RootProvider<Ethereum>> =
+            tokio::sync::OnceCell::const_new();
 
-        ONCE.get_or_init(|| {
-            let url = url::Url::parse(&self.ru_rpc_url).expect("failed to parse URL");
-            RootProvider::new_http(url)
+        ONCE.get_or_try_init(|| async {
+            let url = url::Url::parse(&self.ru_rpc_url)?;
+
+            let scheme = url.scheme();
+            eyre::ensure!(
+                scheme == "ws" || scheme == "wss",
+                "Invalid Rollup RPC URL scheme: {scheme}. Expected ws:// or wss://"
+            );
+
+            RootProvider::connect_with(BuiltInConnectionString::Ws(url, None))
+                .await
+                .map_err(Into::into)
         })
-        .clone()
+        .await
+        .cloned()
     }
 
     /// Connect to the Host rpc provider.
@@ -245,9 +265,9 @@ impl BuilderConfig {
     }
 
     /// Create an [`EnvTask`] using this config.
-    pub fn env_task(&self) -> EnvTask {
-        let ru_provider = self.connect_ru_provider();
-        EnvTask::new(self.clone(), ru_provider)
+    pub async fn env_task(&self) -> eyre::Result<EnvTask> {
+        let ru_provider = self.connect_ru_provider().await?;
+        Ok(EnvTask::new(self.clone(), ru_provider))
     }
 
     /// Create a [`SignetCfgEnv`] using this config.
