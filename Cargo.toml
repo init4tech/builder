@@ -21,6 +21,10 @@ path = "bin/builder.rs"
 name = "transaction-submitter"
 path = "bin/submit_transaction.rs"
 
+[[bin]]
+name = "order-submitter"
+path = "bin/submit_order.rs"
+
 [features]
 integration = []
 
@@ -32,6 +36,8 @@ signet-sim = { version = "0.8.0" }
 signet-tx-cache = { version = "0.8.0" }
 signet-types = { version = "0.8.0" }
 signet-zenith = { version = "0.8.0" }
+
+signet-orders = { git = "https://github.com/init4tech/signet-orders.git" }
 
 trevm = { version = "0.27.0", features = ["concurrent-db", "test-utils"] }
 
@@ -51,7 +57,7 @@ serde = { version = "1.0.197", features = ["derive"] }
 axum = "0.7.5"
 eyre = "0.6.12"
 openssl = { version = "0.10", features = ["vendored"] }
-reqwest = { version = "0.11.24", features = ["blocking", "json"] }
+reqwest = { version = "0.12.22", features = ["blocking", "json"] }
 serde_json = "1.0"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 chrono = "0.4.40"
