@@ -19,8 +19,8 @@ use tokio::time::{Duration, sleep};
 
 #[derive(Debug, FromEnv)]
 struct OrdersArgs {
-    /// If present, the order will be filled on the rollup chain.
-    /// If absent, the order will be filled on the host chain.
+    /// If true, the order will be filled on the rollup chain.
+    /// else, it will be filled on the host chain.
     #[from_env(
         var = "SEND_TO_ROLLUP",
         desc = "Whether to send the order to rollup or host. If true, it will be a RU-RU order. Else, it'll be a RU-HOST order."

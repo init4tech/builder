@@ -139,7 +139,7 @@ The following values are available for configuring the transaction sender:
 | ------------------- | -------- | ------------------------------------------------ |
 | `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
 | `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent         |
-| `SLEEP_TIME`        | Yes      | Optional delay (in seconds) between transactions |
+| `SLEEP_TIME`        | Yes      | Optional delay (in ms) between transactions |
 | `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
 | `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
 
@@ -159,7 +159,7 @@ The following values need to be configured:
 | ------------------- | -------- | ------------------------------------------------ |
 | `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
 | `SEND_TO_ROLLUP`    | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST)         |
-| `SLEEP_TIME`        | Yes       | Optional delay (in seconds) between transactions |
+| `SLEEP_TIME`        | Yes       | Optional delay (in ms) between transactions |
 | `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
 | `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
 
