@@ -21,8 +21,8 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
         host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
         ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
-        host_rpc_url: "https://host-rpc.pecorino.signet.sh".into(),
-        ru_rpc_url: "https://rpc.pecorino.signet.sh".into(),
+        host_rpc_url: "https://host-rpc.pecorino.signet.sh".parse().unwrap(),
+        ru_rpc_url: "https://rpc.pecorino.signet.sh".parse().unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
@@ -31,7 +31,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
-        tx_pool_url: "http://localhost:9000/".into(),
+        tx_pool_url: "http://localhost:9000/".parse().unwrap(),
         oauth: OAuthConfig {
             oauth_client_id: "some_client_id".into(),
             oauth_client_secret: "some_client_secret".into(),
