@@ -3,6 +3,7 @@ use crate::config::BuilderConfig;
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     primitives::{Address, B256, TxKind, U256},
+    rpc::client::BuiltInConnectionString,
     signers::{SignerSync, local::PrivateKeySigner},
 };
 use eyre::Result;
@@ -11,7 +12,7 @@ use init4_bin_base::{
         EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
     },
     perms::OAuthConfig,
-    utils::calc::SlotCalculator,
+    utils::{calc::SlotCalculator, provider::ProviderConfig},
 };
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
@@ -21,8 +22,15 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
         host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
         ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
-        host_rpc_url: "https://host-rpc.pecorino.signet.sh".parse().unwrap(),
-        ru_rpc_url: "https://rpc.pecorino.signet.sh".parse().unwrap(),
+        host_rpc: "https://host-rpc.pecorino.signet.sh"
+            .parse::<BuiltInConnectionString>()
+            .map(ProviderConfig::new)
+            .unwrap(),
+        ru_rpc: "https://rpc.pecorino.signet.sh"
+            .parse::<BuiltInConnectionString>()
+            .unwrap()
+            .try_into()
+            .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
