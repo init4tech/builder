@@ -16,7 +16,6 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::BundleHelper;
-use std::sync::OnceLock;
 use tracing::Instrument;
 
 /// Preparation logic for transactions issued to the host chain by the
@@ -35,8 +34,8 @@ pub struct SubmitPrep<'a> {
     constants: SignetSystemConstants,
 
     // Memoized quincey request and response
-    sig_request: OnceLock<SignRequest>,
-    quincey_resp: OnceLock<SignResponse>,
+    sig_request: std::sync::OnceLock<SignRequest>,
+    quincey_resp: tokio::sync::OnceCell<SignResponse>,
 }
 
 impl<'a> SubmitPrep<'a> {
@@ -78,12 +77,12 @@ impl<'a> SubmitPrep<'a> {
 
     /// Get the quincey signature response for the block.
     async fn quincey_resp(&self) -> eyre::Result<&SignResponse> {
-        if let Some(resp) = self.quincey_resp.get() {
-            return Ok(resp);
-        }
-
-        let sig = self.quincey.get_signature(self.sig_request()).await?;
-        Ok(self.quincey_resp.get_or_init(|| sig))
+        self.quincey_resp
+            .get_or_try_init(|| async {
+                let sig_request = self.sig_request();
+                self.quincey.get_signature(sig_request).await
+            })
+            .await
     }
 
     /// Get the signature components from the response.

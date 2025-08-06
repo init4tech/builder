@@ -66,26 +66,20 @@ pub struct BuilderConfig {
     /// URL for Host RPC node.
     #[from_env(
         var = "HOST_RPC_URL",
-        desc = "URL for Host RPC node. This MUST be a valid HTTP or WS URL, starting with http://, https://, ws:// or wss://",
-        infallible
+        desc = "URL for Host RPC node. This MUST be a valid HTTP or WS URL, starting with http://, https://, ws:// or wss://"
     )]
-    pub host_rpc_url: Cow<'static, str>,
+    pub host_rpc_url: url::Url,
 
     /// URL for the Rollup RPC node.
     #[from_env(
         var = "ROLLUP_RPC_URL",
-        desc = "URL for Rollup RPC node. This MUST be a valid WS url starting with ws:// or wss://. Http providers are not supported.",
-        infallible
+        desc = "URL for Rollup RPC node. This MUST be a valid WS url starting with ws:// or wss://. Http providers are not supported."
     )]
-    pub ru_rpc_url: Cow<'static, str>,
+    pub ru_rpc_url: url::Url,
 
     /// URL of the tx pool to poll for incoming transactions.
-    #[from_env(
-        var = "TX_POOL_URL",
-        desc = "URL of the tx pool to poll for incoming transactions",
-        infallible
-    )]
-    pub tx_pool_url: Cow<'static, str>,
+    #[from_env(var = "TX_POOL_URL", desc = "URL of the tx pool to poll for incoming transactions")]
+    pub tx_pool_url: url::Url,
 
     /// Additional RPC URLs to which the builder should broadcast transactions.
     /// * Should not include the `HOST_RPC_URL` value, as that is already sent to by default.
@@ -93,7 +87,6 @@ pub struct BuilderConfig {
     #[from_env(
         var = "TX_BROADCAST_URLS",
         desc = "Additional RPC URLs to which the builder broadcasts transactions",
-        infallible,
         optional
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
@@ -190,15 +183,13 @@ impl BuilderConfig {
             tokio::sync::OnceCell::const_new();
 
         ONCE.get_or_try_init(|| async {
-            let url = url::Url::parse(&self.ru_rpc_url)?;
-
-            let scheme = url.scheme();
+            let scheme = self.ru_rpc_url.scheme();
             eyre::ensure!(
                 scheme == "ws" || scheme == "wss",
                 "Invalid Rollup RPC URL scheme: {scheme}. Expected ws:// or wss://"
             );
 
-            RootProvider::connect_with(BuiltInConnectionString::Ws(url, None))
+            RootProvider::connect_with(BuiltInConnectionString::Ws(self.ru_rpc_url.clone(), None))
                 .await
                 .map_err(Into::into)
         })
@@ -216,7 +207,7 @@ impl BuilderConfig {
             .with_nonce_management(SimpleNonceManager::default())
             .fetch_chain_id()
             .wallet(EthereumWallet::from(builder_signer))
-            .connect(&self.host_rpc_url)
+            .connect(self.host_rpc_url.as_str())
             .await
             .map_err(Into::into)
     }
@@ -225,8 +216,8 @@ impl BuilderConfig {
     pub fn connect_additional_broadcast(&self) -> Vec<RootProvider> {
         self.tx_broadcast_urls
             .iter()
-            .map(|url_str| {
-                let url = url::Url::parse(url_str).expect("failed to parse URL");
+            .map(|url| {
+                let url = url.parse::<url::Url>().expect("Invalid URL in tx_broadcast_urls");
                 RootProvider::new_http(url)
             })
             .collect::<Vec<_>>()

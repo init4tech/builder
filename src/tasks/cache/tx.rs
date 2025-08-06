@@ -50,7 +50,7 @@ impl TxPoller {
 
     /// Polls the transaction cache for transactions.
     pub async fn check_tx_cache(&mut self) -> Result<Vec<TxEnvelope>, Error> {
-        let url: Url = Url::parse(&self.config.tx_pool_url)?.join("transactions")?;
+        let url: Url = self.config.tx_pool_url.join("transactions")?;
         self.client
             .get(url)
             .send()

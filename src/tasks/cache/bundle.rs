@@ -51,7 +51,7 @@ impl BundlePoller {
 
     /// Fetches bundles from the transaction cache and returns them.
     pub async fn check_bundle_cache(&mut self) -> eyre::Result<Vec<TxCacheBundle>> {
-        let bundle_url: Url = Url::parse(&self.config.tx_pool_url)?.join("bundles")?;
+        let bundle_url: Url = self.config.tx_pool_url.join("bundles")?;
         let token =
             self.token.secret().await.map_err(|e| eyre::eyre!("Failed to read token: {e}"))?;
 
