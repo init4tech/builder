@@ -17,27 +17,17 @@ name = "builder"
 name = "zenith-builder-example"
 path = "bin/builder.rs"
 
-[[bin]]
-name = "transaction-submitter"
-path = "bin/submit_transaction.rs"
-
-[[bin]]
-name = "order-submitter"
-path = "bin/submit_order.rs"
-
 [features]
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.9.0", features = ["perms"] }
+init4-bin-base = { version = "0.10.0", features = ["perms"] }
 
-signet-constants = { version = "0.8.0" }
-signet-sim = { version = "0.8.0" }
-signet-tx-cache = { version = "0.8.0" }
-signet-types = { version = "0.8.0" }
-signet-zenith = { version = "0.8.0" }
-
-signet-orders = { git = "https://github.com/init4tech/signet-orders.git" }
+signet-constants = { version = "0.9.0" }
+signet-sim = { version = "0.9.0" }
+signet-tx-cache = { version = "0.9.0" }
+signet-types = { version = "0.9.0" }
+signet-zenith = { version = "0.9.0" }
 
 trevm = { version = "0.27.0", features = ["concurrent-db", "test-utils"] }
 
