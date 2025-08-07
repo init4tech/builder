@@ -12,7 +12,6 @@ use alloy::{
             SimpleNonceManager, WalletFiller,
         },
     },
-    rpc::client::BuiltInConnectionString,
 };
 use eyre::Result;
 use init4_bin_base::{
@@ -20,11 +19,13 @@ use init4_bin_base::{
     utils::{
         calc::SlotCalculator,
         from_env::FromEnv,
+        provider::{ProviderConfig, PubSubConfig},
         signer::{LocalOrAws, SignerError},
     },
 };
 use signet_zenith::Zenith;
 use std::borrow::Cow;
+use tokio::join;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -68,14 +69,14 @@ pub struct BuilderConfig {
         var = "HOST_RPC_URL",
         desc = "URL for Host RPC node. This MUST be a valid HTTP or WS URL, starting with http://, https://, ws:// or wss://"
     )]
-    pub host_rpc_url: url::Url,
+    pub host_rpc: ProviderConfig,
 
     /// URL for the Rollup RPC node.
     #[from_env(
         var = "ROLLUP_RPC_URL",
         desc = "URL for Rollup RPC node. This MUST be a valid WS url starting with ws:// or wss://. Http providers are not supported."
     )]
-    pub ru_rpc_url: url::Url,
+    pub ru_rpc: PubSubConfig,
 
     /// URL of the tx pool to poll for incoming transactions.
     #[from_env(var = "TX_POOL_URL", desc = "URL of the tx pool to poll for incoming transactions")]
@@ -183,15 +184,7 @@ impl BuilderConfig {
             tokio::sync::OnceCell::const_new();
 
         ONCE.get_or_try_init(|| async {
-            let scheme = self.ru_rpc_url.scheme();
-            eyre::ensure!(
-                scheme == "ws" || scheme == "wss",
-                "Invalid Rollup RPC URL scheme: {scheme}. Expected ws:// or wss://"
-            );
-
-            RootProvider::connect_with(BuiltInConnectionString::Ws(self.ru_rpc_url.clone(), None))
-                .await
-                .map_err(Into::into)
+            RootProvider::connect_with(self.ru_rpc.clone()).await.map_err(Into::into)
         })
         .await
         .cloned()
@@ -199,17 +192,17 @@ impl BuilderConfig {
 
     /// Connect to the Host rpc provider.
     pub async fn connect_host_provider(&self) -> eyre::Result<HostProvider> {
-        let builder_signer = self.connect_builder_signer().await?;
-        ProviderBuilder::new_with_network()
+        let (provider, builder_signer) =
+            join!(self.host_rpc.connect(), self.connect_builder_signer());
+
+        Ok(ProviderBuilder::new_with_network()
             .disable_recommended_fillers()
             .filler(BlobGasFiller)
             .with_gas_estimation()
             .with_nonce_management(SimpleNonceManager::default())
             .fetch_chain_id()
-            .wallet(EthereumWallet::from(builder_signer))
-            .connect(self.host_rpc_url.as_str())
-            .await
-            .map_err(Into::into)
+            .wallet(EthereumWallet::from(builder_signer?))
+            .connect_provider(provider?))
     }
 
     /// Connect additional broadcast providers.
@@ -271,10 +264,10 @@ impl BuilderConfig {
     pub fn concurrency_limit(&self) -> usize {
         static ONCE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 
-        if let Some(limit) = self.concurrency_limit {
-            if limit > 0 {
-                return limit;
-            }
+        if let Some(limit) = self.concurrency_limit
+            && limit > 0
+        {
+            return limit;
         }
 
         *ONCE.get_or_init(|| {
