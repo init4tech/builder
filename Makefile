@@ -42,6 +42,3 @@ fmt:
 
 clippy:
 	$(CARGO) clippy $(CLIPPY_FLAGS)
-
-tx-submitter:
-	$(CARGO) run --bin transaction-submitter
