@@ -1,6 +1,6 @@
 [package]
 name = "builder"
-version = "0.2.3"
+version = "0.3.0"
 description = "signet builder example"
 
 edition = "2024"
@@ -21,7 +21,7 @@ path = "bin/builder.rs"
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.10.0", features = ["perms"] }
+init4-bin-base = { version = "0.10.1", features = ["perms"] }
 
 signet-constants = { version = "0.9.0" }
 signet-sim = { version = "0.9.0" }
