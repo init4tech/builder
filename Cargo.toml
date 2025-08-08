@@ -31,11 +31,11 @@ integration = []
 [dependencies]
 init4-bin-base = { version = "0.9.0", features = ["perms"] }
 
-signet-constants = { version = "0.8.0" }
-signet-sim = { version = "0.8.0" }
-signet-tx-cache = { version = "0.8.0" }
-signet-types = { version = "0.8.0" }
-signet-zenith = { version = "0.8.0" }
+signet-constants = { version = "0.9.0" }
+signet-sim = { version = "0.9.0" }
+signet-tx-cache = { version = "0.9.0" }
+signet-types = { version = "0.9.0" }
+signet-zenith = { version = "0.9.0" }
 
 signet-orders = { git = "https://github.com/init4tech/signet-orders.git" }
 
