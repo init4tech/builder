@@ -270,13 +270,16 @@ impl SubmitTask {
                 Ok(Some(prev_host)) => prev_host,
                 Ok(None) => {
                     span.in_scope(|| {
-                        warn!(prev_host_block, "previous host block not found - skipping");
+                        warn!(
+                            prev_host_block,
+                            "previous host block not found - skipping block submission"
+                        );
                     });
                     continue;
                 }
                 Err(e) => {
                     span.in_scope(|| {
-                        error!(%e, "error fetching previous host block - skipping");
+                        error!(%e, "error fetching previous host block - skipping block submission");
                     });
                     continue;
                 }
