@@ -265,17 +265,21 @@ impl SubmitTask {
             // Fetch the previous host block, not the current host block which is currently being built
             let prev_host_block = host_block_number - 1;
 
-            let Ok(Some(prev_host)) = self
-                .provider()
-                .get_block_by_number(prev_host_block.into())
-                .into_future()
-                .instrument(span.clone())
-                .await
-            else {
-                span.in_scope(|| {
-                    warn!(ru_block_number, host_block_number, "failed to get previous host block")
-                });
-                continue;
+            let prev_host_resp = self.provider().get_block_by_number(prev_host_block.into()).await;
+            let prev_host = match prev_host_resp {
+                Ok(Some(prev_host)) => prev_host,
+                Ok(None) => {
+                    span.in_scope(|| {
+                        warn!(prev_host_block, "previous host block not found - skipping");
+                    });
+                    continue;
+                }
+                Err(e) => {
+                    span.in_scope(|| {
+                        error!(%e, "error fetching previous host block - skipping");
+                    });
+                    continue;
+                }
             };
 
             // Prep the span we'll use for the transaction submission
