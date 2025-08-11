@@ -310,7 +310,7 @@ impl SubmitTask {
                 Ok(bumpable) => bumpable,
                 Err(error) => {
                     submission_span.in_scope(|| {
-                        error!(%error, "failed to prepare transaction for submission");
+                        error!(%error, "failed to prepare transaction for submission - skipping block submission");
                     });
                     continue;
                 }
@@ -321,7 +321,7 @@ impl SubmitTask {
                 self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
             {
                 submission_span.in_scope(|| {
-                    error!(%error, "simulation failed for transaction");
+                    error!(%error, "simulation failed for transaction - skipping block submission");
                 });
                 continue;
             };
