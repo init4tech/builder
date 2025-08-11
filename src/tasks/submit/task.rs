@@ -302,17 +302,22 @@ impl SubmitTask {
             // Fetch the previous host block, not the current host block which is currently being built
             let prev_host_block = host_block_number - 1;
 
-            // If we encounter a provider error, log it and skip.
-            let prev_host_resp_opt = res_unwrap_or_continue!(
-                self.provider().get_block_by_number(prev_host_block.into()).await,
-                span,
-                error!("error fetching previous host block - skipping block submission")
-            );
-            let prev_host = opt_unwrap_or_continue!(
-                prev_host_resp_opt,
-                span,
-                warn!(prev_host_block, "previous host block not found - skipping block submission")
-            );
+            let prev_host_resp = self.provider().get_block_by_number(prev_host_block.into()).await;
+            let prev_host = match prev_host_resp {
+                Ok(Some(prev_host)) => prev_host,
+                Ok(None) => {
+                    span.in_scope(|| {
+                        warn!(prev_host_block, "previous host block not found - skipping");
+                    });
+                    continue;
+                }
+                Err(e) => {
+                    span.in_scope(|| {
+                        error!(%e, "error fetching previous host block - skipping");
+                    });
+                    continue;
+                }
+            };
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
