@@ -89,6 +89,14 @@ pub struct BuilderConfig {
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
 
+    /// Flashbots endpoint for privately submitting rollup blocks.
+    #[from_env(
+        var = "FLASHBOTS_ENDPOINT",
+        desc = "Flashbots endpoint for privately submitting rollup blocks",
+        optional
+    )]
+    pub flashbots_endpoint: url::Url,
+
     /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
     pub zenith_address: Address,
