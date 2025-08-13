@@ -71,32 +71,33 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
-| Key                           | Required | Description                                                             |
-| ----------------------------- | -------- | ----------------------------------------------------------------------- |
-| `HOST_CHAIN_ID`               | Yes      | Host-chain ID (e.g. `3151908`)                                          |
-| `RU_CHAIN_ID`                 | Yes      | Rollup-chain ID (e.g. `14174`)                                          |
-| `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain                                         |
-| `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain                                       |
-| `TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)                                |
-| `TX_BROADCAST_URLS`           | No       | Additional endpoints for blob txs (comma-separated, slash required)     |
-| `ZENITH_ADDRESS`              | Yes      | Zenith contract address                                                 |
-| `BUILDER_HELPER_ADDRESS`      | Yes      | Builder helper contract address                                         |
-| `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint                                       |
-| `BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)                             |
-| `SEQUENCER_KEY`               | Yes      | AWS KMS key ID _or_ local private key for sequencer signing             |
-| `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing               |
-| `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards                                       |
-| `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit                                            |
-| `CONCURRENCY_LIMIT`           | No       | Max concurrent tasks the simulator uses                                 |
-| `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder                                         |
-| `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder                                     |
-| `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins      |
-| `OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token           |
-| `AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.                            |
-| `CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)                  |
-| `SLOT_OFFSET`                 | No       | Slot timing offset in seconds. Required if `CHAIN_NAME` is not present  |
-| `SLOT_DURATION`               | No       | Slot duration in seconds. Required if `CHAIN_NAME` is not present       |
-| `START_TIMESTAMP`             | No       | UNIX timestamp for slot 0. Required if `CHAIN_NAME` is not present      |
+| Key                           | Required | Description                                                            |
+| ----------------------------- | -------- | ---------------------------------------------------------------------- |
+| `HOST_CHAIN_ID`               | Yes      | Host-chain ID (e.g. `3151908`)                                         |
+| `RU_CHAIN_ID`                 | Yes      | Rollup-chain ID (e.g. `14174`)                                         |
+| `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain                                        |
+| `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain                                      |
+| `TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)                               |
+| `TX_BROADCAST_URLS`           | No       | Additional endpoints for blob txs (comma-separated, slash required)    |
+| `FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to.                                     |
+| `ZENITH_ADDRESS`              | Yes      | Zenith contract address                                                |
+| `BUILDER_HELPER_ADDRESS`      | Yes      | Builder helper contract address                                        |
+| `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint                                      |
+| `BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)                            |
+| `SEQUENCER_KEY`               | Yes      | AWS KMS key ID _or_ local private key for sequencer signing            |
+| `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing              |
+| `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards                                      |
+| `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit                                           |
+| `CONCURRENCY_LIMIT`           | No       | Max concurrent tasks the simulator uses                                |
+| `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder                                        |
+| `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder                                    |
+| `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins     |
+| `OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token          |
+| `AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.                           |
+| `CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)                 |
+| `SLOT_OFFSET`                 | No       | Slot timing offset in seconds. Required if `CHAIN_NAME` is not present |
+| `SLOT_DURATION`               | No       | Slot duration in seconds. Required if `CHAIN_NAME` is not present      |
+| `START_TIMESTAMP`             | No       | UNIX timestamp for slot 0. Required if `CHAIN_NAME` is not present     |
 
 ---
 
@@ -136,13 +137,13 @@ A binary (`bin/submit_transaction.rs`) for continously sending very small transa
 
 The following values are available for configuring the transaction sender:
 
-| Key                 | Required | Description                                      |
-| ------------------- | -------- | ------------------------------------------------ |
-| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
-| `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent         |
-| `SLEEP_TIME`        | Yes      | Optional delay (in ms) between transactions |
-| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
-| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
+| Key                 | Required | Description                                   |
+| ------------------- | -------- | --------------------------------------------- |
+| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction |
+| `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent      |
+| `SLEEP_TIME`        | Yes      | Optional delay (in ms) between transactions   |
+| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                     |
+| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction      |
 
 The transaction submitter is located at `bin/submit_transaction.rs`.
 
@@ -156,13 +157,13 @@ A binary (`bin/submit_order.rs`) for continuously sending small example orders f
 
 The following values need to be configured:
 
-| Key                 | Required | Description                                      |
-| ------------------- | -------- | ------------------------------------------------ |
-| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
-| `SEND_TO_ROLLUP`    | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST)         |
-| `SLEEP_TIME`        | Yes       | Optional delay (in ms) between transactions |
-| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
-| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
+| Key               | Required | Description                                                    |
+| ----------------- | -------- | -------------------------------------------------------------- |
+| `RPC_URL`         | Yes      | RPC endpoint used for sending the transaction                  |
+| `SEND_TO_ROLLUP`  | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST) |
+| `SLEEP_TIME`      | Yes      | Optional delay (in ms) between transactions                    |
+| `SIGNER_CHAIN_ID` | Yes      | Chain ID used for signing                                      |
+| `SIGNER_KEY`      | Yes      | Signing key used to sign the transaction                       |
 
 Run the order submitter with `cargo run --bin order-submitter`
 
