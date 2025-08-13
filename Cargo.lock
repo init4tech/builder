@@ -1964,6 +1964,8 @@ name = "builder"
 version = "0.3.0"
 dependencies = [
  "alloy",
+ "alloy-transport",
+ "async-trait",
  "axum 0.7.9",
  "chrono",
  "eyre",
@@ -1972,6 +1974,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "signet-bundle",
  "signet-constants",
  "signet-sim",
  "signet-tx-cache",
