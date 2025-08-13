@@ -79,6 +79,7 @@ The Builder is configured via environment variables. The following values are su
 | `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain                                   |
 | `TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)                            |
 | `TX_BROADCAST_URLS`           | No       | Additional endpoints for blob txs (comma-separated, slash required) |
+| `FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to.                                  |
 | `ZENITH_ADDRESS`              | Yes      | Zenith contract address                                             |
 | `BUILDER_HELPER_ADDRESS`      | Yes      | Builder helper contract address                                     |
 | `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint                                   |
@@ -87,7 +88,7 @@ The Builder is configured via environment variables. The following values are su
 | `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing           |
 | `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards                                   |
 | `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit                                        |
-| `CONCURRENCY_LIMIT`           | No      | Max concurrent tasks the simulator uses                             |
+| `CONCURRENCY_LIMIT`           | No       | Max concurrent tasks the simulator uses                             |
 | `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder                                     |
 | `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder                                 |
 | `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins  |
@@ -135,13 +136,13 @@ A binary (`bin/submit_transaction.rs`) for continously sending very small transa
 
 The following values are available for configuring the transaction sender:
 
-| Key                 | Required | Description                                      |
-| ------------------- | -------- | ------------------------------------------------ |
-| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
-| `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent         |
-| `SLEEP_TIME`        | Yes      | Optional delay (in ms) between transactions |
-| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
-| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
+| Key                 | Required | Description                                   |
+| ------------------- | -------- | --------------------------------------------- |
+| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction |
+| `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent      |
+| `SLEEP_TIME`        | Yes      | Optional delay (in ms) between transactions   |
+| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                     |
+| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction      |
 
 The transaction submitter is located at `bin/submit_transaction.rs`.
 
@@ -155,13 +156,13 @@ A binary (`bin/submit_order.rs`) for continuously sending small example orders f
 
 The following values need to be configured:
 
-| Key                 | Required | Description                                      |
-| ------------------- | -------- | ------------------------------------------------ |
-| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction    |
-| `SEND_TO_ROLLUP`    | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST)         |
-| `SLEEP_TIME`        | Yes       | Optional delay (in ms) between transactions |
-| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                        |
-| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction         |
+| Key               | Required | Description                                                    |
+| ----------------- | -------- | -------------------------------------------------------------- |
+| `RPC_URL`         | Yes      | RPC endpoint used for sending the transaction                  |
+| `SEND_TO_ROLLUP`  | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST) |
+| `SLEEP_TIME`      | Yes      | Optional delay (in ms) between transactions                    |
+| `SIGNER_CHAIN_ID` | Yes      | Chain ID used for signing                                      |
+| `SIGNER_KEY`      | Yes      | Signing key used to sign the transaction                       |
 
 Run the order submitter with `cargo run --bin order-submitter`
 
