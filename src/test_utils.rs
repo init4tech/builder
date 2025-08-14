@@ -32,7 +32,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .try_into()
             .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
-        flashbots_endpoint: "http://localhost:9062".parse().unwrap(), // NB: Flashbots API default
+        flashbots_endpoint: Some("http://localhost:9062".parse().unwrap()), // NB: Flashbots API default
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
         builder_port: 8080,
