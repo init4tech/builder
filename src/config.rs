@@ -95,7 +95,7 @@ pub struct BuilderConfig {
         desc = "Flashbots endpoint for privately submitting rollup blocks",
         optional
     )]
-    pub flashbots_endpoint: url::Url,
+    pub flashbots_endpoint: Option<url::Url>,
 
     /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
