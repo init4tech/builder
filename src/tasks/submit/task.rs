@@ -338,7 +338,7 @@ impl SubmitTask {
             );
 
             // Simulate the transaction to check for reverts
-            let _ = res_unwrap_or_continue!(
+            res_unwrap_or_continue!(
                 self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await,
                 submission_span,
                 error!("simulation failed for transaction - skipping block submission")
