@@ -302,25 +302,17 @@ impl SubmitTask {
             // Fetch the previous host block, not the current host block which is currently being built
             let prev_host_block = host_block_number - 1;
 
-            let prev_host_resp = self.provider().get_block_by_number(prev_host_block.into()).await;
-            let prev_host = match prev_host_resp {
-                Ok(Some(prev_host)) => prev_host,
-                Ok(None) => {
-                    span.in_scope(|| {
-                        warn!(
-                            prev_host_block,
-                            "previous host block not found - skipping block submission"
-                        );
-                    });
-                    continue;
-                }
-                Err(e) => {
-                    span.in_scope(|| {
-                        error!(%e, "error fetching previous host block - skipping block submission");
-                    });
-                    continue;
-                }
-            };
+            // If we encounter a provider error, log it and skip.
+            let prev_host_resp_opt = res_unwrap_or_continue!(
+                self.provider().get_block_by_number(prev_host_block.into()).await,
+                span,
+                error!("error fetching previous host block - skipping block submission")
+            );
+            let prev_host = opt_unwrap_or_continue!(
+                prev_host_resp_opt,
+                span,
+                warn!(prev_host_block, "previous host block not found - skipping block submission")
+            );
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
@@ -339,29 +331,18 @@ impl SubmitTask {
                 self.config.clone(),
                 self.constants.clone(),
             );
-            let bumpable = match prep
-                .prep_transaction(&prev_host.header)
-                .instrument(submission_span.clone())
-                .await
-            {
-                Ok(bumpable) => bumpable,
-                Err(error) => {
-                    submission_span.in_scope(|| {
-                        error!(%error, "failed to prepare transaction for submission - skipping block submission");
-                    });
-                    continue;
-                }
-            };
+            let bumpable = res_unwrap_or_continue!(
+                prep.prep_transaction(&prev_host.header).instrument(submission_span.clone()).await,
+                submission_span,
+                error!("failed to prepare transaction for submission - skipping block submission")
+            );
 
             // Simulate the transaction to check for reverts
-            if let Err(error) =
-                self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await
-            {
-                submission_span.in_scope(|| {
-                    error!(%error, "simulation failed for transaction - skipping block submission");
-                });
-                continue;
-            };
+            let _ = res_unwrap_or_continue!(
+                self.sim_with_call(bumpable.req()).instrument(submission_span.clone()).await,
+                submission_span,
+                error!("simulation failed for transaction - skipping block submission")
+            );
 
             // Now send the transaction
             let _ = res_unwrap_or_continue!(
