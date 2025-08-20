@@ -1,10 +1,5 @@
 //! Signet's Flashbots Block Submitter
 
-/// handles rollup block submission to the Flashbots network
-/// via the provider
-pub mod submitter;
-pub use submitter::FlashbotsSubmitter;
-
 /// implements a bundle provider API for building Flashbots
 /// compatible MEV bundles
 pub mod provider;
