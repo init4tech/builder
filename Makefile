@@ -45,6 +45,3 @@ clippy:
 
 test-flashbots:
 	$(CARGO) test --test flashbots_provider_test -- --ignored
-
-tx-submitter:
-	$(CARGO) run --bin transaction-submitter

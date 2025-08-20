@@ -2,43 +2,40 @@
 //! These tests require the `FLASHBOTS_ENDPOINT` env var to be set.
 #[cfg(test)]
 mod tests {
-    use alloy::{network::Ethereum, providers::ProviderBuilder};
     use builder::tasks::submit::flashbots::FlashbotsProvider;
 
     #[cfg(test)]
     mod tests {
         use super::*;
-        use alloy::{network::Ethereum, providers::ProviderBuilder};
+        use alloy::{providers::Provider, rpc::types::mev::MevSendBundle};
+        use builder::{config::BuilderConfig, test_utils::setup_logging};
+        use init4_bin_base::utils::from_env::FromEnv;
 
         #[tokio::test]
         #[ignore = "integration test"]
         async fn smoke_root_provider() {
-            let url: url::Url = "http://localhost:9062/".parse().unwrap();
-            let root = alloy::providers::RootProvider::<Ethereum>::new_http(url.clone());
-            let fill = ProviderBuilder::new_with_network().connect_provider(root);
-            let fp = FlashbotsProvider::new(fill, url);
+            setup_logging();
+            let config = BuilderConfig::from_env().unwrap();
 
-            assert_eq!(fp.relay_url.as_str(), "http://localhost:9062/");
+            let host_provider = config.connect_host_provider().await.unwrap();
+            let zenith = config.connect_zenith(host_provider.clone());
+            let flashbots =
+                FlashbotsProvider::new(config.clone().flashbots_endpoint, zenith.clone(), &config);
+            FlashbotsProvider::new(config.clone().flashbots_endpoint, zenith.clone(), &config);
 
-            let bundle = fp.empty_bundle(1);
-            let dbg_bundle = format!("{:?}", bundle);
-            assert!(dbg_bundle.contains("1"));
+            assert_eq!(flashbots.relay_url.as_str(), "http://localhost:9062/");
+
+            let provider = flashbots.zenith.provider();
+            let block_number = provider.get_block_number().await.unwrap();
+            assert!(block_number > 0);
         }
 
         #[tokio::test]
         #[ignore = "integration test"]
         async fn smoke_simulate_bundle() {
-            let Ok(endpoint) = std::env::var("FLASHBOTS_ENDPOINT") else {
-                eprintln!("skipping: set FLASHBOTS_ENDPOINT to run integration test");
-                return;
-            };
-            let url: url::Url = endpoint.parse().expect("invalid FLASHBOTS_ENDPOINT");
-            let root = alloy::providers::RootProvider::<Ethereum>::new_http(url.clone());
-            let provider = ProviderBuilder::new_with_network().connect_provider(root);
-            let fp = FlashbotsProvider::new(provider, url);
+            let flashbots = get_test_provider().await;
 
-            let bundle = fp.empty_bundle(1);
-            let res = fp.simulate_bundle(&bundle).await;
+            let res = flashbots.simulate_bundle(MevSendBundle::default()).await;
 
             if let Err(err) = &res {
                 eprintln!("simulate error (expected for empty bundle): {err}");
@@ -55,17 +52,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "integration test"]
         async fn smoke_send_bundle() {
-            let Ok(endpoint) = std::env::var("FLASHBOTS_ENDPOINT") else {
-                eprintln!("skipping: set FLASHBOTS_ENDPOINT to run integration test");
-                return;
-            };
-            let url: url::Url = endpoint.parse().expect("invalid FLASHBOTS_ENDPOINT");
-            let root = alloy::providers::RootProvider::<Ethereum>::new_http(url.clone());
-            let provider = ProviderBuilder::new_with_network().connect_provider(root);
-            let fp = FlashbotsProvider::new(provider, url);
-
-            let bundle = fp.empty_bundle(1);
-            let res = fp.send_bundle(bundle).await;
+            let flashbots = get_test_provider().await;
+            let res = flashbots.send_bundle(MevSendBundle::default()).await;
 
             if let Err(err) = &res {
                 let msg = format!("{err}");
@@ -73,6 +61,17 @@ mod tests {
             }
 
             assert!(res.is_ok() || res.is_err());
+        }
+
+        async fn get_test_provider() -> FlashbotsProvider {
+            let config = BuilderConfig::from_env().unwrap();
+
+            let host_provider = config.connect_host_provider().await.unwrap();
+            let zenith = config.connect_zenith(host_provider.clone());
+
+            let flashbots =
+                FlashbotsProvider::new(config.flashbots_endpoint.clone(), zenith, &config.clone());
+            flashbots
         }
     }
 }
