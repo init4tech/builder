@@ -1,11 +1,11 @@
 //! Integration tests for the FlashbotsProvider.
 //! These tests require the `FLASHBOTS_ENDPOINT` env var to be set.
 
-use builder::tasks::submit::flashbots::FlashbotsProvider;
 use alloy::{
     primitives::FixedBytes,
     rpc::types::mev::{EthBundleHash, MevSendBundle},
 };
+use builder::tasks::submit::flashbots::FlashbotsProvider;
 use builder::test_utils::{setup_logging, setup_test_config};
 
 #[tokio::test]
@@ -15,9 +15,8 @@ async fn smoke_root_provider() {
     let flashbots = get_test_provider().await;
     assert_eq!(flashbots.relay_url.as_str(), "http://localhost:9062/");
 
-    let status = flashbots
-        .bundle_status(EthBundleHash { bundle_hash: FixedBytes::default() }, 0)
-        .await;
+    let status =
+        flashbots.bundle_status(EthBundleHash { bundle_hash: FixedBytes::default() }, 0).await;
     assert!(status.is_err());
 }
 
