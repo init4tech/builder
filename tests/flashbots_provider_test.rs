@@ -7,27 +7,30 @@ mod tests {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use alloy::{providers::Provider, rpc::types::mev::MevSendBundle};
-        use builder::{config::BuilderConfig, test_utils::setup_logging};
-        use init4_bin_base::utils::from_env::FromEnv;
+        use alloy::{
+            primitives::FixedBytes,
+            rpc::types::mev::{EthBundleHash, MevSendBundle},
+        };
+        use builder::{
+            config::BuilderConfig,
+            test_utils::{setup_logging, setup_test_config},
+        };
+        use init4_bin_base::{
+            deps::tracing::{error, info},
+            utils::from_env::FromEnv,
+        };
 
         #[tokio::test]
         #[ignore = "integration test"]
         async fn smoke_root_provider() {
             setup_logging();
-            let config = BuilderConfig::from_env().unwrap();
-
-            let host_provider = config.connect_host_provider().await.unwrap();
-            let zenith = config.connect_zenith(host_provider.clone());
-            let flashbots =
-                FlashbotsProvider::new(config.clone().flashbots_endpoint, zenith.clone(), &config);
-            FlashbotsProvider::new(config.clone().flashbots_endpoint, zenith.clone(), &config);
-
+            let flashbots = get_test_provider().await;
             assert_eq!(flashbots.relay_url.as_str(), "http://localhost:9062/");
 
-            let provider = flashbots.zenith.provider();
-            let block_number = provider.get_block_number().await.unwrap();
-            assert!(block_number > 0);
+            let status = flashbots
+                .bundle_status(EthBundleHash { bundle_hash: FixedBytes::default() }, 0)
+                .await;
+            assert!(status.is_err());
         }
 
         #[tokio::test]
@@ -38,15 +41,11 @@ mod tests {
             let res = flashbots.simulate_bundle(MevSendBundle::default()).await;
 
             if let Err(err) = &res {
-                eprintln!("simulate error (expected for empty bundle): {err}");
-            }
-
-            if let Err(err) = &res {
                 let msg = format!("{err}");
                 assert!(msg.contains("mev_simBundle"));
             }
 
-            assert!(res.is_ok() || res.is_err());
+            assert!(res.is_err());
         }
 
         #[tokio::test]
@@ -64,14 +63,8 @@ mod tests {
         }
 
         async fn get_test_provider() -> FlashbotsProvider {
-            let config = BuilderConfig::from_env().unwrap();
-
-            let host_provider = config.connect_host_provider().await.unwrap();
-            let zenith = config.connect_zenith(host_provider.clone());
-
-            let flashbots =
-                FlashbotsProvider::new(config.flashbots_endpoint.clone(), zenith, &config.clone());
-            flashbots
+            let config = setup_test_config().unwrap();
+            FlashbotsProvider::new(&config.clone())
         }
     }
 }
