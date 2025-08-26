@@ -22,17 +22,17 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
         host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
         ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
-        host_rpc: "https://host-rpc.pecorino.signet.sh"
+        host_rpc: "ws://host-rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .map(ProviderConfig::new)
             .unwrap(),
-        ru_rpc: "https://rpc.pecorino.signet.sh"
+        ru_rpc: "ws://rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .unwrap()
             .try_into()
             .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
-        flashbots_endpoint: "http://localhost:9062".parse().unwrap(), // NB: Flashbots API default
+        flashbots_endpoint: Some("http://localhost:9062".parse().unwrap()), // NB: Flashbots API default
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
         builder_port: 8080,
