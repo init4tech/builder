@@ -249,14 +249,17 @@ impl SubmitTask {
                 block_tx_count = sim_result.block.tx_count(),
             );
 
-            let guard = span.enter();
+            // Ideally we would use `in_scope` here, but we want to `continue`
+            // within the
 
-            debug!(ru_block_number, "submit channel received block");
+            let guard = span.enter();
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
-                debug!(ru_block_number, "received empty block - skipping");
+                debug!("empty block - skipping");
                 continue;
+            } else {
+                debug!("received block");
             }
 
             // drop guard before await
@@ -265,26 +268,29 @@ impl SubmitTask {
             // Fetch the previous host block, not the current host block which is currently being built
             let prev_host_block = host_block_number - 1;
 
-            let Ok(Some(prev_host)) = self
+            // Fetch the previous host block
+            let prev_host = match self
                 .provider()
                 .get_block_by_number(prev_host_block.into())
                 .into_future()
                 .instrument(span.clone())
                 .await
-            else {
-                span.in_scope(|| {
-                    warn!(ru_block_number, host_block_number, "failed to get previous host block")
-                });
-                continue;
+            {
+                Ok(Some(prev_host)) => prev_host,
+                Ok(None) => {
+                    span.in_scope(|| warn!("previous host block not found - skipping"));
+                    continue;
+                }
+                Err(error) => {
+                    span.in_scope(|| warn!(%error, "error fetching previous host block"));
+                    continue;
+                }
             };
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
                 parent: &span,
                 "SubmitTask::task_future::transaction_submission",
-                tx_count = sim_result.block.tx_count(),
-                host_block_number,
-                ru_block_number,
             );
 
             // Prepare the transaction request for submission
