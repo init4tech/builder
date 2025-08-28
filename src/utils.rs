@@ -40,7 +40,7 @@ pub fn populate_initial_gas(req: &mut TransactionRequest, prev_header: &Header) 
         .expect("signet deployed after 1559 active") as u128;
     let blob_basefee = prev_header
         .next_block_blob_fee(BlobParams::prague())
-        .expect("signet deployed after 4844 active");
+        .expect("signet deployed after 7840 active");
 
     req.max_priority_fee_per_gas = Some(STARTING_MPFPG);
     req.max_fee_per_gas = Some((base_fee_per_gas * 1025 / 1024) + STARTING_MPFPG);

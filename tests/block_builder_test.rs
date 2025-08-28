@@ -8,7 +8,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use builder::{
-    tasks::block::sim::Simulator,
+    tasks::{block::sim::Simulator, env::EnvTask},
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
 use signet_sim::SimCache;
@@ -42,7 +42,14 @@ async fn test_handle_build() {
     // Create a rollup provider
     let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-    let block_env = config.env_task().await.unwrap().spawn().0;
+    let block_env = EnvTask::new(
+        config.clone(),
+        constants.clone(),
+        config.connect_host_provider().await.unwrap(),
+        ru_provider.clone(),
+    )
+    .spawn()
+    .0;
 
     let block_builder = Simulator::new(&config, ru_provider.clone(), block_env);
 
