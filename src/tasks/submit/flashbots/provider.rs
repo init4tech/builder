@@ -2,7 +2,11 @@
 use crate::config::BuilderConfig;
 use alloy::{
     primitives::BlockNumber,
-    rpc::types::mev::{EthBundleHash, MevSendBundle},
+    rpc::types::{
+        debug,
+        mev::{EthBundleHash, MevSendBundle},
+    },
+    signers::Signer,
 };
 use eyre::Context as _;
 use eyre::eyre;
@@ -35,17 +39,23 @@ impl FlashbotsProvider {
         // Alloy's `raw_request` accepts any serializable params; wrapping in a 1-tuple is fine.
         // We POST a JSON-RPC request to the relay URL using our inner HTTP client.
         let body =
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "mev_sendBundle", "params": [bundle] });
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "mev_sendBundle", "params": [bundle,] });
+
+        let sig = self.sign(&body).await?;
+
         let resp = self
             .inner
             .post(self.relay_url.as_str())
             .json(&body)
+            .header("X-Flashbots-Signature", sig)
             .send()
             .await
             .wrap_err("mev_sendBundle HTTP request failed")?;
 
         let v: serde_json::Value =
             resp.json().await.wrap_err("failed to parse mev_sendBundle response")?;
+        dbg!("send bundle value: ", v.clone());
+
         if let Some(err) = v.get("error") {
             return Err(eyre!("mev_sendBundle error: {}", err));
         }
@@ -59,20 +69,31 @@ impl FlashbotsProvider {
     /// Simulate a bundle via `mev_simBundle`.
     pub async fn simulate_bundle(&self, bundle: MevSendBundle) -> eyre::Result<()> {
         let body =
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "mev_simBundle", "params": [bundle] });
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "mev_simBundle", "params": [bundle,] });
+        debug!(?body, "prepared simulate_bundle body");
+
+        let signature = self.sign(&body).await?;
+
         let resp = self
             .inner
             .post(self.relay_url.as_str())
             .json(&body)
+            .header("X-Flashbots-Signature", signature)
             .send()
             .await
             .wrap_err("mev_simBundle HTTP request failed")?;
 
+        let status = resp.status();
+        dbg!(status, "mev_simBundle HTTP response status");
+
         let v: serde_json::Value =
             resp.json().await.wrap_err("failed to parse mev_simBundle response")?;
+        dbg!("simulate bundle value: ", v.clone());
         if let Some(err) = v.get("error") {
+            debug!(?err, "mev_simBundle error");
             return Err(eyre!("mev_simBundle error: {}", err));
         }
+
         debug!(?v, "mev_simBundle response");
         Ok(())
     }
@@ -100,6 +121,19 @@ impl FlashbotsProvider {
         }
         debug!(?v, "flashbots_getBundleStatsV2 response");
         Ok(())
+    }
+
+    /// Signs a request with the address:signature scheme required by Flashbots.
+    async fn sign(&self, body: &serde_json::Value) -> Result<String, eyre::Error> {
+        let address = self.config.builder_rewards_address.0.to_string();
+        let signer = self.config.connect_builder_signer().await.map_err(|e| {
+            eyre!("failed to connect builder signer for Flashbots simulate_bundle: {e}")
+        })?;
+        let body_sig = signer.sign_message(body.to_string().as_bytes()).await.map_err(|e| {
+            eyre!("failed to sign Flashbots simulate_bundle body with builder signer: {e}")
+        })?;
+        let signature = format!("{}:{}", address, body_sig);
+        Ok(signature)
     }
 }
 
