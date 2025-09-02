@@ -1,10 +1,7 @@
 //! Test utilities for testing builder tasks
 use crate::config::BuilderConfig;
 use alloy::{
-    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
-    primitives::{Address, B256, TxKind, U256},
-    rpc::client::BuiltInConnectionString,
-    signers::{SignerSync, local::PrivateKeySigner},
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope}, primitives::{Address, TxKind, B256, U256}, rpc::client::BuiltInConnectionString, signers::{local::PrivateKeySigner, SignerSync}
 };
 use eyre::Result;
 use init4_bin_base::{
@@ -32,12 +29,13 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .try_into()
             .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
-        flashbots_endpoint: Some("http://localhost:9062".parse().unwrap()), // NB: Flashbots API default
+        flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
+        // flashbots_endpoint: Some("https://relay.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
         builder_port: 8080,
         sequencer_key: None,
-        builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
+        builder_key: PrivateKeySigner::random().to_bytes().to_string(),
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".parse().unwrap(),
