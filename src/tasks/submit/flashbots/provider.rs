@@ -1,106 +1,109 @@
 //! A generic Flashbots bundle API wrapper.
+use std::io::Read;
+
 use crate::config::BuilderConfig;
 use alloy::{
-    primitives::BlockNumber,
+    primitives::{BlockNumber, keccak256, ruint::aliases::B256},
     rpc::types::mev::{EthBundleHash, MevSendBundle},
+    signers::Signer,
 };
+use axum::body;
 use eyre::Context as _;
-use eyre::eyre;
-use init4_bin_base::deps::tracing::debug;
-use reqwest::Client as HttpClient;
+
+use reqwest::header::CONTENT_TYPE;
 use serde_json::json;
+
+use init4_bin_base::utils::signer::LocalOrAws;
 
 /// A wrapper over a `Provider` that adds Flashbots MEV bundle helpers.
 #[derive(Debug)]
-pub struct FlashbotsProvider {
+pub struct Flashbots {
     /// The base URL for the Flashbots API.
     pub relay_url: url::Url,
-    /// Inner HTTP client used for JSON-RPC requests to the relay.
-    pub inner: HttpClient,
     /// Builder configuration for the task.
     pub config: BuilderConfig,
+    /// Signer is loaded once at startup.
+    signer: LocalOrAws,
 }
 
-impl FlashbotsProvider {
+impl Flashbots {
     /// Wraps a provider with the URL and returns a new `FlashbotsProvider`.
-    pub fn new(config: &BuilderConfig) -> Self {
+    pub async fn new(config: &BuilderConfig) -> Self {
         let relay_url =
             config.flashbots_endpoint.as_ref().expect("Flashbots endpoint must be set").clone();
-        Self { relay_url, inner: HttpClient::new(), config: config.clone() }
+
+        let signer =
+            config.connect_builder_signer().await.expect("Local or AWS signer must be set");
+
+        Self { relay_url, config: config.clone(), signer }
     }
 
-    /// Submit the prepared Flashbots bundle to the relay via `mev_sendBundle`.
+    /// Sends a bundle  via `mev_sendBundle`.
     pub async fn send_bundle(&self, bundle: MevSendBundle) -> eyre::Result<EthBundleHash> {
-        // NB: The Flashbots relay expects a single parameter which is the bundle object.
-        // Alloy's `raw_request` accepts any serializable params; wrapping in a 1-tuple is fine.
-        // We POST a JSON-RPC request to the relay URL using our inner HTTP client.
-        let body =
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "mev_sendBundle", "params": [bundle] });
-        let resp = self
-            .inner
-            .post(self.relay_url.as_str())
-            .json(&body)
-            .send()
-            .await
-            .wrap_err("mev_sendBundle HTTP request failed")?;
-
-        let v: serde_json::Value =
-            resp.json().await.wrap_err("failed to parse mev_sendBundle response")?;
-        if let Some(err) = v.get("error") {
-            return Err(eyre!("mev_sendBundle error: {}", err));
-        }
-        let result = v.get("result").ok_or_else(|| eyre!("mev_sendBundle missing result"))?;
-        let hash: EthBundleHash = serde_json::from_value(result.clone())
-            .wrap_err("failed to deserialize mev_sendBundle result")?;
-        debug!(?hash, "mev_sendBundle response");
+        let params = serde_json::to_value(bundle)?;
+        let v = self.raw_call("mev_sendBundle", params).await?;
+        let hash: EthBundleHash =
+            serde_json::from_value(v.get("result").cloned().unwrap_or(serde_json::Value::Null))?;
         Ok(hash)
     }
 
     /// Simulate a bundle via `mev_simBundle`.
     pub async fn simulate_bundle(&self, bundle: MevSendBundle) -> eyre::Result<()> {
-        let body =
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "mev_simBundle", "params": [bundle] });
-        let resp = self
-            .inner
-            .post(self.relay_url.as_str())
-            .json(&body)
-            .send()
-            .await
-            .wrap_err("mev_simBundle HTTP request failed")?;
-
-        let v: serde_json::Value =
-            resp.json().await.wrap_err("failed to parse mev_simBundle response")?;
-        if let Some(err) = v.get("error") {
-            return Err(eyre!("mev_simBundle error: {}", err));
-        }
-        debug!(?v, "mev_simBundle response");
+        let params = serde_json::to_value(bundle)?;
+        let _ = self.raw_call("mev_simBundle", params).await?;
         Ok(())
     }
 
-    /// Check that status of a bundle
+    /// Fetches the bundle status by hash
     pub async fn bundle_status(
         &self,
         _hash: EthBundleHash,
         block_number: BlockNumber,
     ) -> eyre::Result<()> {
         let params = json!({ "bundleHash": _hash, "blockNumber": block_number });
-        let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "flashbots_getBundleStatsV2", "params": [params] });
-        let resp = self
-            .inner
-            .post(self.relay_url.as_str())
-            .json(&body)
-            .send()
-            .await
-            .wrap_err("flashbots_getBundleStatsV2 HTTP request failed")?;
-
-        let v: serde_json::Value =
-            resp.json().await.wrap_err("failed to parse flashbots_getBundleStatsV2 response")?;
-        if let Some(err) = v.get("error") {
-            return Err(eyre!("flashbots_getBundleStatsV2 error: {}", err));
-        }
-        debug!(?v, "flashbots_getBundleStatsV2 response");
+        let _ = self.raw_call("flashbots_getBundleStatsV2", params).await?;
         Ok(())
+    }
+
+    /// Makes a raw JSON-RPC call with the Flashbots signature header to the method with the given params.
+    async fn raw_call(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> eyre::Result<serde_json::Value> {
+        let params = match params {
+            serde_json::Value::Array(_) => params,
+            other => serde_json::Value::Array(vec![other]),
+        };
+
+        let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
+        let body_bz = serde_json::to_vec(&body)?;
+
+        let payload = format!("0x{:x}", keccak256(body_bz.clone()));
+        let signature = self.signer.sign_message(payload.as_ref()).await?;
+        dbg!(signature.to_string());
+
+        let address = self.signer.address();
+        let value = format!("{}:{}", address, signature);
+        dbg!(value.clone());
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(self.relay_url.as_str())
+            .header(CONTENT_TYPE, "application/json")
+            .header("X-Flashbots-Signature", value)
+            .body(body_bz)
+            .send()
+            .await?;
+        let text = resp.text().await?;
+        let v: serde_json::Value =
+            serde_json::from_str(&text).wrap_err("failed to parse flashbots JSON")?;
+        if let Some(err) = v.get("error") {
+            eyre::bail!("flashbots error: {err}");
+        }
+        Ok(v)
     }
 }
 
-// (no additional helpers)
+// Raw Flashbots JSON-RPC call with header signing via reqwest.
+impl Flashbots {}

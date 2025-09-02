@@ -37,6 +37,8 @@ alloy = { version = "1.0.25", features = [
     "json-rpc",
     "signer-aws",
     "rpc-types-mev",
+    "rpc-client",
+    "rpc-types-debug",
     "rlp",
     "node-bindings",
     "serde",
@@ -58,3 +60,6 @@ tokio-stream = "0.1.17"
 url = "2.5.4"
 tracing = "0.1.41"
 async-trait = "0.1.88"
+tower = "0.4"
+bytes = "1"
+http = "0.2"
