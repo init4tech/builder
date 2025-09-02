@@ -5,7 +5,7 @@ use crate::{
     quincey::Quincey,
     tasks::{
         block::sim::SimResult,
-        submit::{SubmitPrep, flashbots::FlashbotsProvider},
+        submit::{SubmitPrep, flashbots::Flashbots},
     },
     utils,
 };
@@ -216,7 +216,7 @@ impl FlashbotsTask {
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         debug!("starting flashbots task");
 
-        let flashbots = FlashbotsProvider::new(&self.config);
+        let flashbots = Flashbots::new(&self.config).await;
 
         loop {
             // Wait for a sim result to come in
