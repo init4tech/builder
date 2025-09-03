@@ -23,41 +23,6 @@ use signet_constants::SignetSystemConstants;
 use std::{ops::Range, time::Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
 
-/// Helper macro to log an event within a span that is not currently entered.
-macro_rules! span_scoped   {
-    ($span:expr, $level:ident!($($arg:tt)*)) => {
-        $span.in_scope(|| {
-            $level!($($arg)*);
-        });
-    };
-}
-
-/// Helper macro to unwrap a result or continue the loop with a tracing event.
-macro_rules! res_unwrap_or_continue {
-    ($result:expr, $span:expr, $level:ident!($($arg:tt)*)) => {
-        match $result {
-            Ok(value) => value,
-            Err(err) => {
-                span_scoped!($span, $level!(%err, $($arg)*));
-                continue;
-            }
-        }
-    };
-}
-
-/// Helper macro to unwrap an option or continue the loop with a tracing event.
-macro_rules! opt_unwrap_or_continue {
-    ($option:expr, $span:expr, $level:ident!($($arg:tt)*)) => {
-        match $option {
-            Some(value) => value,
-            None => {
-                span_scoped!($span, $level!($($arg)*));
-                continue;
-            }
-        }
-    };
-}
-
 /// Helper macro to spawn a tokio task that broadcasts a tx.
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr) => {
@@ -299,21 +264,6 @@ impl SubmitTask {
             // drop guard before await
             drop(guard);
 
-            // Fetch the previous host block, not the current host block which is currently being built
-            let prev_host_block = host_block_number - 1;
-
-            // If we encounter a provider error, log it and skip.
-            let prev_host_resp_opt = res_unwrap_or_continue!(
-                self.provider().get_block_by_number(prev_host_block.into()).await,
-                span,
-                error!("error fetching previous host block - skipping block submission")
-            );
-            let prev_host = opt_unwrap_or_continue!(
-                prev_host_resp_opt,
-                span,
-                warn!(prev_host_block, "previous host block not found - skipping block submission")
-            );
-
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
                 parent: &span,
@@ -332,7 +282,9 @@ impl SubmitTask {
                 self.constants.clone(),
             );
             let bumpable = res_unwrap_or_continue!(
-                prep.prep_transaction(&prev_host.header).instrument(submission_span.clone()).await,
+                prep.prep_transaction(&sim_result.env.prev_host)
+                    .instrument(submission_span.clone())
+                    .await,
                 submission_span,
                 error!("failed to prepare transaction for submission - skipping block submission")
             );

@@ -1,7 +1,4 @@
-use crate::{
-    quincey::Quincey,
-    tasks::{block::cfg::SignetCfgEnv, env::EnvTask},
-};
+use crate::{quincey::Quincey, tasks::block::cfg::SignetCfgEnv};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -246,12 +243,6 @@ impl BuilderConfig {
         let token = self.oauth_token();
 
         Ok(Quincey::new_remote(client, url, token))
-    }
-
-    /// Create an [`EnvTask`] using this config.
-    pub async fn env_task(&self) -> eyre::Result<EnvTask> {
-        let ru_provider = self.connect_ru_provider().await?;
-        Ok(EnvTask::new(self.clone(), ru_provider))
     }
 
     /// Create a [`SignetCfgEnv`] using this config.
