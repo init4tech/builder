@@ -2,7 +2,8 @@ use builder::{
     config::BuilderConfig,
     service::serve_builder,
     tasks::{
-        block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask, submit::BuilderHelperTask,
+        block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask,
+        submit::BuilderHelperTask,
     },
 };
 use init4_bin_base::{
