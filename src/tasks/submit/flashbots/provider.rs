@@ -1,19 +1,14 @@
 //! A generic Flashbots bundle API wrapper.
-use std::io::Read;
-
 use crate::config::BuilderConfig;
 use alloy::{
-    primitives::{BlockNumber, keccak256, ruint::aliases::B256},
-    rpc::types::mev::{EthBundleHash, MevSendBundle},
+    primitives::{BlockNumber, keccak256},
+    rpc::types::mev::{EthBundleHash, MevSendBundle, SimBundleResponse},
     signers::Signer,
 };
-use axum::body;
 use eyre::Context as _;
-
+use init4_bin_base::utils::signer::LocalOrAws;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::json;
-
-use init4_bin_base::utils::signer::LocalOrAws;
 
 /// A wrapper over a `Provider` that adds Flashbots MEV bundle helpers.
 #[derive(Debug)]
@@ -50,7 +45,10 @@ impl Flashbots {
     /// Simulate a bundle via `mev_simBundle`.
     pub async fn simulate_bundle(&self, bundle: MevSendBundle) -> eyre::Result<()> {
         let params = serde_json::to_value(bundle)?;
-        let _ = self.raw_call("mev_simBundle", params).await?;
+        let v = self.raw_call("mev_simBundle", params).await?;
+        let resp: SimBundleResponse =
+            serde_json::from_value(v.get("result").cloned().unwrap_or(serde_json::Value::Null))?;
+        dbg!("successfully simulated bundle", &resp);
         Ok(())
     }
 
@@ -79,13 +77,7 @@ impl Flashbots {
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
         let body_bz = serde_json::to_vec(&body)?;
 
-        let payload = format!("0x{:x}", keccak256(body_bz.clone()));
-        let signature = self.signer.sign_message(payload.as_ref()).await?;
-        dbg!(signature.to_string());
-
-        let address = self.signer.address();
-        let value = format!("{}:{}", address, signature);
-        dbg!(value.clone());
+        let value = self.compute_signature(&body_bz).await?;
 
         let client = reqwest::Client::new();
         let resp = client
@@ -95,6 +87,7 @@ impl Flashbots {
             .body(body_bz)
             .send()
             .await?;
+
         let text = resp.text().await?;
         let v: serde_json::Value =
             serde_json::from_str(&text).wrap_err("failed to parse flashbots JSON")?;
@@ -103,7 +96,14 @@ impl Flashbots {
         }
         Ok(v)
     }
-}
 
-// Raw Flashbots JSON-RPC call with header signing via reqwest.
-impl Flashbots {}
+    /// Builds an EIP-191 signature for the given body bytes.
+    async fn compute_signature(&self, body_bz: &Vec<u8>) -> Result<String, eyre::Error> {
+        let payload = format!("0x{:x}", keccak256(body_bz.clone()));
+        let signature = self.signer.sign_message(payload.as_ref()).await?;
+        dbg!(signature.to_string());
+        let address = self.signer.address();
+        let value = format!("{}:{}", address, signature);
+        Ok(value)
+    }
+}
