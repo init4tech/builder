@@ -1,7 +1,10 @@
 //! Test utilities for testing builder tasks
 use crate::config::BuilderConfig;
 use alloy::{
-    consensus::{SignableTransaction, TxEip1559, TxEnvelope}, primitives::{Address, TxKind, B256, U256}, rpc::client::BuiltInConnectionString, signers::{local::PrivateKeySigner, SignerSync}
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+    primitives::{Address, B256, TxKind, U256},
+    rpc::client::BuiltInConnectionString,
+    signers::{SignerSync, local::PrivateKeySigner},
 };
 use eyre::Result;
 use init4_bin_base::{
@@ -11,13 +14,56 @@ use init4_bin_base::{
     perms::OAuthConfig,
     utils::{calc::SlotCalculator, provider::ProviderConfig},
 };
+use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
+
+/// Sets up a sepolia Flashbots-compatible builder config with test values
+pub fn setup_sepolia_config() -> Result<BuilderConfig> {
+    let config = BuilderConfig {
+        host_chain_id: 11155111, // Sepolia chain ID
+        ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
+        host_rpc: "https://ethereum-sepolia-rpc.publicnode.com"
+            .parse::<BuiltInConnectionString>()
+            .map(ProviderConfig::new)
+            .unwrap(),
+        ru_rpc: "ws://rpc.pecorino.signet.sh"
+            .parse::<BuiltInConnectionString>()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        tx_broadcast_urls: vec!["http://localhost:9000".into()],
+        flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
+        zenith_address: Address::default(),
+        quincey_url: "http://localhost:8080".into(),
+        sequencer_key: None,
+        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY").expect("SEPOLIA_ETH_PRIV_KEY must be set"),
+        builder_port: 8080,
+        builder_rewards_address: Address::default(),
+        rollup_block_gas_limit: 3_000_000_000,
+        tx_pool_url: "http://localhost:9000/".parse().unwrap(),
+        oauth: OAuthConfig {
+            oauth_client_id: "some_client_id".into(),
+            oauth_client_secret: "some_client_secret".into(),
+            oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
+            oauth_token_url: "http://localhost:8080".parse().unwrap(),
+            oauth_token_refresh_interval: 300, // 5 minutes
+        },
+        builder_helper_address: Address::default(),
+        concurrency_limit: None, // NB: Defaults to available parallelism
+        slot_calculator: SlotCalculator::new(
+            1740681556, // pecorino start timestamp as sane default
+            0, 1,
+        ),
+    };
+    Ok(config)
+}
 
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
-        host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+        // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+        host_chain_id: 11155111, // Sepolia chain ID
         ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
         host_rpc: "ws://host-rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
@@ -30,12 +76,14 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
         flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
-        // flashbots_endpoint: Some("https://relay.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
-        builder_port: 8080,
         sequencer_key: None,
-        builder_key: PrivateKeySigner::random().to_bytes().to_string(),
+        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY").unwrap_or_else(|_| {
+            dbg!("USING RANDOM BUILDER KEY, set SEPOLIA_ETH_PRIV_KEY to override");
+            PrivateKeySigner::random().to_bytes().to_string()
+        }),
+        builder_port: 8080,
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".parse().unwrap(),
@@ -64,9 +112,9 @@ pub fn new_signed_tx(
     mpfpg: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
-        chain_id: signet_constants::pecorino::RU_CHAIN_ID,
+        chain_id: 11155111,
         nonce,
-        max_fee_per_gas: 50_000,
+        max_fee_per_gas: 10_000_000,
         max_priority_fee_per_gas: mpfpg,
         to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value,
