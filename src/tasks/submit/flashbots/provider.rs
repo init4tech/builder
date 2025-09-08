@@ -98,12 +98,12 @@ impl Flashbots {
     }
 
     /// Builds an EIP-191 signature for the given body bytes.
-    async fn compute_signature(&self, body_bz: &Vec<u8>) -> Result<String, eyre::Error> {
-        let payload = format!("0x{:x}", keccak256(body_bz.clone()));
+    async fn compute_signature(&self, body_bz: &[u8]) -> Result<String, eyre::Error> {
+        let payload = format!("0x{:x}", keccak256(body_bz));
         let signature = self.signer.sign_message(payload.as_ref()).await?;
         dbg!(signature.to_string());
         let address = self.signer.address();
-        let value = format!("{}:{}", address, signature);
+        let value = format!("{address}:{signature}");
         Ok(value)
     }
 }
