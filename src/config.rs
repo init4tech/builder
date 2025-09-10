@@ -154,7 +154,6 @@ pub struct BuilderConfig {
     pub concurrency_limit: Option<usize>,
 
     /// The slot calculator for the builder.
-    #[from_env(var = "CHAIN_NAME", desc = "The slot calculator for the builder")]
     pub slot_calculator: SlotCalculator,
 }
 
