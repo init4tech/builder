@@ -21,17 +21,17 @@ path = "bin/builder.rs"
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.10.1", features = ["perms"] }
+init4-bin-base = { version = "0.12.2", features = ["perms", "aws"] }
 
-signet-constants = { version = "0.9.0" }
-signet-sim = { version = "0.9.0" }
-signet-tx-cache = { version = "0.9.0" }
-signet-types = { version = "0.9.0" }
-signet-zenith = { version = "0.9.0" }
+signet-constants = { version = "0.10.1" }
+signet-sim = { version = "0.10.1" }
+signet-tx-cache = { version = "0.10.1" }
+signet-types = { version = "0.10.1" }
+signet-zenith = { version = "0.10.1" }
 
-trevm = { version = "0.27.0", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.27.8", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "1.0.19", features = [
+alloy = { version = "1.0.25", features = [
     "full",
     "json-rpc",
     "signer-aws",

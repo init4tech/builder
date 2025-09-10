@@ -87,15 +87,13 @@ The Builder is configured via environment variables. The following values are su
 | `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing           |
 | `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards                                   |
 | `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit                                        |
-| `CONCURRENCY_LIMIT`           | No      | Max concurrent tasks the simulator uses                             |
+| `CONCURRENCY_LIMIT`           | No       | Max concurrent tasks the simulator uses                             |
 | `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder                                     |
 | `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder                                 |
 | `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins  |
 | `OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token       |
 | `AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.                        |
-| `SLOT_OFFSET`                 | Yes      | Slot timing offset in seconds                                       |
-| `SLOT_DURATION`               | Yes      | Slot duration in seconds                                            |
-| `START_TIMESTAMP`             | Yes      | UNIX timestamp for slot 0                                           |
+| `CHAIN_NAME`                  | Yes      | The chain name ("pecorino", or the corresponding name)              |
 
 ---
 
