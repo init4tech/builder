@@ -95,8 +95,8 @@ The Builder is configured via environment variables. The following values are su
 | `AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.                            |
 | `CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)                  |
 | `SLOT_OFFSET`                 | No       | Slot timing offset in seconds. Required if `CHAIN_NAME` is not present  |
-| `SLOT_DURATION`               | No       | Slot duration in seconds. Optional if `CHAIN_NAME` is not present       |
-| `START_TIMESTAMP`             | No       | UNIX timestamp for slot 0. Optional if `CHAIN_NAME` is not present      |
+| `SLOT_DURATION`               | No       | Slot duration in seconds. Required if `CHAIN_NAME` is not present       |
+| `START_TIMESTAMP`             | No       | UNIX timestamp for slot 0. Required if `CHAIN_NAME` is not present      |
 
 ---
 
