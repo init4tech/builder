@@ -21,7 +21,7 @@ path = "bin/builder.rs"
 integration = []
 
 [dependencies]
-init4-bin-base = { version = "0.12.2", features = ["perms", "aws"] }
+init4-bin-base = { version = "0.12.3", features = ["perms", "aws"] }
 
 signet-constants = { version = "0.10.1" }
 signet-sim = { version = "0.10.1" }

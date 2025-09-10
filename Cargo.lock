@@ -3319,9 +3319,9 @@ dependencies = [
 
 [[package]]
 name = "init4-bin-base"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3002542e3353a2cb915ce582df044c67936f2a6d8b8e3f1be490eb97d47d13"
+checksum = "9f69beaf3dde29492ac14a781de91655f745468703dde7bd5613222f11331f68"
 dependencies = [
  "alloy",
  "async-trait",
