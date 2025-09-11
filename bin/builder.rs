@@ -3,7 +3,7 @@ use builder::{
     service::serve_builder,
     tasks::{
         block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask,
-        submit::SubmitTask,
+        submit::BuilderHelperTask,
     },
 };
 use init4_bin_base::{
@@ -51,7 +51,7 @@ async fn main() -> eyre::Result<()> {
     let (tx_channel, metrics_jh) = metrics.spawn();
 
     // Make a Tx submission task
-    let submit = SubmitTask {
+    let submit = BuilderHelperTask {
         zenith,
         quincey,
         config: config.clone(),
