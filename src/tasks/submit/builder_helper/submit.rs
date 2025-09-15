@@ -65,9 +65,10 @@ pub enum ControlFlow {
     Done,
 }
 
-/// Submits sidecars in ethereum txns to mainnet ethereum
+/// Submits rollup blocks as blob sidecars in ethereum txns to
+/// mainnet ethereum by crafting a `BuilderHelper` contract call.
 #[derive(Debug)]
-pub struct SubmitTask {
+pub struct BuilderHelperTask {
     /// Zenith
     pub zenith: ZenithInstance,
     /// Quincey
@@ -80,7 +81,7 @@ pub struct SubmitTask {
     pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
-impl SubmitTask {
+impl BuilderHelperTask {
     /// Get the provider from the zenith instance
     const fn provider(&self) -> &HostProvider {
         self.zenith.provider()
