@@ -244,13 +244,7 @@ impl BuilderHelperTask {
             let ru_block_number = sim_result.block.block_number();
             let host_block_number = self.constants.rollup_block_to_host_block_num(ru_block_number);
 
-            let span = debug_span!(
-                parent: None,
-                "SubmitTask::task_future::transaction_prep",
-                ru_block_number,
-                host_block_number,
-                block_tx_count = sim_result.block.tx_count(),
-            );
+            let span = sim_result.sim_env.span.clone();
 
             let guard = span.enter();
 
@@ -283,7 +277,7 @@ impl BuilderHelperTask {
                 self.constants.clone(),
             );
             let bumpable = res_unwrap_or_continue!(
-                prep.prep_transaction(&sim_result.env.prev_host)
+                prep.prep_transaction(&sim_result.sim_env.prev_host)
                     .instrument(submission_span.clone())
                     .await,
                 submission_span,
