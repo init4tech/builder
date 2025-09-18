@@ -48,7 +48,30 @@ pub struct SimResult {
     /// The block built with the successfully simulated transactions
     pub block: BuiltBlock,
     /// The block environment the transactions were simulated against.
-    pub env: SimEnv,
+    pub sim_env: SimEnv,
+}
+
+impl SimResult {
+    /// Returns the block number of the built block.
+    pub const fn block_number(&self) -> u64 {
+        self.block.block_number()
+    }
+
+    /// Returns the host block number for the built block.
+    pub const fn host_block_number(&self) -> u64 {
+        self.sim_env.host_block_number()
+    }
+
+    /// Returns a reference to the tracing span associated with this simulation
+    /// result.
+    pub const fn span(&self) -> &tracing::Span {
+        self.sim_env.span()
+    }
+
+    /// Clones the span for use in other tasks.
+    pub fn clone_span(&self) -> tracing::Span {
+        self.sim_env.clone_span()
+    }
 }
 
 impl Simulator {
@@ -182,27 +205,31 @@ impl Simulator {
                 return;
             }
             let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
-            let block_number = sim_env.block_env.number.to::<u64>();
-            info!(block_number, "new block environment received");
+
+            let span = sim_env.span();
+
+            span.in_scope(|| {
+                info!("new block environment received");
+            });
 
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,
             // waiting for a new block, and checking current slot authorization.
             let finish_by = self.calculate_deadline();
             let sim_cache = cache.clone();
-            match self
+
+            let Ok(block) = self
                 .handle_build(constants.clone(), sim_cache, finish_by, sim_env.block_env.clone())
+                .instrument(span.clone())
                 .await
-            {
-                Ok(block) => {
-                    debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
-                    let _ = submit_sender.send(SimResult { block, env: sim_env });
-                }
-                Err(e) => {
-                    error!(err = %e, "failed to build block");
-                    continue;
-                }
-            }
+                .inspect_err(|err| span.in_scope(|| error!(%err, "error during block build")))
+            else {
+                continue;
+            };
+
+            let _guard = span.clone().entered();
+            debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
+            let _ = submit_sender.send(SimResult { block, sim_env });
         }
     }
 

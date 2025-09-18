@@ -39,6 +39,30 @@ pub struct SimEnv {
     pub prev_header: Header,
     /// The header of the previous host block.
     pub prev_host: Header,
+    /// A tracing span associated with this block
+    pub span: tracing::Span,
+}
+
+impl SimEnv {
+    /// Returns the block number of the signet block environment.
+    pub const fn block_number(&self) -> u64 {
+        self.prev_header.number.saturating_add(1)
+    }
+
+    /// Returns the host block number for the signet block environment.
+    pub const fn host_block_number(&self) -> u64 {
+        self.prev_host.number.saturating_add(1)
+    }
+
+    /// Returns a reference to the tracing span associated with this block env.
+    pub const fn span(&self) -> &tracing::Span {
+        &self.span
+    }
+
+    /// Clones the span for use in other tasks.
+    pub fn clone_span(&self) -> tracing::Span {
+        self.span.clone()
+    }
 }
 
 impl EnvTask {
@@ -95,7 +119,7 @@ impl EnvTask {
             let host_block_number =
                 self.constants.rollup_block_to_host_block_num(rollup_header.number);
 
-            let span = info_span!("EnvTask::task_fut::loop", %host_block_number, %rollup_header.hash, %rollup_header.number);
+            let span = info_span!("SimEnv", %host_block_number, %rollup_header.hash, %rollup_header.number);
 
             let host_block_opt = res_unwrap_or_continue!(
                 self.host_provider.get_block_by_number(host_block_number.into()).await,
@@ -120,6 +144,7 @@ impl EnvTask {
 
             if sender
                 .send(Some(SimEnv {
+                    span,
                     block_env: signet_env,
                     prev_header: rollup_header.inner,
                     prev_host,
