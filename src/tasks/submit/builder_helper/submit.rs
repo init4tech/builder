@@ -25,7 +25,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 /// Helper macro to spawn a tokio task that broadcasts a tx.
 macro_rules! spawn_provider_send {
-    ($provider:expr, $tx:expr) => {
+    ($provider:expr, $tx:expr, $span:expr) => {
         {
             let p = $provider.clone();
             let t = $tx.clone();
@@ -33,7 +33,7 @@ macro_rules! spawn_provider_send {
                 p.send_tx_envelope(t).await.inspect_err(|e| {
                    warn!(%e, "error in transaction broadcast")
                 })
-            })
+            }.instrument($span.clone()))
         }
     };
 }
@@ -106,30 +106,36 @@ impl BuilderHelperTask {
         let SendableTx::Envelope(tx) = self.provider().fill(tx).await? else {
             bail!("failed to fill transaction")
         };
-        debug!(tx_hash = ?tx.hash(), "sending transaction to network");
+
+        // Set up a span for the send operation. We'll add this to the spawned
+        // tasks
+        let span = debug_span!("BuilderHelperTask::send_transaction", tx_hash = %tx.hash());
+        span.in_scope(|| debug!("sending transaction to network"));
 
         // send the tx via the primary host_provider
-        let fut = spawn_provider_send!(self.provider(), &tx);
+        let fut = spawn_provider_send!(self.provider(), &tx, &span);
 
         // spawn send_tx futures on retry attempts for all additional broadcast host_providers
         for host_provider in self.config.connect_additional_broadcast() {
-            spawn_provider_send!(&host_provider, &tx);
+            spawn_provider_send!(&host_provider, &tx, &span);
         }
 
+        // enter span for remainder of function.
+        let _guard = span.enter();
         // send the in-progress transaction over the outbound_tx_channel
         if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
             error!("receipts task gone");
         }
 
-        if let Err(error) = fut.await? {
+        if let Err(err) = fut.await? {
             // Detect and handle transaction underprice errors
-            if matches!(error, TransportError::ErrorResp(ref err) if err.code == -32603) {
-                debug!(tx_hash = ?tx.hash(), "underpriced transaction error - retrying tx with gas bump");
+            if matches!(err, TransportError::ErrorResp(ref err) if err.code == -32603) {
+                debug!("underpriced transaction error - retrying tx with gas bump");
                 return Ok(ControlFlow::Retry);
             }
 
             // Unknown error, log and skip
-            error!(%error, "Primary tx broadcast failed");
+            error!(%err, "Primary tx broadcast failed");
             return Ok(ControlFlow::Skip);
         }
 
@@ -188,20 +194,17 @@ impl BuilderHelperTask {
                         return Ok(ControlFlow::Skip);
                     }
                     drop(guard);
-                    debug!(
-                        retries = bumpable.bump_count(),
-                        window.start, window.end, "retrying block"
-                    );
+                    debug!("retrying block");
                     continue;
                 }
                 ControlFlow::Skip => {
                     counter!("builder.skipped_blocks").increment(1);
-                    debug!(retries = bumpable.bump_count(), "skipping block");
+                    debug!("skipping block");
                     break inbound_result;
                 }
                 ControlFlow::Done => {
                     counter!("builder.submitted_successful_blocks").increment(1);
-                    debug!(retries = bumpable.bump_count(), "successfully submitted block");
+                    debug!("successfully submitted block");
                     break inbound_result;
                 }
             }
