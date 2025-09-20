@@ -40,14 +40,19 @@ macro_rules! spawn_provider_send {
 
 /// Helper macro to check if the slot is still valid before submitting a block.
 macro_rules! check_slot_still_valid {
-    ($self:expr, $initial_slot:expr) => {
+    ($self:expr, $initial_slot:expr, $span:expr) => {
         if !$self.slot_still_valid($initial_slot) {
-            debug!(
-                current_slot =
-                    $self.config.slot_calculator.current_slot().expect("host chain has started"),
-                initial_slot = $initial_slot,
-                "slot changed before submission - skipping block"
-            );
+            $span.in_scope(|| {
+                debug!(
+                    current_slot = $self
+                        .config
+                        .slot_calculator
+                        .current_slot()
+                        .expect("host chain has started"),
+                    initial_slot = $initial_slot,
+                    "slot changed before submission - skipping block"
+                )
+            });
             counter!("builder.slot_missed").increment(1);
             return Ok(ControlFlow::Skip);
         }
@@ -174,7 +179,7 @@ impl BuilderHelperTask {
 
             // Check at the top of the loop if the slot is still valid. This
             // will prevent unnecessary retries if the slot has changed.
-            check_slot_still_valid!(self, expected_slot);
+            check_slot_still_valid!(self, expected_slot, &span);
 
             let inbound_result = self
                 .send_transaction(req)
