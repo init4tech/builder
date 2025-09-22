@@ -115,7 +115,7 @@ impl BuilderHelperTask {
         // Set up a span for the send operation. We'll add this to the spawned
         // tasks
         let span = debug_span!("BuilderHelperTask::send_transaction", tx_hash = %tx.hash());
-        span.in_scope(|| debug!("sending transaction to network"));
+        span_scoped!(span, debug!("sending transaction to network"));
 
         // send the tx via the primary host_provider
         let fut = spawn_provider_send!(self.provider(), &tx, &span);
