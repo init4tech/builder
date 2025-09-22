@@ -17,13 +17,9 @@ name = "builder"
 name = "zenith-builder-example"
 path = "bin/builder.rs"
 
-[features]
-integration = []
-
 [dependencies]
 init4-bin-base = { version = "0.12.3", features = ["perms", "aws"] }
 
-signet-bundle = { version = "0.10.1" }
 signet-constants = { version = "0.10.1" }
 signet-sim = { version = "0.10.1" }
 signet-tx-cache = { version = "0.10.1" }
@@ -44,19 +40,19 @@ alloy = { version = "1.0.25", features = [
     "serde",
     "getrandom",
 ] }
-alloy-transport = "1.0.19"
-
-serde = { version = "1.0.197", features = ["derive"] }
 
 axum = "0.7.5"
+chrono = "0.4.40"
 eyre = "0.6.12"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12.22", features = ["blocking", "json"] }
-serde_json = "1.0"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.145"
+tracing = "0.1.41"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
-chrono = "0.4.40"
-
 tokio-stream = "0.1.17"
 url = "2.5.4"
-tracing = "0.1.41"
-async-trait = "0.1.88"
+
+
+[features]
+integration = []
