@@ -20,6 +20,7 @@ use signet_constants::SignetSystemConstants;
 use signet_types::SignRequest;
 use signet_zenith::{Alloy2718Coder, Zenith::BlockHeader, ZenithBlock};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::Instrument;
 
 /// Errors that the `FlashbotsTask` can encounter.
 #[derive(Debug)]
@@ -94,7 +95,7 @@ impl FlashbotsTask {
             self.constants.clone(),
         );
 
-        let tx = prep.prep_transaction(&sim_result.env.prev_header).await.map_err(|err| {
+        let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await.map_err(|err| {
             error!(?err, "failed to prepare bumpable transaction");
             FlashbotsError::PreparationError(err.to_string())
         })?;
@@ -224,37 +225,37 @@ impl FlashbotsTask {
                 debug!("upstream task gone - exiting flashbots task");
                 break;
             };
-            debug!(?sim_result.env.block_env.number, "simulation block received");
+
+            let span = sim_result.span();
+            span_scoped!(span, debug!("simulation result received"));
 
             // Prepare a MEV bundle with the configured call type from the sim result
-            let bundle = if let Ok(bundle) = self.prepare(&sim_result).await {
-                debug!("bundle prepared");
-                bundle
-            } else {
-                debug!("bundle preparation failed");
+            let Ok(bundle) = self.prepare(&sim_result).instrument(span.clone()).await else {
+                span_scoped!(span, debug!("bundle preparation failed"));
                 continue;
             };
 
             // simulate the bundle against Flashbots then send the bundle
-            let sim_bundle_result = flashbots.simulate_bundle(bundle.clone()).await;
-            match sim_bundle_result {
-                Ok(_) => {
-                    debug!("bundle simulation successful, ready to send");
-                    match flashbots.send_bundle(bundle).await {
-                        Ok(bundle_hash) => {
-                            debug!(?bundle_hash, "bundle successfully sent to Flashbots");
-                        }
-                        Err(err) => {
-                            error!(?err, "failed to send bundle to Flashbots");
-                            continue;
-                        }
-                    }
-                }
-                Err(err) => {
-                    error!(?err, "bundle simulation failed");
-                    continue;
-                }
+            if let Err(err) =
+                flashbots.simulate_bundle(bundle.clone()).instrument(span.clone()).await
+            {
+                span_scoped!(span, debug!(%err, "bundle simulation failed"));
+                continue;
             }
+
+            let _ = flashbots
+                .send_bundle(bundle)
+                .instrument(span.clone())
+                .await
+                .inspect(|bundle_hash| {
+                    span_scoped!(
+                        span,
+                        debug!(bunlde_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots")
+                    );
+                })
+                .inspect_err(|err| {
+                    span_scoped!(span, error!(?err, "failed to send bundle to Flashbots"));
+                });
         }
     }
 
