@@ -40,7 +40,7 @@ async fn test_simulate_valid_bundle_sepolia() {
     dbg!("submitting bundle with 1 tx", &bundle_body);
     let bundle = MevSendBundle::new(latest_block, Some(0), ProtocolVersion::V0_1, bundle_body);
 
-    flashbots.simulate_bundle(bundle).await.expect("failed to simulate bundle");
+    flashbots.simulate_bundle(&bundle).await.expect("failed to simulate bundle");
 }
 
 async fn get_test_provider() -> Flashbots {
