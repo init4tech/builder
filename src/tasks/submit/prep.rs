@@ -16,6 +16,7 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::BundleHelper;
+use tokio::time::Instant;
 use tracing::Instrument;
 
 /// Preparation logic for transactions issued to the host chain by the
@@ -110,9 +111,13 @@ impl<'a> SubmitPrep<'a> {
         debug!(?header.hostBlockNumber, "built rollup block header");
 
         let data = BundleHelper::submitCall { fills: self.fills(), header, v, r, s }.abi_encode();
-
-        let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
-
+        debug!("starting to encode blob");
+        let sidecar = self.block.encode_blob::<SimpleCoder>();
+        let now = Instant::now();
+        debug!("encoding blob");
+        let sidecar = sidecar.build()?;
+        debug!("built blob");
+        debug!("time taken to build blob: {}", now.elapsed().as_millis());
         Ok(TransactionRequest::default().with_blob_sidecar(sidecar).with_input(data))
     }
 
