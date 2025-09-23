@@ -19,21 +19,18 @@ async fn main() -> eyre::Result<()> {
     // Pull the configuration from the environment
     let config = BuilderConfig::from_env()?.clone();
 
-    // We connect the WS greedily, so we can fail early if the connection is
-    // invalid.
-    let ru_provider = config.connect_ru_provider().await?;
+    // We connect the providers greedily, so we can fail early if the
+    // RU WS connection is invalid.
+    let (ru_provider, host_provider) =
+        tokio::try_join!(config.connect_ru_provider(), config.connect_host_provider(),)?;
 
     // Spawn the EnvTask
-    let env_task =
-        EnvTask::new(config.clone(), config.connect_host_provider().await?, ru_provider.clone());
+    let env_task = EnvTask::new(config.clone(), host_provider.clone(), ru_provider.clone());
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
     let cache_tasks = CacheTasks::new(config.clone(), block_env.clone());
     let cache_system = cache_tasks.spawn();
-
-    // Prep providers and contracts
-    let host_provider = config.connect_host_provider().await?;
 
     // Set up the metrics task
     let metrics = MetricsTask { host_provider };

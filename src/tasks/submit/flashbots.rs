@@ -125,7 +125,7 @@ impl FlashbotsTask {
                 .instrument(span.clone())
                 .await
                 .inspect(|bundle_hash| {
-                    span_debug!(
+                    span_info!(
                         span,
                         bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots"
                     );
