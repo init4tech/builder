@@ -12,7 +12,10 @@ use alloy::{
     primitives::{TxHash, U256},
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
-use init4_bin_base::deps::tracing::{debug, error};
+use init4_bin_base::{
+    deps::tracing::{debug, error},
+    utils::flashbots::Flashbots,
+};
 use signet_constants::SignetSystemConstants;
 use signet_types::SignRequest;
 use signet_zenith::{Alloy2718Coder, Zenith::BlockHeader, ZenithBlock};
@@ -36,6 +39,8 @@ pub enum FlashbotsError {
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
     pub config: crate::config::BuilderConfig,
+    /// Flashbots RPC provider.
+    flashbots: Flashbots,
     /// System constants for the rollup and host chain.
     pub constants: SignetSystemConstants,
     /// Quincey instance for block signing.
@@ -53,15 +58,19 @@ pub struct FlashbotsTask {
 impl FlashbotsTask {
     /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
     /// channel and handles their preparation, submission to the Flashbots network.
-    pub const fn new(
+    pub async fn new(
         config: crate::config::BuilderConfig,
         constants: SignetSystemConstants,
-        quincey: Quincey,
-        zenith: ZenithInstance<HostProvider>,
+
         outbound: mpsc::UnboundedSender<TxHash>,
         bundle_helper: bool,
-    ) -> FlashbotsTask {
-        Self { config, constants, quincey, zenith, outbound, bundle_helper }
+    ) -> eyre::Result<FlashbotsTask> {
+        let flashbots = config.flashbots_provider().await?;
+        let quincey = config.connect_quincey().await?;
+        let host_provider = config.connect_host_provider().await?;
+        let zenith = config.connect_zenith(host_provider);
+
+        Ok(Self { config, constants, flashbots, quincey, zenith, outbound, bundle_helper })
     }
 
     /// Returns a reference to the inner `HostProvider`
@@ -214,11 +223,6 @@ impl FlashbotsTask {
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         debug!("starting flashbots task");
 
-        let Some(flashbots) = self.config.flashbots_provider().await else {
-            error!("flashbots configuration missing - exiting flashbots task");
-            return;
-        };
-
         loop {
             // Wait for a sim result to come in
             let Some(sim_result) = inbound.recv().await else {
@@ -236,19 +240,21 @@ impl FlashbotsTask {
             };
 
             // simulate the bundle against Flashbots then send the bundle
-            if let Err(err) = flashbots.simulate_bundle(&bundle).instrument(span.clone()).await {
+            if let Err(err) = self.flashbots.simulate_bundle(&bundle).instrument(span.clone()).await
+            {
                 span_scoped!(span, debug!(%err, "bundle simulation failed"));
                 continue;
             }
 
-            let _ = flashbots
+            let _ = self
+                .flashbots
                 .send_bundle(&bundle)
                 .instrument(span.clone())
                 .await
                 .inspect(|bundle_hash| {
                     span_scoped!(
                         span,
-                        debug!(bunlde_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots")
+                        debug!(bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots")
                     );
                 })
                 .inspect_err(|err| {
