@@ -19,7 +19,6 @@ use init4_bin_base::deps::{
     metrics::{counter, histogram},
     tracing::{Instrument, debug, debug_span, error, info, warn},
 };
-use signet_constants::SignetSystemConstants;
 use std::{ops::Range, time::Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
 
@@ -81,8 +80,6 @@ pub struct BuilderHelperTask {
     pub zenith: ZenithInstance,
     /// Quincey
     pub quincey: Quincey,
-    /// Constants
-    pub constants: SignetSystemConstants,
     /// Config
     pub config: crate::config::BuilderConfig,
     /// Channel over which to send pending transactions
@@ -287,7 +284,6 @@ impl BuilderHelperTask {
                 self.provider().clone(),
                 self.quincey.clone(),
                 self.config.clone(),
-                self.constants.clone(),
             );
             let bumpable = res_unwrap_or_continue!(
                 prep.prep_transaction(&sim_result.sim_env.prev_host)

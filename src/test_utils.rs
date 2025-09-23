@@ -14,6 +14,7 @@ use init4_bin_base::{
     perms::OAuthConfig,
     utils::{calc::SlotCalculator, flashbots::FlashbotsConfig, provider::ProviderConfig},
 };
+use signet_constants::SignetSystemConstants;
 use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
@@ -61,6 +62,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             1740681556, // pecorino start timestamp as sane default
             0, 1,
         ),
+        constants: SignetSystemConstants::pecorino(),
     };
     Ok(config)
 }

@@ -6,7 +6,6 @@ use alloy::{
     providers::Provider,
 };
 use init4_bin_base::deps::tracing::{Instrument, debug, error, info_span};
-use signet_constants::SignetSystemConstants;
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tracing::warn;
@@ -17,9 +16,6 @@ use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndP
 pub struct EnvTask {
     /// Builder configuration values.
     config: BuilderConfig,
-
-    /// Signet system constants.
-    constants: SignetSystemConstants,
 
     /// Host provider is used to get the latest host block header for
     /// constructing the next block environment.
@@ -69,11 +65,10 @@ impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
     pub const fn new(
         config: BuilderConfig,
-        constants: SignetSystemConstants,
         host_provider: HostProvider,
         ru_provider: RuProvider,
     ) -> Self {
-        Self { config, constants, host_provider, ru_provider }
+        Self { config, host_provider, ru_provider }
     }
 
     /// Construct a [`BlockEnv`] by from the previous block header.
@@ -115,7 +110,7 @@ impl EnvTask {
             headers.next().instrument(info_span!("EnvTask::task_fut::stream")).await
         {
             let host_block_number =
-                self.constants.rollup_block_to_host_block_num(rollup_header.number);
+                self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
 
             let span = info_span!("SimEnv", %host_block_number, %rollup_header.hash, %rollup_header.number);
 

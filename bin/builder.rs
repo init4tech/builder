@@ -10,7 +10,6 @@ use init4_bin_base::{
     deps::tracing::{info, info_span},
     utils::from_env::FromEnv,
 };
-use signet_types::constants::SignetSystemConstants;
 use tokio::select;
 
 // Note: Must be set to `multi_thread` to support async tasks.
@@ -22,19 +21,14 @@ async fn main() -> eyre::Result<()> {
 
     // Pull the configuration from the environment
     let config = BuilderConfig::from_env()?.clone();
-    let constants = SignetSystemConstants::pecorino();
 
     // We connect the WS greedily, so we can fail early if the connection is
     // invalid.
     let ru_provider = config.connect_ru_provider().await?;
 
     // Spawn the EnvTask
-    let env_task = EnvTask::new(
-        config.clone(),
-        constants.clone(),
-        config.connect_host_provider().await?,
-        ru_provider.clone(),
-    );
+    let env_task =
+        EnvTask::new(config.clone(), config.connect_host_provider().await?, ru_provider.clone());
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
@@ -55,7 +49,6 @@ async fn main() -> eyre::Result<()> {
         zenith,
         quincey,
         config: config.clone(),
-        constants: constants.clone(),
         outbound_tx_channel: tx_channel,
     };
 
@@ -64,7 +57,8 @@ async fn main() -> eyre::Result<()> {
 
     // Set up the simulator
     let sim = Simulator::new(&config, ru_provider.clone(), block_env);
-    let build_jh = sim.spawn_simulator_task(constants, cache_system.sim_cache, submit_channel);
+    let build_jh =
+        sim.spawn_simulator_task(config.constants.clone(), cache_system.sim_cache, submit_channel);
 
     // Start the healthcheck server
     let server = serve_builder(([0, 0, 0, 0], config.builder_port));

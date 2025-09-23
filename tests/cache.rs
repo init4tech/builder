@@ -3,7 +3,6 @@ use builder::{
     test_utils::{setup_logging, setup_test_config},
 };
 use init4_bin_base::deps::tracing::warn;
-use signet_constants::SignetSystemConstants;
 use std::time::Duration;
 
 #[ignore = "integration test. This test will take >12 seconds to run, and requires Authz configuration env vars."]
@@ -15,7 +14,6 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
 
     let (block_env, _jh) = EnvTask::new(
         config.clone(),
-        SignetSystemConstants::pecorino(),
         config.connect_host_provider().await?,
         config.connect_ru_provider().await?,
     )

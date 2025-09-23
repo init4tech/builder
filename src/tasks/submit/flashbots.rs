@@ -64,9 +64,12 @@ impl FlashbotsTask {
         outbound: mpsc::UnboundedSender<TxHash>,
         bundle_helper: bool,
     ) -> eyre::Result<FlashbotsTask> {
-        let flashbots = config.flashbots_provider().await?;
-        let quincey = config.connect_quincey().await?;
-        let host_provider = config.connect_host_provider().await?;
+        let (flashbots, quincey, host_provider) = tokio::try_join!(
+            config.flashbots_provider(),
+            config.connect_quincey(),
+            config.connect_host_provider(),
+        )?;
+
         let zenith = config.connect_zenith(host_provider);
 
         Ok(Self {
@@ -105,7 +108,6 @@ impl FlashbotsTask {
             self.host_provider(),
             self.quincey.clone(),
             self.config.clone(),
-            self.constants.clone(),
         );
 
         let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await.map_err(|err| {

@@ -21,6 +21,7 @@ use init4_bin_base::{
         signer::{LocalOrAws, SignerError},
     },
 };
+use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 use tokio::join;
@@ -159,6 +160,9 @@ pub struct BuilderConfig {
 
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
+
+    /// The signet system constants.
+    pub constants: SignetSystemConstants,
 }
 
 impl BuilderConfig {
