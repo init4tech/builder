@@ -10,4 +10,4 @@ pub use builder_helper::{BuilderHelperTask, ControlFlow};
 
 /// Submission logic for Flashbots
 pub mod flashbots;
-pub use flashbots::{Flashbots, FlashbotsTask};
+pub use flashbots::FlashbotsTask;

@@ -3,10 +3,7 @@
 use crate::{
     config::{HostProvider, ZenithInstance},
     quincey::Quincey,
-    tasks::{
-        block::sim::SimResult,
-        submit::{SubmitPrep, flashbots::Flashbots},
-    },
+    tasks::{block::sim::SimResult, submit::SubmitPrep},
     utils,
 };
 use alloy::{
@@ -217,7 +214,10 @@ impl FlashbotsTask {
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         debug!("starting flashbots task");
 
-        let flashbots = Flashbots::new(&self.config).await;
+        let Some(flashbots) = self.config.flashbots_provider().await else {
+            error!("flashbots configuration missing - exiting flashbots task");
+            return;
+        };
 
         loop {
             // Wait for a sim result to come in
@@ -236,15 +236,13 @@ impl FlashbotsTask {
             };
 
             // simulate the bundle against Flashbots then send the bundle
-            if let Err(err) =
-                flashbots.simulate_bundle(bundle.clone()).instrument(span.clone()).await
-            {
+            if let Err(err) = flashbots.simulate_bundle(&bundle).instrument(span.clone()).await {
                 span_scoped!(span, debug!(%err, "bundle simulation failed"));
                 continue;
             }
 
             let _ = flashbots
-                .send_bundle(bundle)
+                .send_bundle(&bundle)
                 .instrument(span.clone())
                 .await
                 .inspect(|bundle_hash| {

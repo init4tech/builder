@@ -12,52 +12,11 @@ use init4_bin_base::{
         EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
     },
     perms::OAuthConfig,
-    utils::{calc::SlotCalculator, provider::ProviderConfig},
+    utils::{calc::SlotCalculator, flashbots::FlashbotsConfig, provider::ProviderConfig},
 };
 use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
-
-/// Sets up a sepolia Flashbots-compatible builder config with test values
-pub fn setup_sepolia_config() -> Result<BuilderConfig> {
-    let config = BuilderConfig {
-        host_chain_id: 11155111, // Sepolia chain ID
-        ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
-        host_rpc: "https://ethereum-sepolia-rpc.publicnode.com"
-            .parse::<BuiltInConnectionString>()
-            .map(ProviderConfig::new)
-            .unwrap(),
-        ru_rpc: "ws://rpc.pecorino.signet.sh"
-            .parse::<BuiltInConnectionString>()
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        tx_broadcast_urls: vec!["http://localhost:9000".into()],
-        flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
-        zenith_address: Address::default(),
-        quincey_url: "http://localhost:8080".into(),
-        sequencer_key: None,
-        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY").expect("SEPOLIA_ETH_PRIV_KEY must be set"),
-        builder_port: 8080,
-        builder_rewards_address: Address::default(),
-        rollup_block_gas_limit: 3_000_000_000,
-        tx_pool_url: "http://localhost:9000/".parse().unwrap(),
-        oauth: OAuthConfig {
-            oauth_client_id: "some_client_id".into(),
-            oauth_client_secret: "some_client_secret".into(),
-            oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
-            oauth_token_url: "http://localhost:8080".parse().unwrap(),
-            oauth_token_refresh_interval: 300, // 5 minutes
-        },
-        builder_helper_address: Address::default(),
-        concurrency_limit: None, // NB: Defaults to available parallelism
-        slot_calculator: SlotCalculator::new(
-            1740681556, // pecorino start timestamp as sane default
-            0, 1,
-        ),
-    };
-    Ok(config)
-}
 
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
@@ -75,7 +34,9 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .try_into()
             .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
-        flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()), // NB: Flashbots API default
+        flashbots: FlashbotsConfig {
+            flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()),
+        }, // NB: Flashbots API default
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
         sequencer_key: None,

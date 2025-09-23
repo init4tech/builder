@@ -15,6 +15,7 @@ use init4_bin_base::{
     perms::{Authenticator, OAuthConfig, SharedToken},
     utils::{
         calc::SlotCalculator,
+        flashbots::Flashbots,
         from_env::FromEnv,
         provider::{ProviderConfig, PubSubConfig},
         signer::{LocalOrAws, SignerError},
@@ -89,13 +90,8 @@ pub struct BuilderConfig {
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
 
-    /// Flashbots endpoint for privately submitting rollup blocks.
-    #[from_env(
-        var = "FLASHBOTS_ENDPOINT",
-        desc = "Flashbots endpoint for privately submitting rollup blocks",
-        optional
-    )]
-    pub flashbots_endpoint: Option<url::Url>,
+    /// Flashbots configuration for privately submitting rollup blocks.
+    pub flashbots: init4_bin_base::utils::flashbots::FlashbotsConfig,
 
     /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
@@ -274,5 +270,10 @@ impl BuilderConfig {
                 .map(|p| p.get())
                 .unwrap_or(DEFAULT_CONCURRENCY_LIMIT)
         })
+    }
+
+    /// Connect to a Flashbots provider.
+    pub async fn flashbots_provider(&self) -> Option<Flashbots> {
+        self.flashbots.build(self.connect_builder_signer().await.ok()?)
     }
 }
