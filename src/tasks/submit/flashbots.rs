@@ -4,33 +4,19 @@ use crate::{
     config::{BuilderConfig, HostProvider, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
-    utils,
 };
 use alloy::{
-    consensus::SimpleCoder,
     eips::Encodable2718,
-    primitives::{TxHash, U256},
+    primitives::TxHash,
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
+use eyre::OptionExt;
 use init4_bin_base::{
     deps::tracing::{debug, error},
     utils::flashbots::Flashbots,
 };
-use signet_types::SignRequest;
-use signet_zenith::{Alloy2718Coder, Zenith::BlockHeader, ZenithBlock};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
-
-/// Errors that the `FlashbotsTask` can encounter.
-#[derive(Debug)]
-pub enum FlashbotsError {
-    /// Error during bundle preparation.
-    PreparationError(String),
-    /// Error during bundle simulation.
-    SimulationError(String),
-    /// Error during bundle submission.
-    SubmissionError(String),
-}
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
@@ -46,10 +32,6 @@ pub struct FlashbotsTask {
     zenith: ZenithInstance<HostProvider>,
     /// Channel for sending hashes of outbound transactions.
     _outbound: mpsc::UnboundedSender<TxHash>,
-    /// Determines if the BundleHelper contract should be used for block submission.
-    /// NB: If bundle_helper is not used, instead the Zenith contract
-    /// submitBlock function is used.
-    bundle_helper: bool,
 }
 
 impl FlashbotsTask {
@@ -58,7 +40,6 @@ impl FlashbotsTask {
     pub async fn new(
         config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
-        bundle_helper: bool,
     ) -> eyre::Result<FlashbotsTask> {
         let (flashbots, quincey, host_provider) = tokio::try_join!(
             config.flashbots_provider(),
@@ -68,7 +49,7 @@ impl FlashbotsTask {
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, flashbots, quincey, zenith, _outbound: outbound, bundle_helper })
+        Ok(Self { config, flashbots, quincey, zenith, _outbound: outbound })
     }
 
     /// Returns a reference to the inner `HostProvider`
@@ -77,20 +58,14 @@ impl FlashbotsTask {
     }
 
     /// Prepares a MEV bundle with the configured submit call
-    pub async fn prepare(&self, sim_result: &SimResult) -> Result<MevSendBundle, FlashbotsError> {
-        match self.bundle_helper {
-            true => self.prepare_bundle_helper(sim_result).await,
-            false => self.prepare_zenith(sim_result).await,
-        }
+    pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
+        // This function is left for forwards compatibility when we want to add
+        // different bundle preparation methods in the future.
+        self.prepare_bundle_helper(sim_result).await
     }
 
     /// Prepares a BundleHelper call containing the rollup block and corresponding fills into a MEV bundle.
-    async fn prepare_bundle_helper(
-        &self,
-        sim_result: &SimResult,
-    ) -> Result<MevSendBundle, FlashbotsError> {
-        let mut bundle_body = Vec::new();
-
+    async fn prepare_bundle_helper(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
         let prep = SubmitPrep::new(
             &sim_result.block,
             self.host_provider(),
@@ -98,122 +73,23 @@ impl FlashbotsTask {
             self.config.clone(),
         );
 
-        let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await.map_err(|err| {
-            error!(%err, "failed to prepare bumpable transaction");
-            FlashbotsError::PreparationError(err.to_string())
-        })?;
+        let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await?;
 
-        let sendable = self.host_provider().fill(tx.req().clone()).await.map_err(|err| {
-            error!(?err, "failed to fill transaction");
-            FlashbotsError::PreparationError(err.to_string())
-        })?;
+        let sendable = self.host_provider().fill(tx.into_request()).await?;
 
-        if let Some(envelope) = sendable.as_envelope() {
-            bundle_body
-                .push(BundleItem::Tx { tx: envelope.encoded_2718().into(), can_revert: true });
-            debug!(tx_hash = ?envelope.hash(), "added filled transaction to bundle");
-        }
+        let tx_bytes = sendable
+            .as_envelope()
+            .ok_or_eyre("failed to get envelope from filled tx")?
+            .encoded_2718()
+            .into();
 
-        let bundle = MevSendBundle::new(0, Some(0), ProtocolVersion::V0_1, bundle_body);
-
-        Ok(bundle)
-    }
-
-    /// Creates a Zenith `submitBlock` transaction and packages it into a MEV bundle from a given simulation result.
-    async fn prepare_zenith(
-        &self,
-        sim_result: &SimResult,
-    ) -> Result<MevSendBundle, FlashbotsError> {
-        let target_block = sim_result.block.block_number();
-        let host_block_number = self.config.constants.rollup_block_to_host_block_num(target_block);
-
-        // Create Zenith block header
-        let header = BlockHeader {
-            rollupChainId: U256::from(self.config.constants.ru_chain_id()),
-            hostBlockNumber: U256::from(host_block_number),
-            gasLimit: U256::from(self.config.rollup_block_gas_limit),
-            rewardAddress: self.config.builder_rewards_address,
-            blockDataHash: *sim_result.block.contents_hash(),
-        };
-
-        // Create the raw Zenith block from the header
-        let block =
-            ZenithBlock::<Alloy2718Coder>::new(header, sim_result.block.transactions().to_vec());
-
-        // Encode the Zenith block as a blob sidecar
-        let sidecar = sim_result.block.encode_blob::<SimpleCoder>().build().map_err(|err| {
-            error!(?err, "failed to encode sidecar for block");
-            FlashbotsError::PreparationError(err.to_string())
-        })?;
-
-        // Sign the rollup block contents
-        let signature = self
-            .quincey
-            .get_signature(&SignRequest {
-                host_block_number: U256::from(host_block_number),
-                host_chain_id: U256::from(self.config.constants.host_chain_id()),
-                ru_chain_id: U256::from(self.config.constants.ru_chain_id()),
-                gas_limit: U256::from(self.config.rollup_block_gas_limit),
-                ru_reward_address: self.config.builder_rewards_address,
-                contents: *sim_result.block.contents_hash(),
-            })
-            .await
-            .map_err(|err| {
-                error!(?err, "failed to get signature for block");
-                FlashbotsError::PreparationError(err.to_string())
-            })?;
-
-        // Extract the v, r, and s values from the signature
-        let (v, r, s) = utils::extract_signature_components(&signature.sig);
-
-        // Create a MEV bundle and add the host fills to it
-        let mut bundle_body = Vec::new();
-        let host_fills = sim_result.block.host_fills();
-        for fill in host_fills {
-            // Create a host fill transaction with the rollup orders contract and sign it
-            let tx_req = fill.to_fill_tx(self.config.constants.ru_orders());
-            let sendable = self.host_provider().fill(tx_req).await.map_err(|err| {
-                error!(?err, "failed to fill transaction");
-                FlashbotsError::PreparationError(err.to_string())
-            })?;
-
-            // Add them to the MEV bundle
-            if let Some(envelope) = sendable.as_envelope() {
-                bundle_body
-                    .push(BundleItem::Tx { tx: envelope.encoded_2718().into(), can_revert: true });
-                debug!(tx_hash = ?envelope.hash(), "added filled transaction to MEV bundle");
-            }
-        }
-
-        // Create the Zenith submit block call transaction and attach the sidecar to it
-        let submit_block_call = self
-            .zenith
-            .submitBlock(header, v, r, s, block.encoded_txns().to_vec().into())
-            .sidecar(sidecar);
-
-        // Create the transaction request for the submit call
-        let rollup_tx = submit_block_call.into_transaction_request();
-        let signed = self.host_provider().fill(rollup_tx).await.map_err(|err| {
-            error!(?err, "failed to sign rollup transaction");
-            FlashbotsError::PreparationError(err.to_string())
-        })?;
-
-        // Sign the rollup block tx and add it to the MEV bundle as the last transaction.
-        if let Some(envelope) = signed.as_envelope() {
-            bundle_body
-                .push(BundleItem::Tx { tx: envelope.encoded_2718().into(), can_revert: false });
-            debug!(tx_hash = ?envelope.hash(), "added rollup transaction to MEV bundle");
-        }
-
-        // Create the MEV bundle and return it
-        let bundle = MevSendBundle::new(
-            target_block,
-            Some(target_block),
+        // Only valid in the specific host block
+        Ok(MevSendBundle::new(
+            sim_result.host_block_number(),
+            Some(sim_result.host_block_number()),
             ProtocolVersion::V0_1,
-            bundle_body,
-        );
-
-        Ok(bundle)
+            vec![BundleItem::Tx { tx: tx_bytes, can_revert: false }],
+        ))
     }
 
     /// Task future that runs the Flashbots submission loop.
@@ -228,18 +104,18 @@ impl FlashbotsTask {
             };
 
             let span = sim_result.span();
-            span_scoped!(span, debug!("simulation result received"));
+            span_debug!(span, "simulation result received");
 
             // Prepare a MEV bundle with the configured call type from the sim result
             let Ok(bundle) = self.prepare(&sim_result).instrument(span.clone()).await else {
-                span_scoped!(span, debug!("bundle preparation failed"));
+                span_debug!(span, "bundle preparation failed");
                 continue;
             };
 
             // simulate the bundle against Flashbots then send the bundle
             if let Err(err) = self.flashbots.simulate_bundle(&bundle).instrument(span.clone()).await
             {
-                span_scoped!(span, debug!(%err, "bundle simulation failed"));
+                span_debug!(span, %err, "bundle simulation failed");
                 continue;
             }
 
@@ -249,13 +125,13 @@ impl FlashbotsTask {
                 .instrument(span.clone())
                 .await
                 .inspect(|bundle_hash| {
-                    span_scoped!(
+                    span_debug!(
                         span,
-                        debug!(bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots")
+                        bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots"
                     );
                 })
                 .inspect_err(|err| {
-                    span_scoped!(span, error!(?err, "failed to send bundle to Flashbots"));
+                    span_error!(span, %err, "failed to send bundle to Flashbots");
                 });
         }
     }

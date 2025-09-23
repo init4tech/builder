@@ -32,7 +32,7 @@ macro_rules! spawn_provider_send {
             let p = $provider.clone();
             let t = $tx.clone();
             tokio::spawn(async move {
-                p.send_tx_envelope(t).await.inspect_err(|e| {
+                p.send_tx_envelope(t).in_current_span().await.inspect_err(|e| {
                    warn!(%e, "error in transaction broadcast")
                 })
             }.instrument($span.clone()))
@@ -44,17 +44,13 @@ macro_rules! spawn_provider_send {
 macro_rules! check_slot_still_valid {
     ($self:expr, $initial_slot:expr, $span:expr) => {
         if !$self.slot_still_valid($initial_slot) {
-            $span.in_scope(|| {
-                debug!(
-                    current_slot = $self
-                        .config
-                        .slot_calculator
-                        .current_slot()
-                        .expect("host chain has started"),
-                    initial_slot = $initial_slot,
-                    "slot changed before submission - skipping block"
-                )
-            });
+            span_debug!(
+                $span,
+                current_slot =
+                    $self.config.slot_calculator.current_slot().expect("host chain has started"),
+                initial_slot = $initial_slot,
+                "slot changed before submission - skipping block"
+            );
             counter!("builder.slot_missed").increment(1);
             return Ok(ControlFlow::Skip);
         }
@@ -115,7 +111,7 @@ impl BuilderHelperTask {
         // Set up a span for the send operation. We'll add this to the spawned
         // tasks
         let span = debug_span!("BuilderHelperTask::send_transaction", tx_hash = %tx.hash());
-        span_scoped!(span, debug!("sending transaction to network"));
+        span_debug!(span, "sending transaction to network");
 
         // send the tx via the primary host_provider
         let fut = spawn_provider_send!(self.provider(), &tx, &span);
@@ -127,30 +123,29 @@ impl BuilderHelperTask {
 
         // send the in-progress transaction over the outbound_tx_channel
         if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
-            span_scoped!(span, error!("receipts task gone"));
+            span_error!(span, "receipts task gone");
         }
 
         if let Err(error) = fut.await? {
             // Detect and handle transaction underprice errors
             if matches!(error, TransportError::ErrorResp(ref err) if err.code == -32603) {
-                span_scoped!(
+                span_debug!(
                     span,
-                    debug!(%error, "underpriced transaction error - retrying tx with gas bump")
+                    %error,
+                    "underpriced transaction error - retrying tx with gas bump"
                 );
                 return Ok(ControlFlow::Retry);
             }
 
             // Unknown error, log and skip
-            span_scoped!(span, error!(%error, "Primary tx broadcast failed"));
+            span_error!(span, %error, "Primary tx broadcast failed");
             return Ok(ControlFlow::Skip);
         }
 
-        span_scoped!(
+        span_info!(
             span,
-            info!(
                 tx_hash = %tx.tx_hash(),
                 "dispatched to network"
-            )
         );
 
         Ok(ControlFlow::Done)
@@ -190,9 +185,7 @@ impl BuilderHelperTask {
                 .send_transaction(req)
                 .instrument(span.clone())
                 .await
-                .inspect_err(|error| {
-                    span_scoped!(span, error!(%error, "error sending transaction"))
-                })
+                .inspect_err(|error| span_error!(span, %error, "error sending transaction"))
                 .unwrap_or(ControlFlow::Retry);
 
             let guard = span.entered();
@@ -261,11 +254,11 @@ impl BuilderHelperTask {
 
             let span = sim_result.sim_env.span.clone();
 
-            span_scoped!(span, debug!("submit channel received block"));
+            span_debug!(span, "submit channel received block");
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
-                span_scoped!(span, debug!("received empty block - skipping"));
+                span_debug!(span, "received empty block - skipping");
                 continue;
             }
 

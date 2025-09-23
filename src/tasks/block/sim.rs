@@ -207,7 +207,7 @@ impl Simulator {
             let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
 
             let span = sim_env.span();
-            span_scoped!(span, info!("new block environment received"));
+            span_info!(span, "new block environment received");
 
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,
@@ -219,7 +219,7 @@ impl Simulator {
                 .handle_build(constants.clone(), sim_cache, finish_by, sim_env.block_env.clone())
                 .instrument(span.clone())
                 .await
-                .inspect_err(|err| span_scoped!(span, error!(%err, "error during block build")))
+                .inspect_err(|err| span_error!(span, %err, "error during block build"))
             else {
                 continue;
             };

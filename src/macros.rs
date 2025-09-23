@@ -7,6 +7,31 @@ macro_rules! span_scoped   {
     };
 }
 
+/// Helper macro to log a debug event within a span that is not currently
+/// entered.
+macro_rules! span_debug {
+    ($span:expr, $($arg:tt)*) => {
+        span_scoped!($span, debug!($($arg)*))
+    };
+}
+
+/// Helper macro to log an info event within a span that is not currently
+/// entered.
+macro_rules! span_info {
+    ($span:expr, $($arg:tt)*) => {
+        span_scoped!($span, info!($($arg)*))
+    };
+
+}
+
+/// Helper macro to log a warning event within a span that is not currently
+/// entered.
+macro_rules! span_error {
+    ($span:expr, $($arg:tt)*) => {
+        span_scoped!($span, error!($($arg)*))
+    };
+}
+
 /// Helper macro to unwrap a result or continue the loop with a tracing event.
 macro_rules! res_unwrap_or_continue {
     ($result:expr, $span:expr, $level:ident!($($arg:tt)*)) => {

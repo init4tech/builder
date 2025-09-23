@@ -98,7 +98,7 @@ impl EnvTask {
         let mut headers = match self.ru_provider.subscribe_blocks().await {
             Ok(poller) => poller,
             Err(err) => {
-                span_scoped!(span, error!(%err, "Failed to subscribe to blocks"));
+                span_error!(span, %err, "Failed to subscribe to blocks");
                 return;
             }
         }

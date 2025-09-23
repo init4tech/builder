@@ -183,4 +183,9 @@ impl Bumpable {
         self.bump();
         self.req.clone()
     }
+
+    /// Consume the `Bumpable`, returning the inner transaction request.
+    pub fn into_request(self) -> TransactionRequest {
+        self.req
+    }
 }

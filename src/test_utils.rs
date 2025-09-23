@@ -41,10 +41,8 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
         sequencer_key: None,
-        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY").unwrap_or_else(|_| {
-            dbg!("USING RANDOM BUILDER KEY, set SEPOLIA_ETH_PRIV_KEY to override");
-            PrivateKeySigner::random().to_bytes().to_string()
-        }),
+        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+            .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
         builder_port: 8080,
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
