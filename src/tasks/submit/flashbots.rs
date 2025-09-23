@@ -1,7 +1,7 @@
 //! Flashbots Task receives simulated blocks from an upstream channel and
 //! submits them to the Flashbots relay as bundles.
 use crate::{
-    config::{HostProvider, ZenithInstance},
+    config::{BuilderConfig, HostProvider, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
     utils,
@@ -16,7 +16,6 @@ use init4_bin_base::{
     deps::tracing::{debug, error},
     utils::flashbots::Flashbots,
 };
-use signet_constants::SignetSystemConstants;
 use signet_types::SignRequest;
 use signet_zenith::{Alloy2718Coder, Zenith::BlockHeader, ZenithBlock};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -38,11 +37,9 @@ pub enum FlashbotsError {
 #[derive(Debug)]
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
-    config: crate::config::BuilderConfig,
+    config: BuilderConfig,
     /// Flashbots RPC provider.
     flashbots: Flashbots,
-    /// System constants for the rollup and host chain.
-    constants: SignetSystemConstants,
     /// Quincey instance for block signing.
     quincey: Quincey,
     /// Zenith instance.
@@ -59,8 +56,7 @@ impl FlashbotsTask {
     /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
     /// channel and handles their preparation, submission to the Flashbots network.
     pub async fn new(
-        config: crate::config::BuilderConfig,
-        constants: SignetSystemConstants,
+        config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
         bundle_helper: bool,
     ) -> eyre::Result<FlashbotsTask> {
@@ -72,15 +68,7 @@ impl FlashbotsTask {
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self {
-            config,
-            constants,
-            flashbots,
-            quincey,
-            zenith,
-            _outbound: outbound,
-            bundle_helper,
-        })
+        Ok(Self { config, flashbots, quincey, zenith, _outbound: outbound, bundle_helper })
     }
 
     /// Returns a reference to the inner `HostProvider`
@@ -111,7 +99,7 @@ impl FlashbotsTask {
         );
 
         let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await.map_err(|err| {
-            error!(?err, "failed to prepare bumpable transaction");
+            error!(%err, "failed to prepare bumpable transaction");
             FlashbotsError::PreparationError(err.to_string())
         })?;
 
@@ -137,11 +125,11 @@ impl FlashbotsTask {
         sim_result: &SimResult,
     ) -> Result<MevSendBundle, FlashbotsError> {
         let target_block = sim_result.block.block_number();
-        let host_block_number = self.constants.rollup_block_to_host_block_num(target_block);
+        let host_block_number = self.config.constants.rollup_block_to_host_block_num(target_block);
 
         // Create Zenith block header
         let header = BlockHeader {
-            rollupChainId: U256::from(self.constants.ru_chain_id()),
+            rollupChainId: U256::from(self.config.constants.ru_chain_id()),
             hostBlockNumber: U256::from(host_block_number),
             gasLimit: U256::from(self.config.rollup_block_gas_limit),
             rewardAddress: self.config.builder_rewards_address,
@@ -163,8 +151,8 @@ impl FlashbotsTask {
             .quincey
             .get_signature(&SignRequest {
                 host_block_number: U256::from(host_block_number),
-                host_chain_id: U256::from(self.constants.host_chain_id()),
-                ru_chain_id: U256::from(self.constants.ru_chain_id()),
+                host_chain_id: U256::from(self.config.constants.host_chain_id()),
+                ru_chain_id: U256::from(self.config.constants.ru_chain_id()),
                 gas_limit: U256::from(self.config.rollup_block_gas_limit),
                 ru_reward_address: self.config.builder_rewards_address,
                 contents: *sim_result.block.contents_hash(),
@@ -183,7 +171,7 @@ impl FlashbotsTask {
         let host_fills = sim_result.block.host_fills();
         for fill in host_fills {
             // Create a host fill transaction with the rollup orders contract and sign it
-            let tx_req = fill.to_fill_tx(self.constants.ru_orders());
+            let tx_req = fill.to_fill_tx(self.config.constants.ru_orders());
             let sendable = self.host_provider().fill(tx_req).await.map_err(|err| {
                 error!(?err, "failed to fill transaction");
                 FlashbotsError::PreparationError(err.to_string())
