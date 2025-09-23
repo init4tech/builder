@@ -73,16 +73,27 @@ pub enum ControlFlow {
 #[derive(Debug)]
 pub struct BuilderHelperTask {
     /// Zenith
-    pub zenith: ZenithInstance,
+    zenith: ZenithInstance,
     /// Quincey
-    pub quincey: Quincey,
+    quincey: Quincey,
     /// Config
-    pub config: crate::config::BuilderConfig,
+    config: crate::config::BuilderConfig,
     /// Channel over which to send pending transactions
-    pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
+    outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
 impl BuilderHelperTask {
+    /// Returns a new `BuilderHelperTask`
+    pub async fn new(
+        config: crate::config::BuilderConfig,
+        outbound: mpsc::UnboundedSender<TxHash>,
+    ) -> eyre::Result<Self> {
+        let (quincey, host_provider) =
+            tokio::try_join!(config.connect_quincey(), config.connect_host_provider())?;
+        let zenith = config.connect_zenith(host_provider);
+        Ok(Self { zenith, quincey, config, outbound_tx_channel: outbound })
+    }
+
     /// Get the provider from the zenith instance
     const fn provider(&self) -> &HostProvider {
         self.zenith.provider()
