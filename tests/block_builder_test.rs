@@ -18,6 +18,9 @@ use builder::{
 use signet_sim::SimCache;
 use std::time::{Duration, Instant};
 
+mod harness;
+use harness::TestHarness;
+
 /// Tests the `handle_build` method of the `Simulator`.
 ///
 /// This test sets up a simulated environment using Anvil, creates a block builder,
@@ -77,4 +80,29 @@ async fn test_handle_build() {
     // Assert on the built block
     assert!(got.is_ok());
     assert!(got.unwrap().tx_count() == 2);
+}
+
+/// End-to-end simulation flow using the TestHarness.
+#[ignore = "integration test"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_ticks_and_emits() {
+    setup_logging();
+
+    // Build harness
+    let mut h = TestHarness::new().await.unwrap();
+
+    // Prepare two senders and fund them if needed from anvil default accounts
+    let keys = h.anvil.keys();
+    let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
+
+    // Add a transaction into the sim cache
+    h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
+
+    // Start simulator and tick a new SimEnv
+    h.start();
+    h.tick_from_ru_latest().await;
+
+    // Expect a SimResult
+    let got = h.recv_result(Duration::from_secs(5)).await.expect("sim result");
+    assert_eq!(got.block.tx_count(), 1);
 }
