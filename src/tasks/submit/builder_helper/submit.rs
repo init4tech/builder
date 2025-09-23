@@ -23,6 +23,9 @@ use signet_constants::SignetSystemConstants;
 use std::{ops::Range, time::Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
 
+// Number of retries for transaction submission.
+const RETRIES_COUNT: usize = 3;
+
 /// Helper macro to spawn a tokio task that broadcasts a tx.
 macro_rules! spawn_provider_send {
     ($provider:expr, $tx:expr, $span:expr) => {
@@ -125,28 +128,32 @@ impl BuilderHelperTask {
             spawn_provider_send!(&host_provider, &tx, &span);
         }
 
-        // enter span for remainder of function.
-        let _guard = span.enter();
         // send the in-progress transaction over the outbound_tx_channel
         if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
-            error!("receipts task gone");
+            span_scoped!(span, error!("receipts task gone"));
         }
 
-        if let Err(err) = fut.await? {
+        if let Err(error) = fut.await? {
             // Detect and handle transaction underprice errors
-            if matches!(err, TransportError::ErrorResp(ref err) if err.code == -32603) {
-                debug!("underpriced transaction error - retrying tx with gas bump");
+            if matches!(error, TransportError::ErrorResp(ref err) if err.code == -32603) {
+                span_scoped!(
+                    span,
+                    debug!(%error, "underpriced transaction error - retrying tx with gas bump")
+                );
                 return Ok(ControlFlow::Retry);
             }
 
             // Unknown error, log and skip
-            error!(%err, "Primary tx broadcast failed");
+            span_scoped!(span, error!(%error, "Primary tx broadcast failed"));
             return Ok(ControlFlow::Skip);
         }
 
-        info!(
-            tx_hash = %tx.tx_hash(),
-            "dispatched to network"
+        span_scoped!(
+            span,
+            info!(
+                tx_hash = %tx.tx_hash(),
+                "dispatched to network"
+            )
         );
 
         Ok(ControlFlow::Done)
@@ -157,6 +164,7 @@ impl BuilderHelperTask {
         &self,
         mut bumpable: Bumpable,
         retry_limit: usize,
+        parent: &tracing::Span,
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
 
@@ -167,7 +175,7 @@ impl BuilderHelperTask {
         // Retry loop
         let result = loop {
             let span = debug_span!(
-                parent: None,
+                parent: parent,
                 "SubmitTask::retrying_send",
                 retries = bumpable.bump_count(),
                 nonce = bumpable.req().nonce,
@@ -185,7 +193,9 @@ impl BuilderHelperTask {
                 .send_transaction(req)
                 .instrument(span.clone())
                 .await
-                .inspect_err(|e| error!(error = %e, "error sending transaction"))
+                .inspect_err(|error| {
+                    span_scoped!(span, error!(%error, "error sending transaction"))
+                })
                 .unwrap_or(ControlFlow::Retry);
 
             let guard = span.entered();
@@ -250,22 +260,17 @@ impl BuilderHelperTask {
                 break;
             };
             let ru_block_number = sim_result.block.block_number();
-            let host_block_number = self.constants.rollup_block_to_host_block_num(ru_block_number);
+            let host_block_number = sim_result.host_block_number();
 
             let span = sim_result.sim_env.span.clone();
 
-            let guard = span.enter();
-
-            debug!(ru_block_number, "submit channel received block");
+            span_scoped!(span, debug!("submit channel received block"));
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
-                debug!(ru_block_number, "received empty block - skipping");
+                span_scoped!(span, debug!("received empty block - skipping"));
                 continue;
             }
-
-            // drop guard before await
-            drop(guard);
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
@@ -301,7 +306,7 @@ impl BuilderHelperTask {
 
             // Now send the transaction
             let _ = res_unwrap_or_continue!(
-                self.retrying_send(bumpable, 3).instrument(submission_span.clone()).await,
+                self.retrying_send(bumpable, RETRIES_COUNT, &submission_span).await,
                 submission_span,
                 error!("error dispatching block to host chain")
             );
