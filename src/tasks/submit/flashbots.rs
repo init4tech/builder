@@ -38,17 +38,17 @@ pub enum FlashbotsError {
 #[derive(Debug)]
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
-    pub config: crate::config::BuilderConfig,
+    config: crate::config::BuilderConfig,
     /// Flashbots RPC provider.
     flashbots: Flashbots,
     /// System constants for the rollup and host chain.
-    pub constants: SignetSystemConstants,
+    constants: SignetSystemConstants,
     /// Quincey instance for block signing.
-    pub quincey: Quincey,
+    quincey: Quincey,
     /// Zenith instance.
-    pub zenith: ZenithInstance<HostProvider>,
+    zenith: ZenithInstance<HostProvider>,
     /// Channel for sending hashes of outbound transactions.
-    pub outbound: mpsc::UnboundedSender<TxHash>,
+    _outbound: mpsc::UnboundedSender<TxHash>,
     /// Determines if the BundleHelper contract should be used for block submission.
     /// NB: If bundle_helper is not used, instead the Zenith contract
     /// submitBlock function is used.
@@ -61,7 +61,6 @@ impl FlashbotsTask {
     pub async fn new(
         config: crate::config::BuilderConfig,
         constants: SignetSystemConstants,
-
         outbound: mpsc::UnboundedSender<TxHash>,
         bundle_helper: bool,
     ) -> eyre::Result<FlashbotsTask> {
@@ -70,7 +69,15 @@ impl FlashbotsTask {
         let host_provider = config.connect_host_provider().await?;
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, constants, flashbots, quincey, zenith, outbound, bundle_helper })
+        Ok(Self {
+            config,
+            constants,
+            flashbots,
+            quincey,
+            zenith,
+            _outbound: outbound,
+            bundle_helper,
+        })
     }
 
     /// Returns a reference to the inner `HostProvider`
