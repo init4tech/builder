@@ -5,10 +5,9 @@ use alloy::{
     primitives::{B256, U256},
     providers::Provider,
 };
-use init4_bin_base::deps::tracing::{Instrument, debug, error, info_span};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::warn;
+use tracing::{Instrument, Span, info_span};
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// A task that constructs a BlockEnv for the next block in the rollup chain.
@@ -36,7 +35,7 @@ pub struct SimEnv {
     /// The header of the previous host block.
     pub prev_host: Header,
     /// A tracing span associated with this block
-    pub span: tracing::Span,
+    pub span: Span,
 }
 
 impl SimEnv {
@@ -51,12 +50,12 @@ impl SimEnv {
     }
 
     /// Returns a reference to the tracing span associated with this block env.
-    pub const fn span(&self) -> &tracing::Span {
+    pub const fn span(&self) -> &Span {
         &self.span
     }
 
     /// Clones the span for use in other tasks.
-    pub fn clone_span(&self) -> tracing::Span {
+    pub fn clone_span(&self) -> Span {
         self.span.clone()
     }
 }
@@ -129,7 +128,8 @@ impl EnvTask {
 
             // Construct the block env using the previous block header
             let signet_env = self.construct_block_env(&rollup_header);
-            debug!(
+            span_debug!(
+                span,
                 signet_env_number = signet_env.number.to::<u64>(),
                 signet_env_basefee = signet_env.basefee,
                 "constructed signet block env"
@@ -145,7 +145,7 @@ impl EnvTask {
                 .is_err()
             {
                 // The receiver has been dropped, so we can stop the task.
-                debug!("receiver dropped, stopping task");
+                tracing::debug!("receiver dropped, stopping task");
                 break;
             }
         }

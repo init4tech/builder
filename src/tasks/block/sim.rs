@@ -6,10 +6,7 @@ use crate::{
     tasks::env::SimEnv,
 };
 use alloy::{eips::BlockId, network::Ethereum};
-use init4_bin_base::{
-    deps::tracing::{debug, error},
-    utils::calc::SlotCalculator,
-};
+use init4_bin_base::utils::calc::SlotCalculator;
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
@@ -20,7 +17,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{Instrument, info, instrument};
+use tracing::{Instrument, Span, instrument};
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -64,12 +61,12 @@ impl SimResult {
 
     /// Returns a reference to the tracing span associated with this simulation
     /// result.
-    pub const fn span(&self) -> &tracing::Span {
+    pub const fn span(&self) -> &Span {
         self.sim_env.span()
     }
 
     /// Clones the span for use in other tasks.
-    pub fn clone_span(&self) -> tracing::Span {
+    pub fn clone_span(&self) -> Span {
         self.sim_env.clone_span()
     }
 }
@@ -116,7 +113,6 @@ impl Simulator {
     ///
     /// A `Result` containing the built block or an error.
     #[instrument(skip_all, fields(
-        block_number = block_env.number.to::<u64>(),
         tx_count = sim_items.len(),
         millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis()
     ))]
@@ -144,7 +140,7 @@ impl Simulator {
         );
 
         let built_block = block_build.build().in_current_span().await;
-        debug!(
+        tracing::debug!(
             tx_count = built_block.tx_count(),
             block_number = built_block.block_number(),
             "block simulation completed",
@@ -171,7 +167,7 @@ impl Simulator {
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<SimResult>,
     ) -> JoinHandle<()> {
-        debug!("starting simulator task");
+        tracing::debug!("starting simulator task");
 
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
@@ -201,7 +197,7 @@ impl Simulator {
         loop {
             // Wait for the block environment to be set
             if self.sim_env.changed().await.is_err() {
-                error!("block_env channel closed - shutting down simulator task");
+                tracing::error!("block_env channel closed - shutting down simulator task");
                 return;
             }
             let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
@@ -225,7 +221,7 @@ impl Simulator {
             };
 
             let _guard = span.clone().entered();
-            debug!(block = ?block.block_number(), tx_count = block.transactions().len(), "built simulated block");
+            span_debug!(span, tx_count = block.transactions().len(), "built simulated block");
             let _ = submit_sender.send(SimResult { block, sim_env });
         }
     }

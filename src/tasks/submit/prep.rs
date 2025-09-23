@@ -11,11 +11,10 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
-use init4_bin_base::deps::tracing::debug;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::BundleHelper;
-use tracing::Instrument;
+use tracing::{Instrument, debug};
 
 /// Preparation logic for transactions issued to the host chain by the
 /// [`SubmitTask`].

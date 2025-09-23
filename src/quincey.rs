@@ -1,12 +1,9 @@
 use alloy::signers::Signer;
 use eyre::bail;
-use init4_bin_base::{
-    deps::tracing::{debug, info, instrument, trace},
-    perms::SharedToken,
-    utils::signer::LocalOrAws,
-};
+use init4_bin_base::{perms::SharedToken, utils::signer::LocalOrAws};
 use reqwest::Client;
 use signet_types::{SignRequest, SignResponse};
+use tracing::{debug, info, instrument, trace};
 
 /// A quincey client for making requests to the Quincey API.
 #[derive(Debug, Clone)]

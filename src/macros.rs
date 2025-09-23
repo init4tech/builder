@@ -2,7 +2,7 @@
 macro_rules! span_scoped   {
     ($span:expr, $level:ident!($($arg:tt)*)) => {
         $span.in_scope(|| {
-            $level!($($arg)*);
+            ::tracing::$level!($($arg)*);
         })
     };
 }

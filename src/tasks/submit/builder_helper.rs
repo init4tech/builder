@@ -15,12 +15,10 @@ use alloy::{
     transports::TransportError,
 };
 use eyre::bail;
-use init4_bin_base::deps::{
-    metrics::{counter, histogram},
-    tracing::{Instrument, debug, debug_span, error, info, warn},
-};
+use init4_bin_base::deps::metrics::{counter, histogram};
 use std::{ops::Range, time::Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{Instrument, Span, debug, debug_span, info, warn};
 
 // Number of retries for transaction submission.
 const RETRIES_COUNT: usize = 3;
@@ -167,7 +165,7 @@ impl BuilderHelperTask {
         &self,
         mut bumpable: Bumpable,
         retry_limit: usize,
-        parent: &tracing::Span,
+        parent: &Span,
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
 

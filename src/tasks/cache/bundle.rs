@@ -1,9 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use init4_bin_base::{
-    deps::tracing::{Instrument, debug, debug_span, error, trace},
-    perms::SharedToken,
-};
+use init4_bin_base::perms::SharedToken;
 use reqwest::{Client, Url};
 use signet_tx_cache::types::{TxCacheBundle, TxCacheBundlesResponse};
 use tokio::{
@@ -11,6 +8,7 @@ use tokio::{
     task::JoinHandle,
     time::{self, Duration},
 };
+use tracing::{Instrument, debug, debug_span, error, trace};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;

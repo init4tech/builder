@@ -11,10 +11,7 @@ use alloy::{
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
-use init4_bin_base::{
-    deps::tracing::{debug, error},
-    utils::flashbots::Flashbots,
-};
+use init4_bin_base::utils::flashbots::Flashbots;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
 
@@ -94,12 +91,12 @@ impl FlashbotsTask {
 
     /// Task future that runs the Flashbots submission loop.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
-        debug!("starting flashbots task");
+        tracing::debug!("starting flashbots task");
 
         loop {
             // Wait for a sim result to come in
             let Some(sim_result) = inbound.recv().await else {
-                debug!("upstream task gone - exiting flashbots task");
+                tracing::debug!("upstream task gone - exiting flashbots task");
                 break;
             };
 
