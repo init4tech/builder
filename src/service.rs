@@ -4,8 +4,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use init4_bin_base::deps::tracing::error;
 use std::net::SocketAddr;
+use tracing::error;
 
 /// Return a 404 Not Found response
 pub async fn return_404() -> Response {

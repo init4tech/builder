@@ -1,16 +1,12 @@
 use builder::{
     config::BuilderConfig,
     service::serve_builder,
-    tasks::{
-        block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask,
-        submit::BuilderHelperTask,
-    },
+    tasks::{block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask},
 };
 use init4_bin_base::{
     deps::tracing::{info, info_span},
     utils::from_env::FromEnv,
 };
-use signet_types::constants::SignetSystemConstants;
 use tokio::select;
 
 // Note: Must be set to `multi_thread` to support async tasks.
@@ -22,49 +18,33 @@ async fn main() -> eyre::Result<()> {
 
     // Pull the configuration from the environment
     let config = BuilderConfig::from_env()?.clone();
-    let constants = SignetSystemConstants::pecorino();
 
-    // We connect the WS greedily, so we can fail early if the connection is
-    // invalid.
-    let ru_provider = config.connect_ru_provider().await?;
+    // We connect the providers greedily, so we can fail early if the
+    // RU WS connection is invalid.
+    let (ru_provider, host_provider) =
+        tokio::try_join!(config.connect_ru_provider(), config.connect_host_provider(),)?;
 
     // Spawn the EnvTask
-    let env_task = EnvTask::new(
-        config.clone(),
-        constants.clone(),
-        config.connect_host_provider().await?,
-        ru_provider.clone(),
-    );
+    let env_task = EnvTask::new(config.clone(), host_provider.clone(), ru_provider.clone());
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
     let cache_tasks = CacheTasks::new(config.clone(), block_env.clone());
     let cache_system = cache_tasks.spawn();
 
-    // Prep providers and contracts
-    let (host_provider, quincey) =
-        tokio::try_join!(config.connect_host_provider(), config.connect_quincey())?;
-    let zenith = config.connect_zenith(host_provider.clone());
-
     // Set up the metrics task
-    let metrics = MetricsTask { host_provider: host_provider.clone() };
+    let metrics = MetricsTask { host_provider };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
-    // Make a Tx submission task
-    let submit = BuilderHelperTask {
-        zenith,
-        quincey,
-        config: config.clone(),
-        constants: constants.clone(),
-        outbound_tx_channel: tx_channel,
-    };
-
-    // Set up tx submission
-    let (submit_channel, submit_jh) = submit.spawn();
+    // Set up the submit task. This will be either a Flashbots task or a
+    // BuilderHelper task depending on whether a Flashbots endpoint is
+    // configured.
+    let (submit_channel, submit_jh) = config.spawn_submit_task(tx_channel).await?;
 
     // Set up the simulator
     let sim = Simulator::new(&config, ru_provider.clone(), block_env);
-    let build_jh = sim.spawn_simulator_task(constants, cache_system.sim_cache, submit_channel);
+    let build_jh =
+        sim.spawn_simulator_task(config.constants.clone(), cache_system.sim_cache, submit_channel);
 
     // Start the healthcheck server
     let server = serve_builder(([0, 0, 0, 0], config.builder_port));

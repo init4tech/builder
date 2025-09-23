@@ -5,11 +5,9 @@ use alloy::{
     primitives::{B256, U256},
     providers::Provider,
 };
-use init4_bin_base::deps::tracing::{Instrument, debug, error, info_span};
-use signet_constants::SignetSystemConstants;
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::warn;
+use tracing::{Instrument, Span, info_span};
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// A task that constructs a BlockEnv for the next block in the rollup chain.
@@ -17,9 +15,6 @@ use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndP
 pub struct EnvTask {
     /// Builder configuration values.
     config: BuilderConfig,
-
-    /// Signet system constants.
-    constants: SignetSystemConstants,
 
     /// Host provider is used to get the latest host block header for
     /// constructing the next block environment.
@@ -40,7 +35,7 @@ pub struct SimEnv {
     /// The header of the previous host block.
     pub prev_host: Header,
     /// A tracing span associated with this block
-    pub span: tracing::Span,
+    pub span: Span,
 }
 
 impl SimEnv {
@@ -55,12 +50,12 @@ impl SimEnv {
     }
 
     /// Returns a reference to the tracing span associated with this block env.
-    pub const fn span(&self) -> &tracing::Span {
+    pub const fn span(&self) -> &Span {
         &self.span
     }
 
     /// Clones the span for use in other tasks.
-    pub fn clone_span(&self) -> tracing::Span {
+    pub fn clone_span(&self) -> Span {
         self.span.clone()
     }
 }
@@ -69,11 +64,10 @@ impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
     pub const fn new(
         config: BuilderConfig,
-        constants: SignetSystemConstants,
         host_provider: HostProvider,
         ru_provider: RuProvider,
     ) -> Self {
-        Self { config, constants, host_provider, ru_provider }
+        Self { config, host_provider, ru_provider }
     }
 
     /// Construct a [`BlockEnv`] by from the previous block header.
@@ -103,9 +97,7 @@ impl EnvTask {
         let mut headers = match self.ru_provider.subscribe_blocks().await {
             Ok(poller) => poller,
             Err(err) => {
-                span.in_scope(|| {
-                    error!(%err, "Failed to subscribe to blocks");
-                });
+                span_error!(span, %err, "Failed to subscribe to blocks");
                 return;
             }
         }
@@ -117,7 +109,7 @@ impl EnvTask {
             headers.next().instrument(info_span!("EnvTask::task_fut::stream")).await
         {
             let host_block_number =
-                self.constants.rollup_block_to_host_block_num(rollup_header.number);
+                self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
 
             let span = info_span!("SimEnv", %host_block_number, %rollup_header.hash, %rollup_header.number);
 
@@ -136,7 +128,8 @@ impl EnvTask {
 
             // Construct the block env using the previous block header
             let signet_env = self.construct_block_env(&rollup_header);
-            debug!(
+            span_debug!(
+                span,
                 signet_env_number = signet_env.number.to::<u64>(),
                 signet_env_basefee = signet_env.basefee,
                 "constructed signet block env"
@@ -152,7 +145,7 @@ impl EnvTask {
                 .is_err()
             {
                 // The receiver has been dropped, so we can stop the task.
-                debug!("receiver dropped, stopping task");
+                tracing::debug!("receiver dropped, stopping task");
                 break;
             }
         }

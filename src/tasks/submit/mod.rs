@@ -4,5 +4,10 @@ pub use prep::{Bumpable, SubmitPrep};
 mod sim_err;
 pub use sim_err::{SimErrorResp, SimRevertKind};
 
-mod builder_helper;
+/// Submission logic for the BundleHelper contract
+pub mod builder_helper;
 pub use builder_helper::{BuilderHelperTask, ControlFlow};
+
+/// Submission logic for Flashbots
+pub mod flashbots;
+pub use flashbots::FlashbotsTask;

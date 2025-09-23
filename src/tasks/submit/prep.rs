@@ -11,12 +11,10 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
-use init4_bin_base::deps::tracing::debug;
-use signet_constants::SignetSystemConstants;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::BundleHelper;
-use tracing::Instrument;
+use tracing::{Instrument, debug};
 
 /// Preparation logic for transactions issued to the host chain by the
 /// [`SubmitTask`].
@@ -31,7 +29,6 @@ pub struct SubmitPrep<'a> {
     provider: HostProvider,
     quincey: Quincey,
     config: BuilderConfig,
-    constants: SignetSystemConstants,
 
     // Memoized quincey request and response
     sig_request: std::sync::OnceLock<SignRequest>,
@@ -45,7 +42,6 @@ impl<'a> SubmitPrep<'a> {
         provider: HostProvider,
         quincey: Quincey,
         config: BuilderConfig,
-        constants: SignetSystemConstants,
     ) -> Self {
         Self {
             block,
@@ -54,7 +50,6 @@ impl<'a> SubmitPrep<'a> {
             provider,
             quincey,
             config,
-            constants,
         }
     }
 
@@ -62,7 +57,7 @@ impl<'a> SubmitPrep<'a> {
     fn sig_request(&self) -> &SignRequest {
         self.sig_request.get_or_init(|| {
             let host_block_number =
-                self.constants.rollup_block_to_host_block_num(self.block.block_number());
+                self.config.constants.rollup_block_to_host_block_num(self.block.block_number());
 
             SignRequest {
                 host_block_number: U256::from(host_block_number),
@@ -102,7 +97,7 @@ impl<'a> SubmitPrep<'a> {
         // Build the block header
         let header = BundleHelper::BlockHeader {
             hostBlockNumber: self.sig_request().host_block_number,
-            rollupChainId: U256::from(self.constants.ru_chain_id()),
+            rollupChainId: U256::from(self.config.constants.ru_chain_id()),
             gasLimit: self.sig_request().gas_limit,
             rewardAddress: self.sig_request().ru_reward_address,
             blockDataHash: *self.block.contents_hash(),
@@ -186,5 +181,10 @@ impl Bumpable {
     pub fn bumped(&mut self) -> TransactionRequest {
         self.bump();
         self.req.clone()
+    }
+
+    /// Consume the `Bumpable`, returning the inner transaction request.
+    pub fn into_request(self) -> TransactionRequest {
+        self.req
     }
 }

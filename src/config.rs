@@ -1,7 +1,13 @@
-use crate::{quincey::Quincey, tasks::block::cfg::SignetCfgEnv};
+use crate::{
+    quincey::Quincey,
+    tasks::{
+        block::{cfg::SignetCfgEnv, sim::SimResult},
+        submit::{BuilderHelperTask, FlashbotsTask},
+    },
+};
 use alloy::{
     network::{Ethereum, EthereumWallet},
-    primitives::Address,
+    primitives::{Address, TxHash},
     providers::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{
@@ -15,14 +21,16 @@ use init4_bin_base::{
     perms::{Authenticator, OAuthConfig, SharedToken},
     utils::{
         calc::SlotCalculator,
+        flashbots::Flashbots,
         from_env::FromEnv,
         provider::{ProviderConfig, PubSubConfig},
         signer::{LocalOrAws, SignerError},
     },
 };
+use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
-use tokio::join;
+use tokio::{join, sync::mpsc::UnboundedSender, task::JoinHandle};
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -89,13 +97,8 @@ pub struct BuilderConfig {
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
 
-    /// Flashbots endpoint for privately submitting rollup blocks.
-    #[from_env(
-        var = "FLASHBOTS_ENDPOINT",
-        desc = "Flashbots endpoint for privately submitting rollup blocks",
-        optional
-    )]
-    pub flashbots_endpoint: Option<url::Url>,
+    /// Flashbots configuration for privately submitting rollup blocks.
+    pub flashbots: init4_bin_base::utils::flashbots::FlashbotsConfig,
 
     /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
@@ -163,12 +166,21 @@ pub struct BuilderConfig {
 
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
+
+    /// The signet system constants.
+    pub constants: SignetSystemConstants,
 }
 
 impl BuilderConfig {
     /// Connect to the Builder signer.
     pub async fn connect_builder_signer(&self) -> Result<LocalOrAws, SignerError> {
-        LocalOrAws::load(&self.builder_key, Some(self.host_chain_id)).await
+        static ONCE: tokio::sync::OnceCell<LocalOrAws> = tokio::sync::OnceCell::const_new();
+
+        ONCE.get_or_try_init(|| async {
+            LocalOrAws::load(&self.builder_key, Some(self.host_chain_id)).await
+        })
+        .await
+        .cloned()
     }
 
     /// Connect to the Sequencer signer.
@@ -274,5 +286,36 @@ impl BuilderConfig {
                 .map(|p| p.get())
                 .unwrap_or(DEFAULT_CONCURRENCY_LIMIT)
         })
+    }
+
+    /// Connect to a Flashbots provider.
+    pub async fn flashbots_provider(&self) -> eyre::Result<Flashbots> {
+        self.flashbots
+            .build(self.connect_builder_signer().await?)
+            .ok_or_else(|| eyre::eyre!("Flashbots is not configured"))
+    }
+
+    /// Spawn a submit task, either Flashbots or BuilderHelper depending on
+    /// configuration.
+    pub async fn spawn_submit_task(
+        &self,
+        tx_channel: UnboundedSender<TxHash>,
+    ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
+        // If we have a flashbots endpoint, use that
+        if self.flashbots.flashbots_endpoint.is_some() {
+            // Make a Flashbots submission task
+            let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
+
+            // Set up flashbots submission
+            let (submit_channel, submit_jh) = submit.spawn();
+            return Ok((submit_channel, submit_jh));
+        }
+
+        // Make a Tx submission task
+        let submit = BuilderHelperTask::new(self.clone(), tx_channel).await?;
+
+        // Set up tx submission
+        let (submit_channel, submit_jh) = submit.spawn();
+        Ok((submit_channel, submit_jh))
     }
 }

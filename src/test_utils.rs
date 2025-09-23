@@ -12,32 +12,38 @@ use init4_bin_base::{
         EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
     },
     perms::OAuthConfig,
-    utils::{calc::SlotCalculator, provider::ProviderConfig},
+    utils::{calc::SlotCalculator, flashbots::FlashbotsConfig, provider::ProviderConfig},
 };
+use signet_constants::SignetSystemConstants;
+use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
-        host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+        // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+        host_chain_id: 11155111, // Sepolia chain ID
         ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
-        host_rpc: "https://host-rpc.pecorino.signet.sh"
+        host_rpc: "ws://host-rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .map(ProviderConfig::new)
             .unwrap(),
-        ru_rpc: "https://rpc.pecorino.signet.sh"
+        ru_rpc: "ws://rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .unwrap()
             .try_into()
             .unwrap(),
         tx_broadcast_urls: vec!["http://localhost:9000".into()],
-        flashbots_endpoint: Some("http://localhost:9062".parse().unwrap()), // NB: Flashbots API default
+        flashbots: FlashbotsConfig {
+            flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()),
+        }, // NB: Flashbots API default
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
-        builder_port: 8080,
         sequencer_key: None,
-        builder_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
+        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+            .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
+        builder_port: 8080,
         builder_rewards_address: Address::default(),
         rollup_block_gas_limit: 3_000_000_000,
         tx_pool_url: "http://localhost:9000/".parse().unwrap(),
@@ -54,6 +60,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             1740681556, // pecorino start timestamp as sane default
             0, 1,
         ),
+        constants: SignetSystemConstants::pecorino(),
     };
     Ok(config)
 }
@@ -66,9 +73,9 @@ pub fn new_signed_tx(
     mpfpg: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
-        chain_id: signet_constants::pecorino::RU_CHAIN_ID,
+        chain_id: 11155111,
         nonce,
-        max_fee_per_gas: 50_000,
+        max_fee_per_gas: 10_000_000,
         max_priority_fee_per_gas: mpfpg,
         to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value,

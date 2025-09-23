@@ -1,12 +1,12 @@
 use crate::tasks::env::SimEnv;
 use alloy::consensus::TxEnvelope;
-use init4_bin_base::deps::tracing::{debug, info};
 use signet_sim::SimCache;
 use signet_tx_cache::types::TxCacheBundle;
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
+use tracing::{debug, info};
 
 /// Cache task for the block builder.
 ///

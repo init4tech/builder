@@ -44,7 +44,6 @@ async fn test_handle_build() {
 
     let block_env = EnvTask::new(
         config.clone(),
-        constants.clone(),
         config.connect_host_provider().await.unwrap(),
         ru_provider.clone(),
     )

@@ -3,12 +3,10 @@ use alloy::{
     primitives::TxHash,
     providers::{PendingTransactionBuilder, PendingTransactionError, Provider as _, WatchTxError},
 };
-use init4_bin_base::deps::{
-    metrics::{counter, histogram},
-    tracing::{Instrument, debug, error, info_span},
-};
+use init4_bin_base::deps::metrics::{counter, histogram};
 use std::time::{Duration, Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{Instrument, debug, error, info_span};
 
 /// Collects metrics on transactions sent by the Builder
 #[derive(Debug, Clone)]

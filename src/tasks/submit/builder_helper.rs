@@ -15,13 +15,13 @@ use alloy::{
     transports::TransportError,
 };
 use eyre::bail;
-use init4_bin_base::deps::{
-    metrics::{counter, histogram},
-    tracing::{Instrument, debug, debug_span, error, info, warn},
-};
-use signet_constants::SignetSystemConstants;
+use init4_bin_base::deps::metrics::{counter, histogram};
 use std::{ops::Range, time::Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{Instrument, Span, debug, debug_span, info, warn};
+
+// Number of retries for transaction submission.
+const RETRIES_COUNT: usize = 3;
 
 /// Helper macro to spawn a tokio task that broadcasts a tx.
 macro_rules! spawn_provider_send {
@@ -30,7 +30,7 @@ macro_rules! spawn_provider_send {
             let p = $provider.clone();
             let t = $tx.clone();
             tokio::spawn(async move {
-                p.send_tx_envelope(t).await.inspect_err(|e| {
+                p.send_tx_envelope(t).in_current_span().await.inspect_err(|e| {
                    warn!(%e, "error in transaction broadcast")
                 })
             }.instrument($span.clone()))
@@ -42,17 +42,13 @@ macro_rules! spawn_provider_send {
 macro_rules! check_slot_still_valid {
     ($self:expr, $initial_slot:expr, $span:expr) => {
         if !$self.slot_still_valid($initial_slot) {
-            $span.in_scope(|| {
-                debug!(
-                    current_slot = $self
-                        .config
-                        .slot_calculator
-                        .current_slot()
-                        .expect("host chain has started"),
-                    initial_slot = $initial_slot,
-                    "slot changed before submission - skipping block"
-                )
-            });
+            span_debug!(
+                $span,
+                current_slot =
+                    $self.config.slot_calculator.current_slot().expect("host chain has started"),
+                initial_slot = $initial_slot,
+                "slot changed before submission - skipping block"
+            );
             counter!("builder.slot_missed").increment(1);
             return Ok(ControlFlow::Skip);
         }
@@ -75,18 +71,27 @@ pub enum ControlFlow {
 #[derive(Debug)]
 pub struct BuilderHelperTask {
     /// Zenith
-    pub zenith: ZenithInstance,
+    zenith: ZenithInstance,
     /// Quincey
-    pub quincey: Quincey,
-    /// Constants
-    pub constants: SignetSystemConstants,
+    quincey: Quincey,
     /// Config
-    pub config: crate::config::BuilderConfig,
+    config: crate::config::BuilderConfig,
     /// Channel over which to send pending transactions
-    pub outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
+    outbound_tx_channel: mpsc::UnboundedSender<TxHash>,
 }
 
 impl BuilderHelperTask {
+    /// Returns a new `BuilderHelperTask`
+    pub async fn new(
+        config: crate::config::BuilderConfig,
+        outbound: mpsc::UnboundedSender<TxHash>,
+    ) -> eyre::Result<Self> {
+        let (quincey, host_provider) =
+            tokio::try_join!(config.connect_quincey(), config.connect_host_provider())?;
+        let zenith = config.connect_zenith(host_provider);
+        Ok(Self { zenith, quincey, config, outbound_tx_channel: outbound })
+    }
+
     /// Get the provider from the zenith instance
     const fn provider(&self) -> &HostProvider {
         self.zenith.provider()
@@ -115,7 +120,7 @@ impl BuilderHelperTask {
         // Set up a span for the send operation. We'll add this to the spawned
         // tasks
         let span = debug_span!("BuilderHelperTask::send_transaction", tx_hash = %tx.hash());
-        span.in_scope(|| debug!("sending transaction to network"));
+        span_debug!(span, "sending transaction to network");
 
         // send the tx via the primary host_provider
         let fut = spawn_provider_send!(self.provider(), &tx, &span);
@@ -125,28 +130,31 @@ impl BuilderHelperTask {
             spawn_provider_send!(&host_provider, &tx, &span);
         }
 
-        // enter span for remainder of function.
-        let _guard = span.enter();
         // send the in-progress transaction over the outbound_tx_channel
         if self.outbound_tx_channel.send(*tx.tx_hash()).is_err() {
-            error!("receipts task gone");
+            span_error!(span, "receipts task gone");
         }
 
-        if let Err(err) = fut.await? {
+        if let Err(error) = fut.await? {
             // Detect and handle transaction underprice errors
-            if matches!(err, TransportError::ErrorResp(ref err) if err.code == -32603) {
-                debug!("underpriced transaction error - retrying tx with gas bump");
+            if matches!(error, TransportError::ErrorResp(ref err) if err.code == -32603) {
+                span_debug!(
+                    span,
+                    %error,
+                    "underpriced transaction error - retrying tx with gas bump"
+                );
                 return Ok(ControlFlow::Retry);
             }
 
             // Unknown error, log and skip
-            error!(%err, "Primary tx broadcast failed");
+            span_error!(span, %error, "Primary tx broadcast failed");
             return Ok(ControlFlow::Skip);
         }
 
-        info!(
-            tx_hash = %tx.tx_hash(),
-            "dispatched to network"
+        span_info!(
+            span,
+                tx_hash = %tx.tx_hash(),
+                "dispatched to network"
         );
 
         Ok(ControlFlow::Done)
@@ -157,6 +165,7 @@ impl BuilderHelperTask {
         &self,
         mut bumpable: Bumpable,
         retry_limit: usize,
+        parent: &Span,
     ) -> eyre::Result<ControlFlow> {
         let submitting_start_time = Instant::now();
 
@@ -167,7 +176,7 @@ impl BuilderHelperTask {
         // Retry loop
         let result = loop {
             let span = debug_span!(
-                parent: None,
+                parent: parent,
                 "SubmitTask::retrying_send",
                 retries = bumpable.bump_count(),
                 nonce = bumpable.req().nonce,
@@ -185,7 +194,7 @@ impl BuilderHelperTask {
                 .send_transaction(req)
                 .instrument(span.clone())
                 .await
-                .inspect_err(|e| error!(error = %e, "error sending transaction"))
+                .inspect_err(|error| span_error!(span, %error, "error sending transaction"))
                 .unwrap_or(ControlFlow::Retry);
 
             let guard = span.entered();
@@ -250,22 +259,17 @@ impl BuilderHelperTask {
                 break;
             };
             let ru_block_number = sim_result.block.block_number();
-            let host_block_number = self.constants.rollup_block_to_host_block_num(ru_block_number);
+            let host_block_number = sim_result.host_block_number();
 
             let span = sim_result.sim_env.span.clone();
 
-            let guard = span.enter();
-
-            debug!(ru_block_number, "submit channel received block");
+            span_debug!(span, "submit channel received block");
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
-                debug!(ru_block_number, "received empty block - skipping");
+                span_debug!(span, "received empty block - skipping");
                 continue;
             }
-
-            // drop guard before await
-            drop(guard);
 
             // Prep the span we'll use for the transaction submission
             let submission_span = debug_span!(
@@ -282,7 +286,6 @@ impl BuilderHelperTask {
                 self.provider().clone(),
                 self.quincey.clone(),
                 self.config.clone(),
-                self.constants.clone(),
             );
             let bumpable = res_unwrap_or_continue!(
                 prep.prep_transaction(&sim_result.sim_env.prev_host)
@@ -301,7 +304,7 @@ impl BuilderHelperTask {
 
             // Now send the transaction
             let _ = res_unwrap_or_continue!(
-                self.retrying_send(bumpable, 3).instrument(submission_span.clone()).await,
+                self.retrying_send(bumpable, RETRIES_COUNT, &submission_span).await,
                 submission_span,
                 error!("error dispatching block to host chain")
             );

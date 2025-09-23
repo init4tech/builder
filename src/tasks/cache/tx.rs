@@ -2,11 +2,11 @@
 use crate::config::BuilderConfig;
 use alloy::consensus::TxEnvelope;
 use eyre::Error;
-use init4_bin_base::deps::tracing::{Instrument, debug, debug_span, trace};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
+use tracing::{Instrument, debug, debug_span, trace};
 
 /// Poll interval for the transaction poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
