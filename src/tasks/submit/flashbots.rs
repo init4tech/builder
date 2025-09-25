@@ -80,12 +80,21 @@ impl FlashbotsTask {
             .encoded_2718()
             .into();
 
+        let bundle_body = sim_result
+            .block
+            .host_txns()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(tx_bytes))
+            .map(|tx| BundleItem::Tx { tx, can_revert: false })
+            .collect::<Vec<_>>();
+
         // Only valid in the specific host block
         Ok(MevSendBundle::new(
             sim_result.host_block_number(),
             Some(sim_result.host_block_number()),
             ProtocolVersion::V0_1,
-            vec![BundleItem::Tx { tx: tx_bytes, can_revert: false }],
+            bundle_body,
         ))
     }
 
