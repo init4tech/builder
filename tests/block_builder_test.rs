@@ -65,9 +65,11 @@ async fn test_handle_build() {
     // Setup the block envs
     let finish_by = Instant::now() + Duration::from_secs(2);
     let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
-    let number = ru_header.number + 1;
-    let timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
-    let block_env = test_block_env(config, number, 7, timestamp);
+    let target_block_number = ru_header.number + 1;
+    let target_timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
+
+    assert!(target_timestamp > ru_header.timestamp);
+    let block_env = test_block_env(config, target_block_number, 7, target_timestamp);
 
     // Spawn the block builder task
     let sim_env = SimEnv {
@@ -82,7 +84,7 @@ async fn test_handle_build() {
     assert!(got.unwrap().tx_count() == 2);
 }
 
-/// End-to-end simulation flow using the TestHarness.
+// TODO: Make this properly tick; something is wrong with the simulation deadline, it's not getting transactions before it exits.
 #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_ticks_and_emits() {
@@ -92,17 +94,104 @@ async fn test_harness_ticks_and_emits() {
     let mut h = TestHarness::new().await.unwrap();
 
     // Prepare two senders and fund them if needed from anvil default accounts
-    let keys = h.anvil.keys();
+    let keys = h.rollup.anvil.anvil().keys();
     let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
+
+    // Start simulator and tick a new SimEnv
+    h.start();
 
     // Add a transaction into the sim cache
     h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
 
+    // Tick host chain
+    h.update_host_environment().await;
+
+    // Expect a SimResult. Use the harness slot duration plus a small buffer so
+    // we wait long enough for the simulator to complete heavy simulations.
+    let wait = Duration::from_secs(h.config.slot_calculator.slot_duration() + 5);
+    let got = h.recv_result(wait).await.expect("sim result");
+    assert_eq!(got.block.tx_count(), 1);
+}
+
+#[ignore = "integration test"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_simulates_full_flow() {
+    setup_logging();
+
+    // Build harness
+    let mut h = TestHarness::new().await.unwrap();
+
+    // Prepare two senders and fund them if needed from anvil default accounts
+    let keys = h.rollup.anvil.anvil().keys();
+    let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
+    let test_key_1 = PrivateKeySigner::from_signing_key(keys[1].clone().into());
+
+    // Add two transactions into the sim cache
+    h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
+    h.add_tx(&test_key_1, 0, U256::from(2_u64), 10_000);
+
     // Start simulator and tick a new SimEnv
     h.start();
-    h.tick_from_ru_latest().await;
 
-    // Expect a SimResult
-    let got = h.recv_result(Duration::from_secs(5)).await.expect("sim result");
-    assert_eq!(got.block.tx_count(), 1);
+    let prev_host_header = h
+        .host
+        .provider
+        .get_block(BlockId::latest())
+        .await
+        .expect("latest block")
+        .expect("block exists")
+        .header
+        .inner;
+
+    let prev_ru_header = h
+        .rollup
+        .provider
+        .get_block(BlockId::latest())
+        .await
+        .expect("latest block")
+        .expect("block exists")
+        .header
+        .inner;
+
+    h.tick_sim_env(prev_ru_header, prev_host_header).await;
+
+    // Expect a SimResult. Use the harness slot duration plus a small buffer.
+    let wait = Duration::from_secs(h.config.slot_calculator.slot_duration() + 5);
+    let got = h.recv_result(wait).await.expect("sim result");
+    assert_eq!(got.block.tx_count(), 2);
+}
+
+/// Ensure the harness can manually advance the Anvil chain.
+#[ignore = "integration test"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_advances_anvil_chain() {
+    setup_logging();
+
+    let h = TestHarness::new().await.unwrap();
+
+    let initial_number = h
+        .rollup
+        .provider
+        .get_block(BlockId::latest())
+        .await
+        .expect("latest block")
+        .expect("block exists")
+        .header
+        .inner
+        .number;
+
+    h.advance_blocks(2).await.expect("advance blocks");
+
+    let new_number = h
+        .rollup
+        .provider
+        .get_block(BlockId::latest())
+        .await
+        .expect("latest block")
+        .expect("block exists")
+        .header
+        .inner
+        .number;
+
+    assert_eq!(new_number, initial_number + 2);
 }

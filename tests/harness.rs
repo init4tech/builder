@@ -4,14 +4,18 @@
 //! mpsc submit channel so tests can tick BlockEnv values and assert on
 //! emitted SimResult blocks without involving submission logic.
 
-use std::time::Duration;
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use alloy::{
+    consensus::Header,
     eips::BlockId,
     network::Ethereum,
-    node_bindings::{Anvil, AnvilInstance},
+    node_bindings::Anvil,
     primitives::U256,
-    providers::{Provider, RootProvider},
+    providers::{Provider, RootProvider, ext::AnvilApi, layers::AnvilProvider},
     signers::local::PrivateKeySigner,
 };
 use builder::{
@@ -24,18 +28,42 @@ use builder::{
 };
 use signet_sim::SimCache;
 use signet_types::constants::SignetSystemConstants;
-use tokio::sync::{mpsc, watch};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
+
+const DEFAULT_BLOCK_TIME: u64 = 5; // seconds
+
+pub struct HostChain {
+    /// The provider for the host chain.
+    pub provider: RootProvider<Ethereum>,
+    /// The Anvil provider for the host chain, used to control mining in tests.
+    pub anvil: AnvilProvider<RootProvider<Ethereum>>,
+}
+
+pub struct RollupChain {
+    pub provider: RootProvider<Ethereum>,
+    pub anvil: AnvilProvider<RootProvider>,
+}
+
+pub struct SimulatorTask {
+    sim_env_tx: watch::Sender<Option<SimEnv>>,
+    sim_env_rx: watch::Receiver<Option<SimEnv>>,
+    sim_cache: SimCache,
+}
 
 pub struct TestHarness {
     pub config: BuilderConfig,
     pub constants: SignetSystemConstants,
-    pub anvil: AnvilInstance,
-    pub ru_provider: RootProvider<Ethereum>,
-    sim_env_tx: watch::Sender<Option<SimEnv>>,
-    sim_env_rx: watch::Receiver<Option<SimEnv>>,
+    pub rollup: RollupChain,
+    pub host: HostChain,
+    pub simulator: SimulatorTask,
     submit_tx: mpsc::UnboundedSender<SimResult>,
     submit_rx: mpsc::UnboundedReceiver<SimResult>,
-    sim_cache: SimCache,
+    /// Keeps the simulator task alive for the duration of the harness so the
+    /// background task isn't aborted when `start()` returns.
+    simulator_handle: Option<JoinHandle<()>>,
 }
 
 impl TestHarness {
@@ -43,11 +71,27 @@ impl TestHarness {
     pub async fn new() -> eyre::Result<Self> {
         setup_logging();
 
-        let config = setup_test_config()?;
+        let mut config = setup_test_config()?;
+
+        // Ensure the slot calculator is aligned with the current time and has
+        // a sufficiently large slot duration so the simulator's deadline
+        // calculation yields a non-zero remaining window during tests.
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        // Give a generous slot duration for tests (60s)
+        config.slot_calculator = init4_bin_base::utils::calc::SlotCalculator::new(now, 0, 10);
         let constants = SignetSystemConstants::pecorino();
 
-        let anvil = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
-        let ru_provider = RootProvider::<Ethereum>::new_http(anvil.endpoint_url());
+        // Create host anvil
+        let host_anvil = Anvil::new().chain_id(signet_constants::pecorino::HOST_CHAIN_ID).spawn();
+        let host_provider = RootProvider::<Ethereum>::new_http(host_anvil.endpoint_url().clone());
+        let host_anvil_provider = AnvilProvider::new(host_provider.clone(), Arc::new(host_anvil));
+
+        // Create rollup anvil
+        let rollup_anvil = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
+        let rollup_provider =
+            RootProvider::<Ethereum>::new_http(rollup_anvil.endpoint_url().clone());
+        let rollup_anvil_provider =
+            AnvilProvider::new(rollup_provider.clone(), Arc::new(rollup_anvil));
 
         let (sim_env_tx, sim_env_rx) = watch::channel::<Option<SimEnv>>(None);
         let (submit_tx, submit_rx) = mpsc::unbounded_channel::<SimResult>();
@@ -55,13 +99,15 @@ impl TestHarness {
         Ok(Self {
             config,
             constants,
-            anvil,
-            ru_provider,
-            sim_env_tx,
-            sim_env_rx,
+            rollup: RollupChain {
+                provider: rollup_provider.clone(),
+                anvil: rollup_anvil_provider.clone(),
+            },
+            host: HostChain { provider: host_provider.clone(), anvil: host_anvil_provider },
+            simulator: SimulatorTask { sim_env_tx, sim_env_rx, sim_cache: SimCache::new() },
             submit_tx,
             submit_rx,
-            sim_cache: SimCache::new(),
+            simulator_handle: None,
         })
     }
 
@@ -69,46 +115,108 @@ impl TestHarness {
     pub fn add_tx(&self, signer: &PrivateKeySigner, nonce: u64, value: U256, mpfpg: u128) {
         let tx = new_signed_tx(signer, nonce, value, mpfpg).expect("tx signing");
         // group index 0 for simplicity in tests
-        self.sim_cache.add_tx(tx, 0);
+        self.simulator.sim_cache.add_tx(tx, 0);
+    }
+
+    /// Mine additional blocks on the underlying Anvil instance.
+    pub async fn advance_blocks(&self, count: u64) -> eyre::Result<()> {
+        if count == 0 {
+            return Ok(());
+        }
+
+        self.host.anvil.anvil_mine(Some(count), Some(1)).await?;
+        self.rollup.anvil.anvil_mine(Some(count), Some(1)).await?;
+
+        Ok(())
     }
 
     /// Start the simulator task.
-    pub fn start(&self) {
+    pub fn start(&mut self) {
+        if self.simulator_handle.is_some() {
+            tracing::warn!("TestHarness simulator already running");
+            return;
+        }
+
+        tracing::debug!("TestHarness starting simulator task");
         // Spawn the simulator background task
-        let cache = self.sim_cache.clone();
+        let cache = self.simulator.sim_cache.clone();
         let constants = self.constants.clone();
+
+        // Wire up the simulator and submit channels
         let submit_tx = self.submit_tx.clone();
-        let simulator =
-            Simulator::new(&self.config, self.ru_provider.clone(), self.sim_env_rx.clone());
-        let _jh = simulator.spawn_simulator_task(constants, cache, submit_tx);
-        // NB: We intentionally leak the JoinHandle in tests; tokio will cancel on drop.
+        let simulator = Simulator::new(
+            &self.config,
+            self.rollup.provider.clone(),
+            self.simulator.sim_env_rx.clone(),
+        );
+
+        // Keep the JoinHandle on the harness so the task isn't aborted when
+        // this function returns.
+        let jh = simulator.spawn_simulator_task(constants, cache, submit_tx);
+        self.simulator_handle = Some(jh);
+        tracing::debug!("TestHarness spawned simulator task");
     }
 
-    /// Tick a new SimEnv computed from the current RU latest header.
-    pub async fn tick_from_ru_latest(&self) {
+    /// Tick a new SimEnv computed from the current host latest header.
+    pub async fn update_host_environment(&self) {
         let header = self
-            .ru_provider
+            .host
+            .provider
             .get_block(BlockId::latest())
             .await
-            .expect("ru latest block")
-            .expect("ru latest exists")
+            .expect("host latest block")
+            .expect("host latest exists")
             .header
             .inner;
 
-        let number = header.number + 1;
-        let timestamp = header.timestamp + self.config.slot_calculator.slot_duration();
-        // A small basefee is fine for local testing
-        let block_env = test_block_env(self.config.clone(), number, 7, timestamp);
+        let target_block_number = header.number + 1;
+        let deadline = header.timestamp + DEFAULT_BLOCK_TIME;
+        let block_env = test_block_env(self.config.clone(), target_block_number, 7, deadline);
 
-        // Re-use RU header as prev_host for harness; submit path doesn't run here.
-        let span = tracing::info_span!("TestHarness::tick", number, timestamp);
+        assert!(deadline > header.timestamp);
+        assert!(header.number < target_block_number);
+
+        // Re-use host header as prev_host for harness; submit path doesn't run here.
+        let span =
+            tracing::info_span!("TestHarness::tick_from_host", target_block_number, deadline);
         let sim_env = SimEnv { block_env, prev_header: header.clone(), prev_host: header, span };
 
-        let _ = self.sim_env_tx.send(Some(sim_env));
+        let _ = self.simulator.sim_env_tx.send(Some(sim_env));
+    }
+
+    /// Tick a new SimEnv computed from the current RU latest header.
+    pub async fn tick_sim_env(&self, prev_header: Header, prev_host_header: Header) {
+        let target_block_number = prev_header.number + 1;
+        // Add a small buffer to the deadline so the test harness holds the
+        // simulation open long enough for the simulator to run to completion.
+        // We intentionally don't change simulator timing logic; instead we
+        // supply a BlockEnv timestamp that gives the simulator a reasonable
+        // remaining window.
+        let deadline =
+            prev_header.timestamp + self.config.slot_calculator.slot_duration() + DEFAULT_BLOCK_TIME;
+        // A small basefee is fine for local testing
+        let block_env = test_block_env(self.config.clone(), target_block_number, 7, deadline);
+
+        // Re-use RU header as prev_host for harness; submit path doesn't run here.
+        let span = tracing::info_span!("TestHarness::tick", target_block_number, deadline);
+        let sim_env = SimEnv { block_env, prev_header: prev_header.clone(), prev_host: prev_host_header, span };
+
+        let _ = self.simulator.sim_env_tx.send(Some(sim_env));
     }
 
     /// Receive the next SimResult with a timeout.
     pub async fn recv_result(&mut self, timeout: Duration) -> Option<SimResult> {
-        tokio::time::timeout(timeout, self.submit_rx.recv()).await.ok().flatten()
+        tracing::debug!(?timeout, "TestHarness waiting for sim result");
+        let res = tokio::time::timeout(timeout, self.submit_rx.recv()).await.ok().flatten();
+        tracing::debug!(received = res.is_some(), "TestHarness recv_result returning");
+        res
+    }
+}
+
+impl Drop for TestHarness {
+    fn drop(&mut self) {
+        if let Some(handle) = self.simulator_handle.take() {
+            handle.abort();
+        }
     }
 }
