@@ -7,13 +7,33 @@ use crate::{
 };
 use alloy::{
     eips::Encodable2718,
+    network::EthereumWallet,
     primitives::TxHash,
+    providers::{
+        self, Identity, ProviderBuilder,
+        ext::MevApi,
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+    },
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
-use init4_bin_base::utils::flashbots::Flashbots;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
+
+/// The provider type used to submit bundles to a Flashbots relay.
+type FlashbotsProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    providers::RootProvider,
+>;
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
@@ -21,12 +41,12 @@ use tracing::Instrument;
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
     config: BuilderConfig,
-    /// Flashbots RPC provider.
-    flashbots: Flashbots,
     /// Quincey instance for block signing.
     quincey: Quincey,
     /// Zenith instance.
     zenith: ZenithInstance<HostProvider>,
+    /// Provides access to a Flashbots-compatible bundle API.
+    flashbots: FlashbotsProvider,
     /// Channel for sending hashes of outbound transactions.
     _outbound: mpsc::UnboundedSender<TxHash>,
 }
@@ -38,20 +58,31 @@ impl FlashbotsTask {
         config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
     ) -> eyre::Result<FlashbotsTask> {
-        let (flashbots, quincey, host_provider) = tokio::try_join!(
-            config.flashbots_provider(),
-            config.connect_quincey(),
-            config.connect_host_provider(),
-        )?;
+        let (quincey, host_provider) =
+            tokio::try_join!(config.connect_quincey(), config.connect_host_provider(),)?;
+
+        let endpoint = config
+            .clone()
+            .flashbots
+            .flashbots_endpoint
+            .expect("flashbots endpoint must be configured");
+        let signer = config.connect_builder_signer().await?;
+        let flashbots: FlashbotsProvider =
+            ProviderBuilder::new().wallet(signer).connect_http(endpoint);
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, flashbots, quincey, zenith, _outbound: outbound })
+        Ok(Self { config, quincey, zenith, flashbots, _outbound: outbound })
     }
 
     /// Returns a reference to the inner `HostProvider`
     pub fn host_provider(&self) -> HostProvider {
         self.zenith.provider().clone()
+    }
+
+    /// Returns a reference to the inner `FlashbotsProvider`
+    pub fn flashbots(&self) -> &FlashbotsProvider {
+        &self.flashbots
     }
 
     /// Prepares a MEV bundle with the configured submit call
@@ -118,27 +149,7 @@ impl FlashbotsTask {
                 continue;
             };
 
-            // simulate the bundle against Flashbots then send the bundle
-            if let Err(err) = self.flashbots.simulate_bundle(&bundle).instrument(span.clone()).await
-            {
-                span_debug!(span, %err, "bundle simulation failed");
-                continue;
-            }
-
-            let _ = self
-                .flashbots
-                .send_bundle(&bundle)
-                .instrument(span.clone())
-                .await
-                .inspect(|bundle_hash| {
-                    span_info!(
-                        span,
-                        bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots"
-                    );
-                })
-                .inspect_err(|err| {
-                    span_error!(span, %err, "failed to send bundle to Flashbots");
-                });
+            let _ = self.flashbots().send_mev_bundle(bundle.clone()).instrument(span.clone());
         }
     }
 
