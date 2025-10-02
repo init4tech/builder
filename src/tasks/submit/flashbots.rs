@@ -81,7 +81,7 @@ impl FlashbotsTask {
     }
 
     /// Returns a reference to the inner `FlashbotsProvider`
-    pub fn flashbots(&self) -> &FlashbotsProvider {
+    pub const fn flashbots(&self) -> &FlashbotsProvider {
         &self.flashbots
     }
 
