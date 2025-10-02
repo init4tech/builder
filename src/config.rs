@@ -9,7 +9,7 @@ use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{Address, TxHash},
     providers::{
-        Identity, ProviderBuilder, RootProvider,
+        self, Identity, ProviderBuilder, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
             SimpleNonceManager, WalletFiller,
@@ -51,6 +51,18 @@ pub type HostProvider = FillProvider<
         WalletFiller<EthereumWallet>,
     >,
     RootProvider,
+>;
+
+/// The provider type used to submit bundles to a Flashbots relay.
+pub type FlashbotsProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    providers::RootProvider,
 >;
 
 /// The default concurrency limit for the builder if the system call
@@ -220,6 +232,37 @@ impl BuilderConfig {
             .fetch_chain_id()
             .wallet(EthereumWallet::from(builder_signer?))
             .connect_provider(provider?))
+    }
+
+    /// Connect to a Flashbots bundle provider
+    pub async fn connect_flashbots(
+        &self,
+        config: &BuilderConfig,
+    ) -> Result<
+        FillProvider<
+            JoinFill<
+                JoinFill<
+                    Identity,
+                    JoinFill<
+                        GasFiller,
+                        JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+                    >,
+                >,
+                WalletFiller<EthereumWallet>,
+            >,
+            providers::RootProvider,
+        >,
+        eyre::Error,
+    > {
+        let endpoint = config
+            .clone()
+            .flashbots
+            .flashbots_endpoint
+            .expect("flashbots endpoint must be configured");
+        let signer = config.connect_builder_signer().await?;
+        let flashbots: FlashbotsProvider =
+            ProviderBuilder::new().wallet(signer).connect_http(endpoint);
+        Ok(flashbots)
     }
 
     /// Connect additional broadcast providers.

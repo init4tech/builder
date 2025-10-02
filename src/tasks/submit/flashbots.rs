@@ -1,39 +1,19 @@
 //! Flashbots Task receives simulated blocks from an upstream channel and
 //! submits them to the Flashbots relay as bundles.
 use crate::{
-    config::{BuilderConfig, HostProvider, ZenithInstance},
+    config::{BuilderConfig, FlashbotsProvider, HostProvider, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
     eips::Encodable2718,
-    network::EthereumWallet,
     primitives::TxHash,
-    providers::{
-        self, Identity, ProviderBuilder,
-        ext::MevApi,
-        fillers::{
-            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
-            WalletFiller,
-        },
-    },
+    providers::ext::MevApi,
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
-
-/// The provider type used to submit bundles to a Flashbots relay.
-type FlashbotsProvider = FillProvider<
-    JoinFill<
-        JoinFill<
-            Identity,
-            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-        >,
-        WalletFiller<EthereumWallet>,
-    >,
-    providers::RootProvider,
->;
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
@@ -61,14 +41,7 @@ impl FlashbotsTask {
         let (quincey, host_provider) =
             tokio::try_join!(config.connect_quincey(), config.connect_host_provider(),)?;
 
-        let endpoint = config
-            .clone()
-            .flashbots
-            .flashbots_endpoint
-            .expect("flashbots endpoint must be configured");
-        let signer = config.connect_builder_signer().await?;
-        let flashbots: FlashbotsProvider =
-            ProviderBuilder::new().wallet(signer).connect_http(endpoint);
+        let flashbots = config.connect_flashbots(&config).await?;
 
         let zenith = config.connect_zenith(host_provider);
 
