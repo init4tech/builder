@@ -28,7 +28,7 @@ signet-zenith = { version = "0.10.1" }
 
 trevm = { version = "0.27.8", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "1.0.25", features = [
+alloy = { version = "1.0.37", features = [
     "full",
     "json-rpc",
     "signer-aws",
@@ -39,6 +39,7 @@ alloy = { version = "1.0.25", features = [
     "node-bindings",
     "serde",
     "getrandom",
+    "provider-mev-api"
 ] }
 
 axum = "0.7.5"
