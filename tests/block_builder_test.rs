@@ -133,25 +133,7 @@ async fn test_harness_simulates_full_flow() {
     // Start simulator and tick a new SimEnv
     h.start();
 
-    let prev_host_header = h
-        .host
-        .provider
-        .get_block(BlockId::latest())
-        .await
-        .expect("latest block")
-        .expect("block exists")
-        .header
-        .inner;
-
-    let prev_ru_header = h
-        .rollup
-        .provider
-        .get_block(BlockId::latest())
-        .await
-        .expect("latest block")
-        .expect("block exists")
-        .header
-        .inner;
+    let (prev_ru_header, prev_host_header) = h.get_headers().await;
 
     h.tick_sim_env(prev_ru_header, prev_host_header).await;
 
@@ -166,32 +148,13 @@ async fn test_harness_simulates_full_flow() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_advances_anvil_chain() {
     setup_logging();
-
     let h = TestHarness::new().await.unwrap();
 
-    let initial_number = h
-        .rollup
-        .provider
-        .get_block(BlockId::latest())
-        .await
-        .expect("latest block")
-        .expect("block exists")
-        .header
-        .inner
-        .number;
-
+    let (rollup, host) = h.get_headers().await;
+    
     h.advance_blocks(2).await.expect("advance blocks");
 
-    let new_number = h
-        .rollup
-        .provider
-        .get_block(BlockId::latest())
-        .await
-        .expect("latest block")
-        .expect("block exists")
-        .header
-        .inner
-        .number;
-
-    assert_eq!(new_number, initial_number + 2);
+    let (new_rollup, new_host) = h.get_headers().await;
+    assert_eq!(new_rollup.number, rollup.number + 2);
+    assert_eq!(new_host.number, host.number + 2);
 }

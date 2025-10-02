@@ -118,7 +118,7 @@ impl TestHarness {
         self.simulator.sim_cache.add_tx(tx, 0);
     }
 
-    /// Mine additional blocks on the underlying Anvil instance.
+    /// Mine additional blocks on the underlying Anvil instance and update the sim_env with the latest headers.
     pub async fn advance_blocks(&self, count: u64) -> eyre::Result<()> {
         if count == 0 {
             return Ok(());
@@ -127,10 +127,13 @@ impl TestHarness {
         self.host.anvil.anvil_mine(Some(count), Some(1)).await?;
         self.rollup.anvil.anvil_mine(Some(count), Some(1)).await?;
 
+        let (ru, host) = self.get_headers().await;
+        self.tick_sim_env(ru, host).await;
+
         Ok(())
     }
 
-    /// Start the simulator task.
+    /// Starts the simulator task.
     pub fn start(&mut self) {
         if self.simulator_handle.is_some() {
             tracing::warn!("TestHarness simulator already running");
@@ -156,6 +159,31 @@ impl TestHarness {
         self.simulator_handle = Some(jh);
         tracing::debug!("TestHarness spawned simulator task");
     }
+
+    /// Returns the latest rollup and host headers.
+    pub async fn get_headers(&self) -> (Header, Header) {
+        let ru_header = self
+            .rollup
+            .provider
+            .get_block(BlockId::latest())
+            .await
+            .expect("rollup latest block")
+            .expect("rollup latest exists")
+            .header
+            .inner;
+
+        let host_header = self
+            .host
+            .provider
+            .get_block(BlockId::latest())
+            .await
+            .expect("host latest block")
+            .expect("host latest exists")
+            .header
+            .inner;
+
+        (ru_header, host_header)
+    }   
 
     /// Tick a new SimEnv computed from the current host latest header.
     pub async fn update_host_environment(&self) {
@@ -184,22 +212,21 @@ impl TestHarness {
         let _ = self.simulator.sim_env_tx.send(Some(sim_env));
     }
 
-    /// Tick a new SimEnv computed from the current RU latest header.
-    pub async fn tick_sim_env(&self, prev_header: Header, prev_host_header: Header) {
-        let target_block_number = prev_header.number + 1;
-        // Add a small buffer to the deadline so the test harness holds the
-        // simulation open long enough for the simulator to run to completion.
-        // We intentionally don't change simulator timing logic; instead we
-        // supply a BlockEnv timestamp that gives the simulator a reasonable
-        // remaining window.
-        let deadline =
-            prev_header.timestamp + self.config.slot_calculator.slot_duration() + DEFAULT_BLOCK_TIME;
-        // A small basefee is fine for local testing
-        let block_env = test_block_env(self.config.clone(), target_block_number, 7, deadline);
+    /// Tick a new `SimEnv` computed from the current latest rollup and host headers.
+    pub async fn tick_sim_env(&self, prev_ru_header: Header, prev_host_header: Header) {
+        let target_ru_block_number = prev_ru_header.number + 1;
 
-        // Re-use RU header as prev_host for harness; submit path doesn't run here.
-        let span = tracing::info_span!("TestHarness::tick", target_block_number, deadline);
-        let sim_env = SimEnv { block_env, prev_header: prev_header.clone(), prev_host: prev_host_header, span };
+        // Set new simulation deadline from previous header 
+        let deadline =
+            prev_ru_header.timestamp + self.config.slot_calculator.slot_duration();
+
+        // Make a new block env from the previous rollup header and our new simulation deadline.
+        let block_env = test_block_env(self.config.clone(), target_ru_block_number, 7, deadline);
+
+        let span = tracing::info_span!("TestHarness::tick", target_ru_block_number, deadline);
+
+        // Make a new SimEnv and send it to the simulator task.
+        let sim_env = SimEnv { block_env, prev_header: prev_ru_header.clone(), prev_host: prev_host_header, span };
 
         let _ = self.simulator.sim_env_tx.send(Some(sim_env));
     }
