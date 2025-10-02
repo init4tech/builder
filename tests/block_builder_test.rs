@@ -84,8 +84,7 @@ async fn test_handle_build() {
     assert!(got.unwrap().tx_count() == 2);
 }
 
-// TODO: Make this properly tick; something is wrong with the simulation deadline, it's not getting transactions before it exits.
-#[ignore = "integration test"]
+// #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_ticks_and_emits() {
     setup_logging();
@@ -113,7 +112,7 @@ async fn test_harness_ticks_and_emits() {
     assert_eq!(got.block.tx_count(), 1);
 }
 
-#[ignore = "integration test"]
+// #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_simulates_full_flow() {
     setup_logging();
@@ -144,14 +143,14 @@ async fn test_harness_simulates_full_flow() {
 }
 
 /// Ensure the harness can manually advance the Anvil chain.
-#[ignore = "integration test"]
+// #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_advances_anvil_chain() {
     setup_logging();
     let h = TestHarness::new().await.unwrap();
 
     let (rollup, host) = h.get_headers().await;
-    
+
     h.advance_blocks(2).await.expect("advance blocks");
 
     let (new_rollup, new_host) = h.get_headers().await;

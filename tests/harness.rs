@@ -1,8 +1,12 @@
 //! Test harness for end-to-end simulation flow.
 //!
-//! This harness wires a Simulator to a manual SimEnv watch channel and an
-//! mpsc submit channel so tests can tick BlockEnv values and assert on
-//! emitted SimResult blocks without involving submission logic.
+//! This harness wires a [`Simulator`] up to a manual [`SimEnv`] watch channel
+//! and a submit channel so tests can manually control the simulation environment, 
+//! ticking along new blocks and asserting on the state of the simulator's results.
+//! 
+//! It also manages two Anvil instances to simulate the rollup and host chains, 
+//! and provides utility functions for advancing blocks and adding transactions to 
+//! the simulator's mempool.
 
 use std::{
     sync::Arc,
@@ -71,6 +75,7 @@ impl TestHarness {
     pub async fn new() -> eyre::Result<Self> {
         setup_logging();
 
+        // Make a new test config
         let mut config = setup_test_config()?;
 
         // Ensure the slot calculator is aligned with the current time and has
@@ -93,6 +98,10 @@ impl TestHarness {
         let rollup_anvil_provider =
             AnvilProvider::new(rollup_provider.clone(), Arc::new(rollup_anvil));
 
+        // Create a new sim cache.
+        let sim_cache = SimCache::new();
+
+        // Plumb the sim environment and submit channels
         let (sim_env_tx, sim_env_rx) = watch::channel::<Option<SimEnv>>(None);
         let (submit_tx, submit_rx) = mpsc::unbounded_channel::<SimResult>();
 
@@ -104,7 +113,7 @@ impl TestHarness {
                 anvil: rollup_anvil_provider.clone(),
             },
             host: HostChain { provider: host_provider.clone(), anvil: host_anvil_provider },
-            simulator: SimulatorTask { sim_env_tx, sim_env_rx, sim_cache: SimCache::new() },
+            simulator: SimulatorTask { sim_env_tx, sim_env_rx, sim_cache },
             submit_tx,
             submit_rx,
             simulator_handle: None,
@@ -183,7 +192,7 @@ impl TestHarness {
             .inner;
 
         (ru_header, host_header)
-    }   
+    }
 
     /// Tick a new SimEnv computed from the current host latest header.
     pub async fn update_host_environment(&self) {
@@ -216,9 +225,8 @@ impl TestHarness {
     pub async fn tick_sim_env(&self, prev_ru_header: Header, prev_host_header: Header) {
         let target_ru_block_number = prev_ru_header.number + 1;
 
-        // Set new simulation deadline from previous header 
-        let deadline =
-            prev_ru_header.timestamp + self.config.slot_calculator.slot_duration();
+        // Set new simulation deadline from previous header
+        let deadline = prev_ru_header.timestamp + self.config.slot_calculator.slot_duration();
 
         // Make a new block env from the previous rollup header and our new simulation deadline.
         let block_env = test_block_env(self.config.clone(), target_ru_block_number, 7, deadline);
@@ -226,7 +234,12 @@ impl TestHarness {
         let span = tracing::info_span!("TestHarness::tick", target_ru_block_number, deadline);
 
         // Make a new SimEnv and send it to the simulator task.
-        let sim_env = SimEnv { block_env, prev_header: prev_ru_header.clone(), prev_host: prev_host_header, span };
+        let sim_env = SimEnv {
+            block_env,
+            prev_header: prev_ru_header.clone(),
+            prev_host: prev_host_header,
+            span,
+        };
 
         let _ = self.simulator.sim_env_tx.send(Some(sim_env));
     }
