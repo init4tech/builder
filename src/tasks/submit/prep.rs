@@ -130,6 +130,7 @@ impl<'a> SubmitPrep<'a> {
 
     /// Prepares a transaction for submission to the host chain.
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
+        debug!(prev_host = ?prev_host, "preparing transaction for submission to host chain");
         let req = self.new_tx_request().in_current_span().await?;
         Ok(Bumpable::new(req, prev_host))
     }
