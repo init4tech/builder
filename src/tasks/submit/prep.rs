@@ -115,7 +115,7 @@ impl<'a> SubmitPrep<'a> {
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
 
-        debug!(nonce, "assigned nonce");
+        debug!(nonce, "assigned nonce to rollup block transaction");
 
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
@@ -129,6 +129,7 @@ impl<'a> SubmitPrep<'a> {
 
     /// Prepares a transaction for submission to the host chain.
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
+        debug!(prev_host = ?prev_host, "preparing transaction for submission to host chain");
         let req = self.new_tx_request().in_current_span().await?;
         Ok(Bumpable::new(req, prev_host))
     }
@@ -144,7 +145,8 @@ pub struct Bumpable {
 impl Bumpable {
     /// Instantiate a new `Bumpable` transaction request.
     pub fn new(mut req: TransactionRequest, prev_host: &Header) -> Self {
-        crate::utils::populate_initial_gas(&mut req, prev_host);
+        debug!(prev_host = ?prev_host, "populating initial gas values into bumpable tx");
+        utils::populate_initial_gas(&mut req, prev_host);
         Self { req, bumps: 0 }
     }
 

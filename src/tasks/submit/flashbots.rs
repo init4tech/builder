@@ -1,17 +1,18 @@
 //! Flashbots Task receives simulated blocks from an upstream channel and
 //! submits them to the Flashbots relay as bundles.
 use crate::{
-    config::{BuilderConfig, HostProvider, ZenithInstance},
+    config::{BuilderConfig, FlashbotsProvider, HostProvider, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
     eips::Encodable2718,
     primitives::TxHash,
+    providers::ext::MevApi,
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
-use init4_bin_base::utils::flashbots::Flashbots;
+use init4_bin_base::utils::signer::LocalOrAws;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::Instrument;
 
@@ -21,12 +22,14 @@ use tracing::Instrument;
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
     config: BuilderConfig,
-    /// Flashbots RPC provider.
-    flashbots: Flashbots,
     /// Quincey instance for block signing.
     quincey: Quincey,
     /// Zenith instance.
     zenith: ZenithInstance<HostProvider>,
+    /// Provides access to a Flashbots-compatible bundle API.
+    flashbots: FlashbotsProvider,
+    /// The key used to sign requests to the Flashbots relay.
+    signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
     _outbound: mpsc::UnboundedSender<TxHash>,
 }
@@ -38,20 +41,26 @@ impl FlashbotsTask {
         config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
     ) -> eyre::Result<FlashbotsTask> {
-        let (flashbots, quincey, host_provider) = tokio::try_join!(
-            config.flashbots_provider(),
-            config.connect_quincey(),
-            config.connect_host_provider(),
-        )?;
+        let (quincey, host_provider) =
+            tokio::try_join!(config.connect_quincey(), config.connect_host_provider(),)?;
+
+        let flashbots = config.connect_flashbots(&config).await?;
+
+        let builder_key = config.connect_builder_signer().await?;
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, flashbots, quincey, zenith, _outbound: outbound })
+        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, _outbound: outbound })
     }
 
     /// Returns a reference to the inner `HostProvider`
     pub fn host_provider(&self) -> HostProvider {
         self.zenith.provider().clone()
+    }
+
+    /// Returns a reference to the inner `FlashbotsProvider`
+    pub const fn flashbots(&self) -> &FlashbotsProvider {
+        &self.flashbots
     }
 
     /// Prepares a MEV bundle with the configured submit call
@@ -70,7 +79,7 @@ impl FlashbotsTask {
             self.config.clone(),
         );
 
-        let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await?;
+        let tx = prep.prep_transaction(&sim_result.sim_env.prev_host).await?;
 
         let sendable = self.host_provider().fill(tx.into_request()).await?;
 
@@ -108,37 +117,41 @@ impl FlashbotsTask {
                 tracing::debug!("upstream task gone - exiting flashbots task");
                 break;
             };
-
+            tracing::debug!(
+                host_block_number = sim_result.host_block_number(),
+                "received sim result for host block "
+            );
             let span = sim_result.span();
             span_debug!(span, "simulation result received");
 
             // Prepare a MEV bundle with the configured call type from the sim result
-            let Ok(bundle) = self.prepare(&sim_result).instrument(span.clone()).await else {
-                span_debug!(span, "bundle preparation failed");
-                continue;
+            let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to prepare MEV bundle");
+                    span_debug!(span, "bundle preparation failed");
+                    continue;
+                }
             };
 
-            // simulate the bundle against Flashbots then send the bundle
-            if let Err(err) = self.flashbots.simulate_bundle(&bundle).instrument(span.clone()).await
-            {
-                span_debug!(span, %err, "bundle simulation failed");
-                continue;
-            }
+            // Send the bundle to Flashbots
+            let response = self
+                .flashbots()
+                .send_mev_bundle(bundle.clone())
+                .with_auth(self.signer.clone())
+                .await;
 
-            let _ = self
-                .flashbots
-                .send_bundle(&bundle)
-                .instrument(span.clone())
-                .await
-                .inspect(|bundle_hash| {
-                    span_info!(
-                        span,
-                        bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots"
-                    );
-                })
-                .inspect_err(|err| {
-                    span_error!(span, %err, "failed to send bundle to Flashbots");
-                });
+            match response {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    tracing::info!("block submitted to flashbots");
+                    span_debug!(span, "block submitted to flashbots");
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to submit MEV bundle to flashbots");
+                    span_debug!(span, "bundle submission failed - error returned");
+                }
+            }
         }
     }
 
