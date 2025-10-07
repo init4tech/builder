@@ -2,7 +2,7 @@
 ### STAGE 0: Create base chef image for building
 ### Use a Debian bookworm-based Rust image so GLIBC matches the final runtime (bookworm ships glibc 2.36)
 ### cargo-chef is then installed into this pinned base
-FROM --platform=$TARGETPLATFORM rust:1.90-bookworm AS chef
+FROM --platform=$TARGETPLATFORM rust:bookworm AS chef
 
 RUN cargo install cargo-chef
 
