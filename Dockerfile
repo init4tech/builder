@@ -35,7 +35,7 @@ RUN --mount=type=ssh cargo build --release --bin zenith-builder-example
 # Stage 3: Final image for running in the env
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 RUN apt-get update && apt-get -y upgrade && apt-get install -y \
-		libssl3 \
+		libssl-dev \
 		ca-certificates
 
 COPY --from=builder /app/target/release/zenith-builder-example /usr/local/bin/zenith-builder-example
