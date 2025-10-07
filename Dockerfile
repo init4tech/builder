@@ -26,10 +26,6 @@ RUN apt-get update && apt-get -y upgrade && apt-get install -y \
 	libclang-dev \
 	pkg-config \
 	libssl-dev
-	# git \
-	# openssh-client \
-	# make \
-	# perl
 
 RUN --mount=type=ssh cargo chef cook --release --recipe-path recipe.json --bin zenith-builder-example 
 COPY --exclude=target . .
@@ -40,8 +36,7 @@ RUN --mount=type=ssh cargo build --release --bin zenith-builder-example
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 RUN apt-get update && apt-get -y upgrade && apt-get install -y \
 		libssl3 \
-		ca-certificates \
-	&& rm -rf /var/lib/apt/lists/*
+		ca-certificates
 
 COPY --from=builder /app/target/release/zenith-builder-example /usr/local/bin/zenith-builder-example
 
