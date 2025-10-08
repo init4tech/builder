@@ -115,7 +115,7 @@ impl<'a> SubmitPrep<'a> {
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
 
-        debug!(nonce, "assigned nonce");
+        debug!(nonce, "assigned nonce to rollup block transaction");
 
         // Create a blob transaction with the blob header and signature values and return it
         let tx = self
@@ -144,7 +144,7 @@ pub struct Bumpable {
 impl Bumpable {
     /// Instantiate a new `Bumpable` transaction request.
     pub fn new(mut req: TransactionRequest, prev_host: &Header) -> Self {
-        crate::utils::populate_initial_gas(&mut req, prev_host);
+        utils::populate_initial_gas(&mut req, prev_host);
         Self { req, bumps: 0 }
     }
 
