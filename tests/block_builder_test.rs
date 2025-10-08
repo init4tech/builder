@@ -96,7 +96,7 @@ async fn test_harness_ticks_and_emits() {
     h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
 
     // Tick host chain
-    h.update_host_environment().await;
+    h.tick_from_host().await;
 
     // Expect a SimResult. Use the harness slot duration plus a small buffer so
     // we wait long enough for the simulator to complete heavy simulations.
@@ -124,9 +124,9 @@ async fn test_harness_simulates_full_flow() {
     // Start simulator and tick a new SimEnv
     h.start();
 
-    let (prev_ru_header, prev_host_header) = h.get_headers().await;
+    let (prev_ru_header, prev_host_header) = h.get_headers().await.unwrap();
 
-    h.tick_sim_env(prev_ru_header, prev_host_header).await;
+    h.tick_from_headers(prev_ru_header, prev_host_header).await;
 
     // Expect a SimResult. Use the harness slot duration plus a small buffer.
     let wait = Duration::from_secs(h.config.slot_calculator.slot_duration() + 5);
@@ -141,11 +141,20 @@ async fn test_harness_advances_anvil_chain() {
     setup_logging();
     let h = TestHarness::new().await.unwrap();
 
-    let (rollup, host) = h.get_headers().await;
+    let (rollup, host) = h.get_headers().await.unwrap();
 
-    h.advance_blocks(2).await.expect("advance blocks");
+    h.mine_blocks(2).await.expect("mine blocks");
 
-    let (new_rollup, new_host) = h.get_headers().await;
+    let (new_rollup, new_host) = h.get_headers().await.unwrap();
     assert_eq!(new_rollup.number, rollup.number + 2);
     assert_eq!(new_host.number, host.number + 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_stops() {
+    setup_logging();
+    let mut h = TestHarness::new().await.unwrap();
+
+    h.start();
+    h.stop().await;
 }
