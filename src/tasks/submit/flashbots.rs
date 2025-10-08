@@ -142,14 +142,20 @@ impl FlashbotsTask {
                 .await;
 
             match response {
-                Ok(Some(_)) => {}
+                Ok(Some(hash)) => {
+                    tracing::info!(host_block_number = sim_result.host_block_number(), bundle_hash = ?hash, "bundle submitted to flashbots");
+                    span_debug!(span, "bundle submitted to flashbots");
+                }
                 Ok(None) => {
-                    tracing::info!("block submitted to flashbots");
-                    span_debug!(span, "block submitted to flashbots");
+                    tracing::info!(
+                        host_block_number = sim_result.host_block_number(),
+                        "bundle submitted to flashbots without error"
+                    );
+                    span_debug!(span, "bundle submitted to flashbots");
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "failed to submit MEV bundle to flashbots");
-                    span_debug!(span, "bundle submission failed - error returned");
+                    span_debug!(span, "MEV bundle submission failed - error returned");
                 }
             }
         }
