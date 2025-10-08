@@ -65,18 +65,6 @@ pub type FlashbotsProvider = FillProvider<
     providers::RootProvider,
 >;
 
-///
-pub type FlashbotsProviderV2 = FillProvider<
-    JoinFill<
-        JoinFill<
-            Identity,
-            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-        >,
-        WalletFiller<EthereumWallet>,
-    >,
-    providers::RootProvider,
->;
-
 /// The default concurrency limit for the builder if the system call
 /// fails and no user-specified value is set.
 pub const DEFAULT_CONCURRENCY_LIMIT: usize = 8;
@@ -256,7 +244,7 @@ impl BuilderConfig {
             .connect_provider(provider?))
     }
 
-    /// Connect to a Flashbots bundle provider
+    /// Connect to a Flashbots bundle provider.
     pub async fn connect_flashbots(
         &self,
         config: &BuilderConfig,
