@@ -326,13 +326,6 @@ impl BuilderConfig {
         })
     }
 
-    // /// Connect to a Flashbots provider.
-    // pub async fn flashbots_provider(&self) -> eyre::Result<Flashbots> {
-    //     self.flashbots
-    //         .build(self.connect_builder_signer().await?)
-    //         .ok_or_else(|| eyre::eyre!("Flashbots is not configured"))
-    // }
-
     /// Spawn a submit task, either Flashbots or BuilderHelper depending on
     /// configuration.
     pub async fn spawn_submit_task(
