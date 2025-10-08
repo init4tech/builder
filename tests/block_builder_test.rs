@@ -21,12 +21,6 @@ use std::time::{Duration, Instant};
 mod harness;
 use harness::TestHarness;
 
-/// Tests the `handle_build` method of the `Simulator`.
-///
-/// This test sets up a simulated environment using Anvil, creates a block builder,
-/// and verifies that the block builder can successfully build a block containing
-/// transactions from multiple senders.
-#[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_handle_build() {
     setup_logging();
@@ -84,7 +78,6 @@ async fn test_handle_build() {
     assert!(got.unwrap().tx_count() == 2);
 }
 
-// #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_ticks_and_emits() {
     setup_logging();
@@ -93,7 +86,7 @@ async fn test_harness_ticks_and_emits() {
     let mut h = TestHarness::new().await.unwrap();
 
     // Prepare two senders and fund them if needed from anvil default accounts
-    let keys = h.rollup.anvil.anvil().keys();
+    let keys = h.rollup.anvil().keys();
     let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
 
     // Start simulator and tick a new SimEnv
@@ -112,7 +105,6 @@ async fn test_harness_ticks_and_emits() {
     assert_eq!(got.block.tx_count(), 1);
 }
 
-// #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_harness_simulates_full_flow() {
     setup_logging();
@@ -121,7 +113,7 @@ async fn test_harness_simulates_full_flow() {
     let mut h = TestHarness::new().await.unwrap();
 
     // Prepare two senders and fund them if needed from anvil default accounts
-    let keys = h.rollup.anvil.anvil().keys();
+    let keys = h.rollup.anvil().keys();
     let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
     let test_key_1 = PrivateKeySigner::from_signing_key(keys[1].clone().into());
 

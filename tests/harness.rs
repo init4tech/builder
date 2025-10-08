@@ -19,7 +19,7 @@ use alloy::{
     network::Ethereum,
     node_bindings::Anvil,
     primitives::U256,
-    providers::{Provider, RootProvider, ext::AnvilApi, layers::AnvilProvider},
+    providers::{ext::AnvilApi, layers::AnvilProvider, Provider, RootProvider},
     signers::local::PrivateKeySigner,
 };
 use builder::{
@@ -37,19 +37,8 @@ use tokio::{
     task::JoinHandle,
 };
 
-const DEFAULT_BLOCK_TIME: u64 = 5; // seconds
-
-pub struct HostChain {
-    /// The provider for the host chain.
-    pub provider: RootProvider<Ethereum>,
-    /// The Anvil provider for the host chain, used to control mining in tests.
-    pub anvil: AnvilProvider<RootProvider<Ethereum>>,
-}
-
-pub struct RollupChain {
-    pub provider: RootProvider<Ethereum>,
-    pub anvil: AnvilProvider<RootProvider>,
-}
+// 5 seconds of slot time means 3 seconds of simulation time.
+const DEFAULT_SLOT_DURATION: u64 = 5; // seconds
 
 pub struct SimulatorTask {
     sim_env_tx: watch::Sender<Option<SimEnv>>,
@@ -60,8 +49,8 @@ pub struct SimulatorTask {
 pub struct TestHarness {
     pub config: BuilderConfig,
     pub constants: SignetSystemConstants,
-    pub rollup: RollupChain,
-    pub host: HostChain,
+    pub rollup: RollupAnvilProvider,
+    pub host: HostAnvilProvider,
     pub simulator: SimulatorTask,
     submit_tx: mpsc::UnboundedSender<SimResult>,
     submit_rx: mpsc::UnboundedReceiver<SimResult>,
@@ -69,6 +58,9 @@ pub struct TestHarness {
     /// background task isn't aborted when `start()` returns.
     simulator_handle: Option<JoinHandle<()>>,
 }
+
+type HostAnvilProvider = AnvilProvider<RootProvider<Ethereum>>;
+type RollupAnvilProvider = AnvilProvider<RootProvider<Ethereum>>;
 
 impl TestHarness {
     /// Create a new harness with a fresh Anvil rollup chain and default test config.
@@ -78,17 +70,12 @@ impl TestHarness {
         // Make a new test config
         let mut config = setup_test_config()?;
 
-        // Ensure the slot calculator is aligned with the current time and has
-        // a sufficiently large slot duration so the simulator's deadline
-        // calculation yields a non-zero remaining window during tests.
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        // Give a generous slot duration for tests (60s)
-        config.slot_calculator = init4_bin_base::utils::calc::SlotCalculator::new(now, 0, 10);
-        let constants = SignetSystemConstants::pecorino();
+        configure_slot_timing(&mut config)?;
 
         // Create host anvil
         let host_anvil = Anvil::new().chain_id(signet_constants::pecorino::HOST_CHAIN_ID).spawn();
         let host_provider = RootProvider::<Ethereum>::new_http(host_anvil.endpoint_url().clone());
+        // Wrap it in an AnvilProvider to keep it alive
         let host_anvil_provider = AnvilProvider::new(host_provider.clone(), Arc::new(host_anvil));
 
         // Create rollup anvil
@@ -107,12 +94,9 @@ impl TestHarness {
 
         Ok(Self {
             config,
-            constants,
-            rollup: RollupChain {
-                provider: rollup_provider.clone(),
-                anvil: rollup_anvil_provider.clone(),
-            },
-            host: HostChain { provider: host_provider.clone(), anvil: host_anvil_provider },
+            constants: SignetSystemConstants::pecorino(),
+            rollup: rollup_anvil_provider,
+            host: host_anvil_provider,
             simulator: SimulatorTask { sim_env_tx, sim_env_rx, sim_cache },
             submit_tx,
             submit_rx,
@@ -133,8 +117,8 @@ impl TestHarness {
             return Ok(());
         }
 
-        self.host.anvil.anvil_mine(Some(count), Some(1)).await?;
-        self.rollup.anvil.anvil_mine(Some(count), Some(1)).await?;
+        self.host.anvil_mine(Some(count), Some(1)).await?;
+        self.rollup.anvil_mine(Some(count), Some(1)).await?;
 
         let (ru, host) = self.get_headers().await;
         self.tick_sim_env(ru, host).await;
@@ -154,11 +138,14 @@ impl TestHarness {
         let cache = self.simulator.sim_cache.clone();
         let constants = self.constants.clone();
 
-        // Wire up the simulator and submit channels
+        // Create a rollup provider from the rollup anvil
+        let ru_provider = RootProvider::<Ethereum>::new_http(self.rollup.anvil().endpoint_url());
+
+        // Wire up the simulator with that provider and submit channels
         let submit_tx = self.submit_tx.clone();
         let simulator = Simulator::new(
             &self.config,
-            self.rollup.provider.clone(),
+            ru_provider,
             self.simulator.sim_env_rx.clone(),
         );
 
@@ -173,7 +160,6 @@ impl TestHarness {
     pub async fn get_headers(&self) -> (Header, Header) {
         let ru_header = self
             .rollup
-            .provider
             .get_block(BlockId::latest())
             .await
             .expect("rollup latest block")
@@ -183,7 +169,6 @@ impl TestHarness {
 
         let host_header = self
             .host
-            .provider
             .get_block(BlockId::latest())
             .await
             .expect("host latest block")
@@ -198,7 +183,6 @@ impl TestHarness {
     pub async fn update_host_environment(&self) {
         let header = self
             .host
-            .provider
             .get_block(BlockId::latest())
             .await
             .expect("host latest block")
@@ -207,7 +191,7 @@ impl TestHarness {
             .inner;
 
         let target_block_number = header.number + 1;
-        let deadline = header.timestamp + DEFAULT_BLOCK_TIME;
+        let deadline = header.timestamp + DEFAULT_SLOT_DURATION;
         let block_env = test_block_env(self.config.clone(), target_block_number, 7, deadline);
 
         assert!(deadline > header.timestamp);
@@ -251,6 +235,13 @@ impl TestHarness {
         tracing::debug!(received = res.is_some(), "TestHarness recv_result returning");
         res
     }
+}
+
+// This function sets the slot timing to start now with a 10 second slot duration for tests.
+fn configure_slot_timing(config: &mut BuilderConfig) -> Result<(), eyre::Error> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    config.slot_calculator = init4_bin_base::utils::calc::SlotCalculator::new(now, 0, DEFAULT_SLOT_DURATION);
+    Ok(())
 }
 
 impl Drop for TestHarness {

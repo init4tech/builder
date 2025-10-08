@@ -14,15 +14,14 @@ use init4_bin_base::{
     perms::OAuthConfig,
     utils::{calc::SlotCalculator, provider::ProviderConfig},
 };
-use signet_constants::SignetSystemConstants;
+use signet_constants::{SignetSystemConstants, pecorino};
 use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// Sets up a block builder with test values
 pub fn setup_test_config() -> Result<BuilderConfig> {
-    let config = BuilderConfig {
-        // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+    let pecorino_config = BuilderConfig {
         host_rpc: "ws://host-rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .map(ProviderConfig::new)
@@ -32,10 +31,10 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .unwrap()
             .try_into()
             .unwrap(),
-        flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()),
+        flashbots_endpoint: Some("https://host-builder-rpc.pecorino.signet.sh".parse().unwrap()),
         quincey_url: "http://localhost:8080".into(),
         sequencer_key: None,
-        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+        builder_key: env::var("BUILDER_KEY")
             .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
         builder_port: 8080,
         builder_rewards_address: Address::default(),
@@ -56,7 +55,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
         max_host_gas_coefficient: Some(80),
         constants: SignetSystemConstants::pecorino(),
     };
-    Ok(config)
+    Ok(pecorino_config)
 }
 
 /// Returns a new signed test transaction with the provided nonce, value, and mpfpg.
@@ -67,7 +66,7 @@ pub fn new_signed_tx(
     mpfpg: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
-        chain_id: 11155111,
+        chain_id: pecorino::RU_CHAIN_ID,
         nonce,
         max_fee_per_gas: 10_000_000,
         max_priority_fee_per_gas: mpfpg,
