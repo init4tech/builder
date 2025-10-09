@@ -101,6 +101,17 @@ The Builder is configured via environment variables. The following values are su
 
 ---
 
+## 💻 Recommended Specs
+
+| Key                | Minimum            | Recommended       |
+| ------------------ | ------------------ | ----------------- |
+| CPU                | 0.1 vCPU           | 0.5 vCPU          |
+| Memory             | 256MB              | 512MB             | 
+
+**Note: Builder prefers clock speed over core count, recommended 2.8Ghz+**
+
+---
+
 ## 💾 EVM Behavior
 
 ### 🗿 Inherited Header Values
