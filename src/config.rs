@@ -249,11 +249,8 @@ impl BuilderConfig {
         &self,
         config: &BuilderConfig,
     ) -> Result<FlashbotsProvider, eyre::Error> {
-        let endpoint = config
-            .flashbots
-            .flashbots_endpoint
-            .clone()
-            .expect("flashbots endpoint must be configured");
+        let endpoint =
+            config.flashbots_endpoint.clone().expect("flashbots endpoint must be configured");
         let signer = config.connect_builder_signer().await?;
         let flashbots: FlashbotsProvider =
             ProviderBuilder::new().wallet(signer).connect_http(endpoint);
@@ -332,7 +329,7 @@ impl BuilderConfig {
         &self,
         tx_channel: UnboundedSender<TxHash>,
     ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
-        match &self.flashbots.flashbots_endpoint {
+        match &self.flashbots_endpoint {
             Some(url) => {
                 info!(url = url.as_str(), "spawning flashbots submit task");
                 let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
