@@ -31,7 +31,7 @@ use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 use tokio::{join, sync::mpsc::UnboundedSender, task::JoinHandle};
-use tracing::debug;
+use tracing::{debug, info};
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -346,22 +346,19 @@ impl BuilderConfig {
         &self,
         tx_channel: UnboundedSender<TxHash>,
     ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
-        // If we have a flashbots endpoint, use that
-        if self.flashbots.flashbots_endpoint.is_some() {
-            debug!("spawning flashbots submit task");
-            // Make a Flashbots submission task
-            let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
-
-            // Set up flashbots submission
-            let (submit_channel, submit_jh) = submit.spawn();
-            return Ok((submit_channel, submit_jh));
+        match &self.flashbots.flashbots_endpoint {
+            Some(url) => {
+                info!(url = url.as_str(), "spawning flashbots submit task");
+                let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
+                let (submit_channel, submit_jh) = submit.spawn();
+                return Ok((submit_channel, submit_jh));
+            }
+            None => {
+                info!("spawning builder helper submit task");
+                let submit = BuilderHelperTask::new(self.clone(), tx_channel).await?;
+                let (submit_channel, submit_jh) = submit.spawn();
+                Ok((submit_channel, submit_jh))
+            }
         }
-
-        // Make a Tx submission task
-        let submit = BuilderHelperTask::new(self.clone(), tx_channel).await?;
-
-        // Set up tx submission
-        let (submit_channel, submit_jh) = submit.spawn();
-        Ok((submit_channel, submit_jh))
     }
 }

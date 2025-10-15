@@ -123,8 +123,7 @@ impl FlashbotsTask {
             let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {
                 Ok(b) => b,
                 Err(e) => {
-                    tracing::error!(error = %e, "failed to prepare MEV bundle");
-                    span_debug!(span, "bundle preparation failed");
+                    span_error!(span, %e, "failed to prepare MEV bundle");
                     continue;
                 }
             };
@@ -138,19 +137,17 @@ impl FlashbotsTask {
 
             match response {
                 Ok(Some(hash)) => {
-                    tracing::info!(host_block_number = sim_result.host_block_number(), bundle_hash = ?hash, "bundle submitted to flashbots");
-                    span_debug!(span, "bundle submitted to flashbots");
+                    span_debug!(
+                        span,
+                        hash = hash.bundle_hash.to_string(),
+                        "received bundle hash after submitted to flashbots"
+                    );
                 }
                 Ok(None) => {
-                    tracing::info!(
-                        host_block_number = sim_result.host_block_number(),
-                        "bundle submitted to flashbots without error"
-                    );
-                    span_debug!(span, "bundle submitted to flashbots");
+                    span_debug!(span, "received no bundle hash after submitted to flashbots");
                 }
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to submit MEV bundle to flashbots");
-                    span_debug!(span, "MEV bundle submission failed - error returned");
+                Err(err) => {
+                    span_error!(span, %err, "MEV bundle submission failed - error returned");
                 }
             }
         }
