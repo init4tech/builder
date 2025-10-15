@@ -14,7 +14,7 @@ use alloy::{
 use eyre::OptionExt;
 use init4_bin_base::utils::signer::LocalOrAws;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::Instrument;
+use tracing::{Instrument, debug};
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
@@ -41,12 +41,12 @@ impl FlashbotsTask {
         config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
     ) -> eyre::Result<FlashbotsTask> {
-        let (quincey, host_provider) =
-            tokio::try_join!(config.connect_quincey(), config.connect_host_provider(),)?;
-
-        let flashbots = config.connect_flashbots(&config).await?;
-
-        let builder_key = config.connect_builder_signer().await?;
+        let (quincey, host_provider, flashbots, builder_key) = tokio::try_join!(
+            config.connect_quincey(),
+            config.connect_host_provider(),
+            config.connect_flashbots(&config),
+            config.connect_builder_signer()
+        )?;
 
         let zenith = config.connect_zenith(host_provider);
 
@@ -109,20 +109,15 @@ impl FlashbotsTask {
 
     /// Task future that runs the Flashbots submission loop.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
-        tracing::debug!("starting flashbots task");
+        debug!("starting flashbots task");
 
         loop {
             // Wait for a sim result to come in
             let Some(sim_result) = inbound.recv().await else {
-                tracing::debug!("upstream task gone - exiting flashbots task");
+                debug!("upstream task gone - exiting flashbots task");
                 break;
             };
-            tracing::debug!(
-                host_block_number = sim_result.host_block_number(),
-                "received sim result for host block "
-            );
             let span = sim_result.span();
-            span_debug!(span, "simulation result received");
 
             // Prepare a MEV bundle with the configured call type from the sim result
             let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {

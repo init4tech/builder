@@ -24,7 +24,7 @@ use init4_bin_base::{
         flashbots::Flashbots,
         from_env::FromEnv,
         provider::{ProviderConfig, PubSubConfig},
-        signer::{LocalOrAws, SignerError},
+        signer::LocalOrAws,
     },
 };
 use signet_constants::SignetSystemConstants;
@@ -186,7 +186,7 @@ pub struct BuilderConfig {
 
 impl BuilderConfig {
     /// Connect to the Builder signer.
-    pub async fn connect_builder_signer(&self) -> Result<LocalOrAws, SignerError> {
+    pub async fn connect_builder_signer(&self) -> eyre::Result<LocalOrAws> {
         static ONCE: tokio::sync::OnceCell<LocalOrAws> = tokio::sync::OnceCell::const_new();
 
         ONCE.get_or_try_init(|| async {
@@ -194,6 +194,7 @@ impl BuilderConfig {
         })
         .await
         .cloned()
+        .map_err(Into::into)
     }
 
     /// Connect to the Sequencer signer.
