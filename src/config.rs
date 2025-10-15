@@ -257,9 +257,9 @@ impl BuilderConfig {
         eyre::Error,
     > {
         let endpoint = config
-            .clone()
             .flashbots
             .flashbots_endpoint
+            .clone()
             .expect("flashbots endpoint must be configured");
         let signer = config.connect_builder_signer().await?;
         let flashbots: FlashbotsProvider =
