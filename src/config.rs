@@ -31,7 +31,7 @@ use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 use tokio::{join, sync::mpsc::UnboundedSender, task::JoinHandle};
-use tracing::{debug, info};
+use tracing::info;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -351,7 +351,7 @@ impl BuilderConfig {
                 info!(url = url.as_str(), "spawning flashbots submit task");
                 let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
                 let (submit_channel, submit_jh) = submit.spawn();
-                return Ok((submit_channel, submit_jh));
+                Ok((submit_channel, submit_jh))
             }
             None => {
                 info!("spawning builder helper submit task");
