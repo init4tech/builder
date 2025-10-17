@@ -118,6 +118,11 @@ impl FlashbotsTask {
                 break;
             };
             let span = sim_result.span();
+            span_debug!(
+                span,
+                host_block_number = sim_result.host_block_number(),
+                "received sim result"
+            );
 
             // Prepare a MEV bundle with the configured call type from the sim result
             let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {
