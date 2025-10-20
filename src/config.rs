@@ -21,7 +21,6 @@ use init4_bin_base::{
     perms::{Authenticator, OAuthConfig, SharedToken},
     utils::{
         calc::SlotCalculator,
-        flashbots::Flashbots,
         from_env::FromEnv,
         provider::{ProviderConfig, PubSubConfig},
         signer::LocalOrAws,
@@ -110,8 +109,17 @@ pub struct BuilderConfig {
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
 
-    /// Flashbots configuration for privately submitting rollup blocks.
-    pub flashbots: init4_bin_base::utils::flashbots::FlashbotsConfig,
+    /// Configuration for the Flashbots provider.
+    /// * If set, the builder will submit blocks as MEV bundles to Flashbots instead of
+    ///   submitting them directly to the Host chain.
+    /// * If not set, the builder defaults to submitting blocks directly to the Host chain
+    ///   using the Builder Helper contract.
+    #[from_env(
+        var = "FLASHBOTS_ENDPOINT",
+        desc = "Flashbots endpoint for privately submitting rollup blocks",
+        optional
+    )]
+    pub flashbots_endpoint: Option<url::Url>,
 
     /// Address of the Zenith contract on Host.
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
@@ -236,16 +244,13 @@ impl BuilderConfig {
             .connect_provider(provider?))
     }
 
-    /// Connect to a Flashbots bundle provider
+    /// Connect to a Flashbots bundle provider.
     pub async fn connect_flashbots(
         &self,
         config: &BuilderConfig,
     ) -> Result<FlashbotsProvider, eyre::Error> {
-        let endpoint = config
-            .flashbots
-            .flashbots_endpoint
-            .clone()
-            .expect("flashbots endpoint must be configured");
+        let endpoint =
+            config.flashbots_endpoint.clone().expect("flashbots endpoint must be configured");
         let signer = config.connect_builder_signer().await?;
         let flashbots: FlashbotsProvider =
             ProviderBuilder::new().wallet(signer).connect_http(endpoint);
@@ -318,20 +323,13 @@ impl BuilderConfig {
         })
     }
 
-    /// Connect to a Flashbots provider.
-    pub async fn flashbots_provider(&self) -> eyre::Result<Flashbots> {
-        self.flashbots
-            .build(self.connect_builder_signer().await?)
-            .ok_or_else(|| eyre::eyre!("Flashbots is not configured"))
-    }
-
     /// Spawn a submit task, either Flashbots or BuilderHelper depending on
     /// configuration.
     pub async fn spawn_submit_task(
         &self,
         tx_channel: UnboundedSender<TxHash>,
     ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
-        match &self.flashbots.flashbots_endpoint {
+        match &self.flashbots_endpoint {
             Some(url) => {
                 info!(url = url.as_str(), "spawning flashbots submit task");
                 let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
