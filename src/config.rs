@@ -240,22 +240,7 @@ impl BuilderConfig {
     pub async fn connect_flashbots(
         &self,
         config: &BuilderConfig,
-    ) -> Result<
-        FillProvider<
-            JoinFill<
-                JoinFill<
-                    Identity,
-                    JoinFill<
-                        GasFiller,
-                        JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
-                    >,
-                >,
-                WalletFiller<EthereumWallet>,
-            >,
-            providers::RootProvider,
-        >,
-        eyre::Error,
-    > {
+    ) -> Result<FlashbotsProvider, eyre::Error> {
         let endpoint = config
             .flashbots
             .flashbots_endpoint
