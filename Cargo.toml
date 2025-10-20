@@ -1,6 +1,6 @@
 [package]
 name = "builder"
-version = "0.3.0"
+version = "0.4.0"
 description = "signet builder example"
 
 edition = "2024"
@@ -18,15 +18,15 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.12.3", features = ["perms", "aws", "flashbots"] }
+init4-bin-base = { version = "0.13.1", features = ["perms", "aws", "flashbots"] }
 
-signet-constants = { version = "0.10.1" }
-signet-sim = { version = "0.10.1" }
-signet-tx-cache = { version = "0.10.1" }
-signet-types = { version = "0.10.1" }
-signet-zenith = { version = "0.10.1" }
+signet-constants = { version = "0.11.2" }
+signet-sim = { version = "0.11.2" }
+signet-tx-cache = { version = "0.11.2" }
+signet-types = { version = "0.11.2" }
+signet-zenith = { version = "0.11.2" }
 
-trevm = { version = "0.27.8", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.29.0", features = ["concurrent-db", "test-utils"] }
 
 alloy = { version = "1.0.37", features = [
     "full",

@@ -1,19 +1,22 @@
 //! Flashbots Task receives simulated blocks from an upstream channel and
 //! submits them to the Flashbots relay as bundles.
 use crate::{
-    config::{BuilderConfig, HostProvider, ZenithInstance},
+    config::{BuilderConfig, FlashbotsProvider, HostProvider, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
     eips::Encodable2718,
     primitives::TxHash,
+    providers::ext::MevApi,
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
-use init4_bin_base::utils::flashbots::Flashbots;
+use init4_bin_base::{
+    deps::tracing::{Instrument, debug},
+    utils::signer::LocalOrAws,
+};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::Instrument;
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
@@ -21,12 +24,14 @@ use tracing::Instrument;
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
     config: BuilderConfig,
-    /// Flashbots RPC provider.
-    flashbots: Flashbots,
     /// Quincey instance for block signing.
     quincey: Quincey,
     /// Zenith instance.
     zenith: ZenithInstance<HostProvider>,
+    /// Provides access to a Flashbots-compatible bundle API.
+    flashbots: FlashbotsProvider,
+    /// The key used to sign requests to the Flashbots relay.
+    signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
     _outbound: mpsc::UnboundedSender<TxHash>,
 }
@@ -38,20 +43,26 @@ impl FlashbotsTask {
         config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
     ) -> eyre::Result<FlashbotsTask> {
-        let (flashbots, quincey, host_provider) = tokio::try_join!(
-            config.flashbots_provider(),
+        let (quincey, host_provider, flashbots, builder_key) = tokio::try_join!(
             config.connect_quincey(),
             config.connect_host_provider(),
+            config.connect_flashbots(&config),
+            config.connect_builder_signer()
         )?;
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, flashbots, quincey, zenith, _outbound: outbound })
+        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, _outbound: outbound })
     }
 
     /// Returns a reference to the inner `HostProvider`
     pub fn host_provider(&self) -> HostProvider {
         self.zenith.provider().clone()
+    }
+
+    /// Returns a reference to the inner `FlashbotsProvider`
+    pub const fn flashbots(&self) -> &FlashbotsProvider {
+        &self.flashbots
     }
 
     /// Prepares a MEV bundle with the configured submit call
@@ -70,7 +81,7 @@ impl FlashbotsTask {
             self.config.clone(),
         );
 
-        let tx = prep.prep_transaction(&sim_result.sim_env.prev_header).await?;
+        let tx = prep.prep_transaction(&sim_result.sim_env.prev_host).await?;
 
         let sendable = self.host_provider().fill(tx.into_request()).await?;
 
@@ -100,45 +111,52 @@ impl FlashbotsTask {
 
     /// Task future that runs the Flashbots submission loop.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
-        tracing::debug!("starting flashbots task");
+        debug!("starting flashbots task");
 
         loop {
             // Wait for a sim result to come in
             let Some(sim_result) = inbound.recv().await else {
-                tracing::debug!("upstream task gone - exiting flashbots task");
+                debug!("upstream task gone - exiting flashbots task");
                 break;
             };
-
             let span = sim_result.span();
-            span_debug!(span, "simulation result received");
+            span_debug!(
+                span,
+                host_block_number = sim_result.host_block_number(),
+                "received sim result"
+            );
 
             // Prepare a MEV bundle with the configured call type from the sim result
-            let Ok(bundle) = self.prepare(&sim_result).instrument(span.clone()).await else {
-                span_debug!(span, "bundle preparation failed");
-                continue;
+            let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {
+                Ok(b) => b,
+                Err(e) => {
+                    span_error!(span, %e, "failed to prepare MEV bundle");
+                    continue;
+                }
             };
 
-            // simulate the bundle against Flashbots then send the bundle
-            if let Err(err) = self.flashbots.simulate_bundle(&bundle).instrument(span.clone()).await
-            {
-                span_debug!(span, %err, "bundle simulation failed");
-                continue;
-            }
+            // Send the bundle to Flashbots
+            let response = self
+                .flashbots()
+                .send_mev_bundle(bundle.clone())
+                .with_auth(self.signer.clone())
+                .await;
 
-            let _ = self
-                .flashbots
-                .send_bundle(&bundle)
-                .instrument(span.clone())
-                .await
-                .inspect(|bundle_hash| {
-                    span_info!(
+            match response {
+                Ok(Some(hash)) => {
+                    span_debug!(
                         span,
-                        bundle_hash = %bundle_hash.bundle_hash, "bundle sent to Flashbots"
+                        hash = hash.bundle_hash.to_string(),
+                        "received bundle hash after submitted to flashbots"
                     );
-                })
-                .inspect_err(|err| {
-                    span_error!(span, %err, "failed to send bundle to Flashbots");
-                });
+                }
+                Ok(None) => {
+                    span_debug!(span, "received no bundle hash after submitted to flashbots");
+                }
+                Err(err) => {
+                    span_error!(span, %err, "MEV bundle submission failed - error returned");
+                }
+            }
         }
     }
 

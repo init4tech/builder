@@ -9,7 +9,7 @@ use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{Address, TxHash},
     providers::{
-        Identity, ProviderBuilder, RootProvider,
+        self, Identity, ProviderBuilder, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
             SimpleNonceManager, WalletFiller,
@@ -24,13 +24,14 @@ use init4_bin_base::{
         flashbots::Flashbots,
         from_env::FromEnv,
         provider::{ProviderConfig, PubSubConfig},
-        signer::{LocalOrAws, SignerError},
+        signer::LocalOrAws,
     },
 };
 use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 use tokio::{join, sync::mpsc::UnboundedSender, task::JoinHandle};
+use tracing::info;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -51,6 +52,18 @@ pub type HostProvider = FillProvider<
         WalletFiller<EthereumWallet>,
     >,
     RootProvider,
+>;
+
+/// The provider type used to submit bundles to a Flashbots relay.
+pub type FlashbotsProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    providers::RootProvider,
 >;
 
 /// The default concurrency limit for the builder if the system call
@@ -173,7 +186,7 @@ pub struct BuilderConfig {
 
 impl BuilderConfig {
     /// Connect to the Builder signer.
-    pub async fn connect_builder_signer(&self) -> Result<LocalOrAws, SignerError> {
+    pub async fn connect_builder_signer(&self) -> eyre::Result<LocalOrAws> {
         static ONCE: tokio::sync::OnceCell<LocalOrAws> = tokio::sync::OnceCell::const_new();
 
         ONCE.get_or_try_init(|| async {
@@ -181,6 +194,7 @@ impl BuilderConfig {
         })
         .await
         .cloned()
+        .map_err(Into::into)
     }
 
     /// Connect to the Sequencer signer.
@@ -220,6 +234,22 @@ impl BuilderConfig {
             .fetch_chain_id()
             .wallet(EthereumWallet::from(builder_signer?))
             .connect_provider(provider?))
+    }
+
+    /// Connect to a Flashbots bundle provider
+    pub async fn connect_flashbots(
+        &self,
+        config: &BuilderConfig,
+    ) -> Result<FlashbotsProvider, eyre::Error> {
+        let endpoint = config
+            .flashbots
+            .flashbots_endpoint
+            .clone()
+            .expect("flashbots endpoint must be configured");
+        let signer = config.connect_builder_signer().await?;
+        let flashbots: FlashbotsProvider =
+            ProviderBuilder::new().wallet(signer).connect_http(endpoint);
+        Ok(flashbots)
     }
 
     /// Connect additional broadcast providers.
@@ -301,21 +331,19 @@ impl BuilderConfig {
         &self,
         tx_channel: UnboundedSender<TxHash>,
     ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
-        // If we have a flashbots endpoint, use that
-        if self.flashbots.flashbots_endpoint.is_some() {
-            // Make a Flashbots submission task
-            let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
-
-            // Set up flashbots submission
-            let (submit_channel, submit_jh) = submit.spawn();
-            return Ok((submit_channel, submit_jh));
+        match &self.flashbots.flashbots_endpoint {
+            Some(url) => {
+                info!(url = url.as_str(), "spawning flashbots submit task");
+                let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
+                let (submit_channel, submit_jh) = submit.spawn();
+                Ok((submit_channel, submit_jh))
+            }
+            None => {
+                info!("spawning builder helper submit task");
+                let submit = BuilderHelperTask::new(self.clone(), tx_channel).await?;
+                let (submit_channel, submit_jh) = submit.spawn();
+                Ok((submit_channel, submit_jh))
+            }
         }
-
-        // Make a Tx submission task
-        let submit = BuilderHelperTask::new(self.clone(), tx_channel).await?;
-
-        // Set up tx submission
-        let (submit_channel, submit_jh) = submit.spawn();
-        Ok((submit_channel, submit_jh))
     }
 }
