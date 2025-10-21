@@ -12,11 +12,9 @@ use alloy::{
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
-use init4_bin_base::{
-    deps::metrics::counter, deps::tracing::Instrument, utils::signer::LocalOrAws,
-};
+use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::debug;
+use tracing::{Instrument, debug};
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
