@@ -13,7 +13,9 @@ The Builder orchestrates a series of asynchronous actors that work together to b
 1. **Env** - watches the latest host and rollup blocks to monitor gas rates and block updates.
 2. **Cache** - polls bundle and transaction caches and adds them to the cache.
 3. **Simulator** - simulates transactions and bundles against rollup state and block environment to build them into a cohesive block.
-5. **Submit** - creates a blob transaction from the built block and sends it to Ethereum L1.
+5. **Submit** - creates a blob transaction from the built block and sends it to the configured submit task.
+   1. Flashbots - builds a Flashbots bundle out of the Signet block which contains Signet transactions, host transactions, and host fills, and submits it to the configured Flashbots endpoint.
+   2. Builder Helper - builds a transaction call with the builder helper contract and submits that as a transaction. 
 6. **Metrics** - records block and tx data over time.
 
 ```mermaid
@@ -30,6 +32,7 @@ flowchart TD
         MetricsTaskActor["📏 Metrics Task"]
         SubmitTaskActor["📡 Submit Task "]
         SimulatorTaskActor["💾 Simulator Task"]
+        Submitter["📤 Submitter"]
         Quincey["🖊️ Quincey"]
 
         SubmitTaskActor -.block hash.-> Quincey
@@ -39,6 +42,7 @@ flowchart TD
     %% ────────────── CONNECTIONS & DATA FLOW ──────────────
     A2_BuilderConfig -.host_provider.-> MetricsTaskActor
     A2_BuilderConfig -.host_provider.->SubmitTaskActor
+    A2_BuilderConfig -.host_provider.-> SimulatorTaskActor
     A2_BuilderConfig -.ru_provider.-> SimulatorTaskActor
     A2_BuilderConfig -.ru_provider.-> EnvTaskActor
 
@@ -47,21 +51,32 @@ flowchart TD
 
     EnvTaskActor ==block_env==> SimulatorTaskActor
     CacheSystem ==sim_cache ==> SimulatorTaskActor
+
     SubmitTaskActor ==tx receipt==> MetricsTaskActor
     SimulatorTaskActor ==built block==> SubmitTaskActor
 
-    SubmitTaskActor ==>|"signet block (blob tx)"| C1["⛓️ Ethereum L1"]
+    SubmitTaskActor ==signet_block==> Submitter
+    Submitter ==>|"signet block"| C2["⚡🤖 Flashbots"]
+    Submitter ==>|"signet block"| C1["⛓️ Ethereum L1"]
 ```
 
-The block building loop waits until a new block has been received, and then kicks off the next attempt. 
+### Simulation Task
+
+The block building loop waits until a new block environment has been received, and then kicks off the next attempt. 
 
 When the Builder receives a new block, it takes a reference to the transaction cache, calculates a simulation deadline for the current slot with a buffer of 1.5 seconds, and begins constructing a block for the current slot.
 
 Transactions enter through the cache, and then they're sent to the simulator, where they're run against the latest chain state and block environment. If they're successfully applied, they're added to the block. If a transaction fails to be applied, it is simply ignored. 
 
-When the deadline is reached, the simulator is stopped, and all open simulation threads and cancelled. The block is then bundled with the block environment and the previous host header that it was simulated against, and passes all three along to the submit task. 
+When the deadline is reached, the simulator is stopped, and all open simulation threads are cancelled. The built block is then bundled with the block environment and the previous host header that it was simulated against, and all three are passed along to the submit task. 
 
-If no transactions in the cache are valid and the resulting block is empty, the submit task will ignore it. 
+### Submit Task
+
+If Flashbots endpoint has been configured the Flashbots submit task will prepare a Flashbots bundle out of that Signet block, and then submits that bundle to the Flashbots endpoint.
+
+If a Flashbots endpoint has _not_ been configured, the Builder will create a raw contract call and submits the transaction to the default mempool. This is only for testing on private networks and should not be used in production, since it can leak sensitive transaction data from the Signet block.
+
+If the block received from simulation is empty, the submit task will ignore it.
 
 Finally, if it's non-empty, the submit task attempts to get a signature for the block, and if it fails due to a 403 error, it will skip the current slot and begin waiting for the next block. 
 
@@ -139,44 +154,6 @@ When a completed, non-empty Signet block is received by the Submit task, it prep
 If it fails, it will retry up to 3 times with a 12.5% bump on each retry. 
 
 The previous header's basefee is tracked through the build loop and used for gas estimation purposes in the Submit Task.
-
----
-
-## 📤 Transaction Sender
-
-A binary (`bin/submit_transaction.rs`) for continously sending very small transactions for testing block construction.
-
-The following values are available for configuring the transaction sender:
-
-| Key                 | Required | Description                                   |
-| ------------------- | -------- | --------------------------------------------- |
-| `RPC_URL`           | Yes      | RPC endpoint used for sending the transaction |
-| `RECIPIENT_ADDRESS` | Yes      | Address to which the transaction is sent      |
-| `SLEEP_TIME`        | Yes      | Optional delay (in ms) between transactions   |
-| `SIGNER_CHAIN_ID`   | Yes      | Chain ID used for signing                     |
-| `SIGNER_KEY`        | Yes      | Signing key used to sign the transaction      |
-
-The transaction submitter is located at `bin/submit_transaction.rs`.
-
-Run the transaction submitter with `cargo run --bin transaction-submitter`
-
----
-
-## 📤 Order Submitter
-
-A binary (`bin/submit_order.rs`) for continuously sending small example orders for testing block construction with fills.
-
-The following values need to be configured:
-
-| Key               | Required | Description                                                    |
-| ----------------- | -------- | -------------------------------------------------------------- |
-| `RPC_URL`         | Yes      | RPC endpoint used for sending the transaction                  |
-| `SEND_TO_ROLLUP`  | Yes      | Whether to make a rollup order (RU-RU) or host order (RU-HOST) |
-| `SLEEP_TIME`      | Yes      | Optional delay (in ms) between transactions                    |
-| `SIGNER_CHAIN_ID` | Yes      | Chain ID used for signing                                      |
-| `SIGNER_KEY`      | Yes      | Signing key used to sign the transaction                       |
-
-Run the order submitter with `cargo run --bin order-submitter`
 
 ## 🛠️ Development
 
