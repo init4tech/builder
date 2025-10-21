@@ -11,6 +11,7 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
+use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::BundleHelper;
@@ -75,7 +76,13 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp
             .get_or_try_init(|| async {
                 let sig_request = self.sig_request();
-                self.quincey.get_signature(sig_request).await
+                self.quincey
+                    .get_signature(sig_request)
+                    .await
+                    .inspect(|_| counter!("signet.builder.quincey_signatures").increment(1))
+                    .inspect_err(|_| {
+                        counter!("signet.builder.quincey_signature_failures").increment(1)
+                    })
             })
             .await
     }
