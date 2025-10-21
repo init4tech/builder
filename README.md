@@ -47,9 +47,9 @@ flowchart TD
     inbound["📥 Transactions & Bundles"] --> Cache
     Env ==block_env==> Simulator
     Cache ==sim_cache==> Simulator
-    Simulator ==built_block==> SubmitBH
+      Simulator["💾 Simulator Task"]
     Simulator ==built_block==> SubmitFB
-
+      SubmitFB["🛡️ Submit Task (Flashbots)"]
     SubmitBH ==tx_receipt==> Metrics
     SubmitFB ==bundle_receipt==> Metrics
 
@@ -60,7 +60,7 @@ flowchart TD
     Quincey -.bundle_signature.-> SubmitFB
 
     %% External targets
-    SubmitBH -->|"signet block (blob tx)"| L1["⛓️ Ethereum L1"]
+   cfg -."flashbots_endpoint".-> SubmitFB
     SubmitFB -->|"MEV bundle"| Relay["🛡️ Flashbots Relay"]
 
     classDef ext fill:#111,stroke:#bbb,color:#fff;
