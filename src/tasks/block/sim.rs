@@ -6,7 +6,10 @@ use crate::{
     tasks::env::SimEnv,
 };
 use alloy::{eips::BlockId, network::Ethereum};
-use init4_bin_base::utils::calc::SlotCalculator;
+use init4_bin_base::{
+    deps::metrics::{counter, histogram},
+    utils::calc::SlotCalculator,
+};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
@@ -17,7 +20,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{Instrument, Span, instrument};
+use tracing::{Instrument, Span, debug, instrument};
 use trevm::revm::{
     context::BlockEnv,
     database::{AlloyDB, WrapDatabaseAsync},
@@ -140,11 +143,13 @@ impl Simulator {
         );
 
         let built_block = block_build.build().in_current_span().await;
-        tracing::debug!(
+        debug!(
             tx_count = built_block.tx_count(),
             block_number = built_block.block_number(),
             "block simulation completed",
         );
+        counter!("signet.builder.built_blocks").increment(1);
+        histogram!("signet.builder.built_blocks.tx_count").record(built_block.tx_count() as f64);
 
         Ok(built_block)
     }
@@ -167,7 +172,7 @@ impl Simulator {
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<SimResult>,
     ) -> JoinHandle<()> {
-        tracing::debug!("starting simulator task");
+        debug!("starting simulator task");
 
         tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
     }
@@ -220,7 +225,6 @@ impl Simulator {
                 continue;
             };
 
-            let _guard = span.clone().entered();
             span_debug!(span, tx_count = block.transactions().len(), "built simulated block");
             let _ = submit_sender.send(SimResult { block, sim_env });
         }
