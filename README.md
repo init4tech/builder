@@ -8,77 +8,82 @@ Bundles are treated as Flashbots-style bundles, meaning that the Builder should 
 
 ## 🚀 System Design
 
-The Builder orchestrates a series of asynchronous actors that work together to build blocks for every assigned slot.
+The Builder orchestrates a set of asynchronous actors that collaborate to build and submit Signet rollup blocks for every assigned slot. The core components are:
 
-1. **Env** - watches the latest host and rollup blocks to monitor gas rates and block updates.
-2. **Cache** - polls bundle and transaction caches and adds them to the cache.
-3. **Simulator** - simulates transactions and bundles against rollup state and block environment to build them into a cohesive block.
-5. **Submit** - creates a blob transaction from the built block and sends it to the configured submit task.
-   1. Flashbots - builds a Flashbots bundle out of the Signet block which contains Signet transactions, host transactions, and host fills, and submits it to the configured Flashbots endpoint.
-   2. Builder Helper - builds a transaction call with the builder helper contract and submits that as a transaction. 
-6. **Metrics** - records block and tx data over time.
+1. **Env** — watches host and rollup chain headers and maintains the block environment used for simulation.
+2. **Cache** — ingests transactions and bundles from configured sources and exposes a simulation view.
+3. **Simulator** — applies transactions and bundles against the rollup state and block environment to assemble a candidate Signet block.
+4. **Submit** — takes a successfully built block and routes it to the configured submission path (either a private MEV bundle relay or direct L1 broadcast via the builder helper).
+5. **Metrics** — records runtime metrics, submit receipts, and block statistics.
+
+Below is a high-level architecture diagram that shows both submission options: direct L1 submission (Builder Helper) and private MEV bundle submission (Flashbots relay).
 
 ```mermaid
-%%{ init : { "theme" : "dark" } }%%
+%%{ init : { "theme" : "dark", "flowchart": {"curve":"basis"} } }%%
 flowchart TD
-    %% ────────────── INITIALIZATION ──────────────
-    A0(["Start main"]) --> A1[Init tracing & logging]
-    A1 --> A2_BuilderConfig[Load BuilderConfig from env]
-    
-    %% ────────────── CORE TASK SPAWNS ──────────────
-    subgraph Tasks_Spawned["Spawned Actors"]
-        EnvTaskActor["🔢 Env Task"] ==block_env==> CacheSystem
-        CacheSystem["🪏 Cache System"]
-        MetricsTaskActor["📏 Metrics Task"]
-        SubmitTaskActor["📡 Submit Task "]
-        SimulatorTaskActor["💾 Simulator Task"]
-        Submitter["📤 Submitter"]
-        Quincey["🖊️ Quincey"]
+    %% Initialization
+    start(["Start main"]) --> init["Init tracing & logging"]
+    init --> cfg["Load BuilderConfig from env"]
 
-        SubmitTaskActor -.block hash.-> Quincey
-        Quincey -.block signature.-> SubmitTaskActor
+    %% Spawned actors
+    subgraph Actors["Spawned Actors"]
+        Env["🔢 Env Task"]
+        Cache["🪏 Cache System"]
+        Simulator["� Simulator Task"]
+        SubmitBH["📡 Submit Task (BuilderHelper)"]
+        SubmitFB["�️ Submit Task (Flashbots)"]
+        Metrics["📏 Metrics Task"]
+        Quincey["🖊️ Quincey (Signer)"]
     end
 
-    %% ────────────── CONNECTIONS & DATA FLOW ──────────────
-    A2_BuilderConfig -.host_provider.-> MetricsTaskActor
-    A2_BuilderConfig -.host_provider.->SubmitTaskActor
-    A2_BuilderConfig -.host_provider.-> SimulatorTaskActor
-    A2_BuilderConfig -.ru_provider.-> SimulatorTaskActor
-    A2_BuilderConfig -.ru_provider.-> EnvTaskActor
+    %% Config wiring
+    cfg -.-> Metrics
+    cfg -.-> SubmitBH
+    cfg -.-> Simulator
+    cfg -.-> Env
+    cfg -. "flashbots_endpoint" -> SubmitFB
 
-    A3["📥 Transactions &
-    📦 Bundles"] --> CacheSystem
+    %% Data flow
+    inbound["📥 Transactions & Bundles"] --> Cache
+    Env ==block_env==> Simulator
+    Cache ==sim_cache==> Simulator
+    Simulator ==built_block==> SubmitBH
+    Simulator ==built_block==> SubmitFB
 
-    EnvTaskActor ==block_env==> SimulatorTaskActor
-    CacheSystem ==sim_cache ==> SimulatorTaskActor
+    SubmitBH ==tx_receipt==> Metrics
+    SubmitFB ==bundle_receipt==> Metrics
 
-    SubmitTaskActor ==tx receipt==> MetricsTaskActor
-    SimulatorTaskActor ==built block==> SubmitTaskActor
+    %% Signing interactions
+    SubmitBH -.block_hash.-> Quincey
+    Quincey -.block_signature.-> SubmitBH
+    SubmitFB -.bundle_hash.-> Quincey
+    Quincey -.bundle_signature.-> SubmitFB
 
-    SubmitTaskActor ==signet_block==> Submitter
-    Submitter ==>|"signet block"| C2["⚡🤖 Flashbots"]
-    Submitter ==>|"signet block"| C1["⛓️ Ethereum L1"]
+    %% External targets
+    SubmitBH -->|"signet block (blob tx)"| L1["⛓️ Ethereum L1"]
+    SubmitFB -->|"MEV bundle"| Relay["🛡️ Flashbots Relay"]
+
+    classDef ext fill:#111,stroke:#bbb,color:#fff;
+    class L1,Relay ext
 ```
 
 ### Simulation Task
 
-The block building loop waits until a new block environment has been received, and then kicks off the next attempt. 
+The simulation loop waits for a new block environment from the host chain, then starts a simulation window for the current slot. The Builder takes a reference to the transaction cache and computes a deadline (default: slot end minus 1.5s buffer) to stop simulating and finalize the block.
 
-When the Builder receives a new block, it takes a reference to the transaction cache, calculates a simulation deadline for the current slot with a buffer of 1.5 seconds, and begins constructing a block for the current slot.
-
-Transactions enter through the cache, and then they're sent to the simulator, where they're run against the latest chain state and block environment. If they're successfully applied, they're added to the block. If a transaction fails to be applied, it is simply ignored. 
-
-When the deadline is reached, the simulator is stopped, and all open simulation threads are cancelled. The built block is then bundled with the block environment and the previous host header that it was simulated against, and all three are passed along to the submit task. 
+Transactions flow from the cache into the simulator. Applied transactions are kept and assembled into the candidate block; failing transactions are ignored. When the simulation deadline arrives, the simulator cancels remaining work, captures the built block and the block environment it was simulated against, and forwards them to the Submit task.
 
 ### Submit Task
 
-If Flashbots endpoint has been configured the Flashbots submit task will prepare a Flashbots bundle out of that Signet block, and then submits that bundle to the Flashbots endpoint.
+The Submit task will route the built block to one of two paths, depending on configuration:
 
-If a Flashbots endpoint has _not_ been configured, the Builder will create a raw contract call and submits the transaction to the default mempool. This is only for testing on private networks and should not be used in production, since it can leak sensitive transaction data from the Signet block.
+- Flashbots (private MEV relay): when `FLASHBOTS_ENDPOINT` is configured, the Submit task prepares an MEV-style bundle containing the Signet block (plus any host transactions/fills as needed) and submits it to the configured relay. The builder expects a bundle hash in the response and records it in metrics.
 
-If the block received from simulation is empty, the submit task will ignore it.
+- Builder Helper (direct L1 broadcast): when no Flashbots endpoint is configured, the Submit task composes a builder-helper contract call and broadcasts it to the mempool as a normal transaction. This path is intended for testing and private deployments; broadcasting raw Signet block data publicly may leak sensitive information.
 
-Finally, if it's non-empty, the submit task attempts to get a signature for the block, and if it fails due to a 403 error, it will skip the current slot and begin waiting for the next block. 
+If the simulated block is empty, the Submit task will drop it and continue.
+
+If the submit path requires a signature (Quincey), the submit task requests one; on an authorization failure (e.g. 403) the submit task will skip the slot and resume on the next.
 
 ---
 
