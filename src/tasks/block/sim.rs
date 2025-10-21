@@ -6,7 +6,10 @@ use crate::{
     tasks::env::SimEnv,
 };
 use alloy::{eips::BlockId, network::Ethereum};
-use init4_bin_base::{deps::metrics::counter, utils::calc::SlotCalculator};
+use init4_bin_base::{
+    deps::metrics::{counter, histogram},
+    utils::calc::SlotCalculator,
+};
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
@@ -145,7 +148,8 @@ impl Simulator {
             block_number = built_block.block_number(),
             "block simulation completed",
         );
-        counter!("signet.builder.simulated_blocks").increment(1);
+        counter!("signet.builder.built_blocks").increment(1);
+        histogram!("signet.builder.built_blocks.tx_count").record(built_block.tx_count() as f64);
 
         Ok(built_block)
     }
