@@ -21,52 +21,50 @@ The Builder orchestrates a series of asynchronous actors that work together to b
 ```mermaid
 %%{ init : { "theme" : "dark" } }%%
 flowchart TD
-   %% ────────────── INITIALIZATION ──────────────
-   A0(["Start main"]) --> A1[Init tracing & logging]
-   A1 --> A2_BuilderConfig[Load BuilderConfig from env]
-   
-   A3["📥 Transactions &\n📦 Bundles"] --> B1_CacheTask
+  %% Initialization
+  Start(["Start main"]) --> Init["Init tracing & logging"]
+  Init --> Config["Load BuilderConfig from env"]
 
-   %% ────────────── CORE TASK SPAWNS ──────────────
-   subgraph Block_Builder_Loop["Block Building Loop"]
-      B0_EnvTaskActor["🔢 Env Task"]
-      B1_CacheTask["🪏 Cache Task"]
-      B2_MetricsTaskActor["📏 Metrics Task"]
-      B4_SimulatorTaskActor["💾 Simulator Task"]
+  Inbound["📥 Transactions &\n📦 Bundles"] --> Cache["🪏 Cache Task"]
+  Quincey["🖊️ Quincey (Signer)"]
 
-      subgraph SubmitTask["Submit Task"]
-         B5_TxPrep["⛽ Bumpable Tx"]
-         B3_SubmitFlashbots["⚡🤖 Submit Flashbots"]
-         B6_SubmitBuilderHelper["🏗️ Submit Builder Helper"]
-      end
-   end
+  %% Block building loop
+  subgraph BuilderLoop["Block Building Loop"]
+    Env["🔢 Env Task"]
+    Cache
+    Simulator["💾 Simulator Task"]
+    TxPrep["⛽ Built Signet Block / Tx Prep"]
+  end
 
-   %% ────────────── CONNECTIONS & DATA FLOW ──────────────
-   A2_BuilderConfig -.host_rpc.-> B2_MetricsTaskActor
-   A2_BuilderConfig -.host_rpc.-> B3_SubmitFlashbots
-   A2_BuilderConfig -.host_rpc.-> B6_SubmitBuilderHelper
-   A2_BuilderConfig -.rollup_rpc.-> B0_EnvTaskActor
+  %% Config wiring
+  Config -.rollup_rpc.-> Env
+  Config -.host_rpc.-> Simulator
+  Config -.host_rpc.-> Metrics["📏 Metrics Task"]
 
-   SubmitTask -- "host & rollup txns" --> B5_TxPrep
+  %% Core flow
+  Env ==block_env==> Simulator
+  Cache ==sim_cache==> Simulator
+  Simulator ==built_block==> TxPrep
 
-   B5_TxPrep --> B3_SubmitFlashbots
-   B5_TxPrep --> B6_SubmitBuilderHelper
+  %% Signing
+  TxPrep -.block_hash.-> Quincey
+  Quincey -.block_signature.-> TxPrep
 
-   B0_EnvTaskActor ==block_env==> B4_SimulatorTaskActor
-   B1_CacheTask ==sim_cache==> B4_SimulatorTaskActor
-   B4_SimulatorTaskActor ==built_block==> B5_TxPrep
+  %% Decision: route to Flashbots or Builder Helper
+  Decision{ "FLASHBOTS_ENDPOINT\nconfigured?" }
+  TxPrep --> Decision
+  Decision -->|Yes| FlashbotsSubmit["⚡🤖 Flashbots Submit"]
+  Decision -->|No| HelperSubmit["🏗️ Builder Helper Submit"]
 
-   B5_TxPrep -.block_hash.-> A4_Quincey
-   A4_Quincey -.block_signature.-> B5_TxPrep
+  FlashbotsSubmit -->|"bundle"| FlashbotsRelay["🛡️ Flashbots Relay"]
+  HelperSubmit -->|"blob tx"| Ethereum["⛓️ Ethereum L1"]
 
-   B3_SubmitFlashbots -->|"tx bundle"| C2_Flashbots["⚡🤖 Flashbots"]
-   B6_SubmitBuilderHelper -->|"signet block (blob tx)"| C1_Ethereum["⛓️ Ethereum L1"]
+  %% Metrics
+  FlashbotsSubmit ==tx_receipt==> Metrics
+  HelperSubmit ==tx_receipt==> Metrics
 
-   B3_SubmitFlashbots ==tx_receipt==> B2_MetricsTaskActor
-   B6_SubmitBuilderHelper ==tx_receipt==> B2_MetricsTaskActor
-
-   A4_Quincey["🖊️ Quincey"]
-
+  classDef ext fill:#111,stroke:#bbb,color:#fff;
+  class FlashbotsRelay,Ethereum ext
 ```
 
 ### Simulation Task
