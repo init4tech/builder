@@ -13,11 +13,7 @@ The Builder orchestrates a series of asynchronous actors that work together to b
 1. **Env** - watches the latest host and rollup blocks to monitor gas rates and block updates.
 2. **Cache** - polls bundle and transaction caches and adds them to the cache.
 3. **Simulator** - simulates transactions and bundles against rollup state and block environment to build them into a cohesive block.
-4. **Submit** - creates a blob transaction from the built block and sends it to the configured submit task.
-
-  1. Flashbots - builds a Flashbots bundle out of the Signet block which contains Signet transactions, host transactions, and host fills, and submits it to the configured Flashbots endpoint.
-  2. Builder Helper - builds a transaction call with the builder helper contract and submits that as a transaction.
-
+4. **Submit** - handles preparing and submitting the simulated block.
 5. **Metrics** - records block and tx data over time.
 
 ```mermaid
@@ -40,9 +36,8 @@ flowchart TD
 
       %% Decision: route to Flashbots or Builder Helper
       FB@{ shape: hex, label: "FLASHBOTS_ENDPOINT\nconfigured?" }
-      FB ==> | Yes | FlashbotsSubmit["⚡🤖 Flashbots Submit"]
+      FB ==> | Yes | FlashbotsSubmit["🤖 Flashbots Submit"]
       FB ==> | No  | HelperSubmit["🏗️ Builder Helper Submit"]
-
    end
 
    %% Signing
@@ -76,7 +71,7 @@ flowchart TD
    HelperSubmit ==tx hash==> Metrics
 ```
 
-### Simulation Task
+### 💾 Simulation Task
 
 The block building loop waits until a new block environment has been received, and then kicks off the next attempt.
 
@@ -86,11 +81,11 @@ Transactions enter through the cache, and then they're sent to the simulator, wh
 
 When the deadline is reached, the simulator is stopped, and all open simulation threads are cancelled. The built block is then bundled with the block environment and the previous host header that it was simulated against, and all three are passed along to the submit task.
 
-### Submit Task
+### ✨ Submit Task
 
 If Flashbots endpoint has been configured the Flashbots submit task will prepare a Flashbots bundle out of that Signet block, and then submits that bundle to the Flashbots endpoint.
 
-If a Flashbots endpoint has _not_ been configured, the Builder will create a raw contract call and submits the transaction to the default mempool. This mode of operation is only for testing on private networks and should not be used in production, since it can leak sensitive transaction data from the Signet block.
+If a Flashbots endpoint has _not_ been configured, the Builder uses the [builder helper contract] and to craft a rollup block transaction and submits that to the default mempool. This mode of operation is only for testing on private networks and should not be used in production, since it can leak sensitive transaction data from the Signet block.
 
 If the block received from simulation is empty, the submit task will ignore it.
 
@@ -103,14 +98,14 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
 Key                           | Required | Description
------------------------------ | -------- | ----------------------------------------------------------------------
+----------------------------- | -------- | ------------------------------------------------------------------------------------------
 `HOST_CHAIN_ID`               | Yes      | Host-chain ID (e.g. `3151908`)
 `RU_CHAIN_ID`                 | Yes      | Rollup-chain ID (e.g. `14174`)
 `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain
 `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain
 `TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)
 `TX_BROADCAST_URLS`           | No       | Additional endpoints for blob txs (comma-separated, slash required)
-`FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to.
+`FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to. Defaults to the BuilderHelper submit task if not set.
 `ZENITH_ADDRESS`              | Yes      | Zenith contract address
 `BUILDER_HELPER_ADDRESS`      | Yes      | Builder helper contract address
 `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint
@@ -203,3 +198,5 @@ The previous header's basefee is tracked through the build loop and used for gas
 ## 🪪 License
 
 This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+
+[builder helper contract]: https://github.com/init4tech/helper-contracts/blob/main/src/BuilderHelper.sol
