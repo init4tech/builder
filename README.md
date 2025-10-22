@@ -55,6 +55,9 @@ flowchart TD
    Config -.rollup rpc.-> Env
    Config -.host rpc.-> Simulator
    Config -.host rpc.-> Metrics
+   Config -.host rpc.-> FlashbotsSubmit
+   Config -.host rpc.-> HelperSubmit
+   Config -.rollup rpc.-> Simulator
 
    %% Core flow
    Env ==block_env==> Simulator
