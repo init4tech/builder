@@ -53,6 +53,7 @@ flowchart TD
 
    %% Config wiring
    Config -.rollup rpc.-> Env
+   Config -.host rpc.-> Env
    Config -.host rpc.-> Simulator
    Config -.host rpc.-> Metrics
    Config -.host rpc.-> FlashbotsSubmit
