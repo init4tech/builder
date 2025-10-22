@@ -40,40 +40,40 @@ flowchart TD
 
       %% Decision: route to Flashbots or Builder Helper
       FB@{ shape: hex, label: "FLASHBOTS_ENDPOINT\nconfigured?" }
-      FB --> | Yes | FlashbotsSubmit["⚡🤖 Flashbots Submit"]
-      FB --> | No  | HelperSubmit["🏗️ Builder Helper Submit"]
+      FB ==> | Yes | FlashbotsSubmit["⚡🤖 Flashbots Submit"]
+      FB ==> | No  | HelperSubmit["🏗️ Builder Helper Submit"]
 
    end
 
    %% Signing
-   FlashbotsSubmit -- block hash --> Quincey
-   Quincey -- block signature --> FlashbotsSubmit
-   HelperSubmit -- block hash --> Quincey
-   Quincey -- block signature --> HelperSubmit
+   FlashbotsSubmit --hash--> Quincey
+   Quincey -- signature --> FlashbotsSubmit
+
+   HelperSubmit -- hash --> Quincey
+   Quincey -- signature --> HelperSubmit
 
    %% Config wiring
    Config -.rollup rpc.-> Env
    Config -.host rpc.-> Env
    Config -.host rpc.-> Simulator
+   Config -.rollup rpc.-> Simulator
    Config -.host rpc.-> Metrics
    Config -.host rpc.-> FlashbotsSubmit
    Config -.host rpc.-> HelperSubmit
-   Config -.rollup rpc.-> Simulator
 
    %% Core flow
-   Env ==block_env==> Simulator
-   Cache ==sim_cache==> Simulator
-   Simulator ==built_block==> FB 
+   Env ==block env==> Simulator
+   Cache ==sim cache==> Simulator
+   Simulator ==built block==> FB 
 
-   FlashbotsSubmit -->|"bundle"| FlashbotsRelay["🛡️ Flashbots Relay"]
-   FlashbotsRelay --> Ethereum
-   HelperSubmit -->|"blob tx"| Ethereum["⛓️ Ethereum L1"]
+   %% Network submission
+   FlashbotsSubmit ==>|"tx bundle"| FlashbotsRelay["🛡️ Flashbots Relay"]
+   FlashbotsRelay ==> Ethereum
+   HelperSubmit ==>|"blob tx"| Ethereum["⛓️ Ethereum L1"]
 
    %% Metrics
    FlashbotsSubmit ==bundle hash==> Metrics
    HelperSubmit ==tx hash==> Metrics
-
-   class FlashbotsRelay,Ethereum ext
 ```
 
 ### Simulation Task
