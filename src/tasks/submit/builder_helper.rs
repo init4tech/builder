@@ -262,8 +262,7 @@ impl BuilderHelperTask {
             let host_block_number = sim_result.host_block_number();
 
             let span = sim_result.sim_env.span.clone();
-
-            span_debug!(span, "submit channel received block");
+            span_debug!(span, "builder helper task received block");
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
