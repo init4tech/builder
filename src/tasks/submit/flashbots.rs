@@ -155,20 +155,20 @@ impl FlashbotsTask {
             }
             .await;
 
-            let Ok(resp) = &response else {
-                counter!("signet.builder.flashbots.submission_failures").increment(1);
-                if let Err(err) = &response {
+            match response {
+                Ok(resp) => {
+                    counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                    span_debug!(
+                        submit_span,
+                        hash = resp.map(|r| r.bundle_hash.to_string()),
+                        "received bundle hash after submitted to flashbots"
+                    );
+                }
+                Err(err) => {
+                    counter!("signet.builder.flashbots.submission_failures").increment(1);
                     span_error!(submit_span, %err, "MEV bundle submission failed - error returned");
                 }
-                continue;
-            };
-
-            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-            span_debug!(
-                submit_span,
-                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                "received bundle hash after submitted to flashbots"
-            );
+            }
         }
     }
 
