@@ -14,7 +14,7 @@ use alloy::{
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{Instrument, debug};
+use tracing::{Instrument, debug, debug_span};
 
 /// Handles construction, simulation, and submission of rollup blocks to the
 /// Flashbots network.
@@ -117,40 +117,58 @@ impl FlashbotsTask {
                 debug!("upstream task gone - exiting flashbots task");
                 break;
             };
-            let span = sim_result.span();
-            span_debug!(span, "received sim result");
+
+            let span = sim_result.sim_env.clone_span();
+
+            // Don't submit empty blocks
+            if sim_result.block.is_empty() {
+                counter!("signet.builder.flashbots.empty_block").increment(1);
+                span_debug!(span, "received empty block - skipping");
+                continue;
+            }
+            span_debug!(span, "flashbots task received block");
 
             // Prepare a MEV bundle with the configured call type from the sim result
-            let Ok(bundle) =
-                self.prepare(&sim_result).instrument(span.clone()).await.inspect_err(|error| {
-                    counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
-                    span_debug!(span, %error, "bundle preparation failed");
-                })
-            else {
+            let res = self.prepare(&sim_result).instrument(span.clone()).await;
+            let Ok(bundle) = res else {
+                counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
+                let error = res.unwrap_err();
+                span_debug!(span, %error, "bundle preparation failed");
                 continue;
             };
 
-            // Send the bundle to Flashbots
-            let response = self
-                .flashbots()
-                .send_mev_bundle(bundle.clone())
-                .with_auth(self.signer.clone())
-                .await;
+            // Make a child span to cover submission
+            let submit_span = debug_span!(
+                parent: &span,
+                "flashbots.submit",
+            );
 
-            match response {
-                Ok(resp) => {
-                    counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                    span_debug!(
-                        span,
-                        hash = resp.map(|r| r.bundle_hash.to_string()),
-                        "received bundle hash after submitted to flashbots"
-                    );
-                }
-                Err(err) => {
-                    counter!("signet.builder.flashbots.submission_failures").increment(1);
-                    span_error!(span, %err, "MEV bundle submission failed - error returned");
-                }
+            // Send the bundle to Flashbots, instrumenting the send future so all
+            // events inside the async send are attributed to the submit span.
+            let response = async {
+                self.flashbots()
+                    .send_mev_bundle(bundle.clone())
+                    .with_auth(self.signer.clone())
+                    .into_future()
+                    .instrument(submit_span.clone())
+                    .await
             }
+            .await;
+
+            let Ok(resp) = &response else {
+                counter!("signet.builder.flashbots.submission_failures").increment(1);
+                if let Err(err) = &response {
+                    span_error!(submit_span, %err, "MEV bundle submission failed - error returned");
+                }
+                continue;
+            };
+
+            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+            span_debug!(
+                submit_span,
+                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                "received bundle hash after submitted to flashbots"
+            );
         }
     }
 
