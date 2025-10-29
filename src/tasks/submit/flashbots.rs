@@ -145,15 +145,13 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so all
             // events inside the async send are attributed to the submit span.
-            let response = async {
-                self.flashbots()
-                    .send_mev_bundle(bundle.clone())
-                    .with_auth(self.signer.clone())
-                    .into_future()
-                    .instrument(submit_span.clone())
-                    .await
-            }
-            .await;
+            let response = self
+                .flashbots()
+                .send_mev_bundle(bundle.clone())
+                .with_auth(self.signer.clone())
+                .into_future()
+                .instrument(submit_span.clone())
+                .await;
 
             match response {
                 Ok(resp) => {
