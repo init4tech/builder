@@ -129,12 +129,14 @@ impl FlashbotsTask {
             span_debug!(span, "flashbots task received block");
 
             // Prepare a MEV bundle with the configured call type from the sim result
-            let res = self.prepare(&sim_result).instrument(span.clone()).await;
-            let Ok(bundle) = res else {
-                counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
-                let error = res.unwrap_err();
-                span_debug!(span, %error, "bundle preparation failed");
-                continue;
+            let result =
+                self.prepare(&sim_result).instrument(span.clone()).await.inspect_err(|error| {
+                    counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
+                    span_debug!(span, %error, "bundle preparation failed");
+                });
+            let bundle = match result {
+                Ok(bundle) => bundle,
+                Err(_) => continue,
             };
 
             // Make a child span to cover submission
