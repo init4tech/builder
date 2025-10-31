@@ -97,8 +97,7 @@ async fn test_harness_ticks_and_emits() {
     h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
 
     // Tick using the latest rollup and host headers
-    let (prev_ru_header, prev_host_header) = h.get_headers().await.unwrap();
-    h.tick_from_headers(prev_ru_header, prev_host_header).await;
+    h.mine_blocks(1).await.unwrap();
 
     // Expect a SimResult. Use the harness slot duration plus a small buffer so
     // we wait long enough for the simulator to complete heavy simulations.
@@ -126,8 +125,7 @@ async fn test_harness_simulates_full_flow() {
     // Start simulator and tick a new SimEnv
     h.start();
 
-    let (prev_ru_header, prev_host_header) = h.get_headers().await.unwrap();
-    h.tick_from_headers(prev_ru_header, prev_host_header).await;
+    h.mine_blocks(1).await.unwrap();
 
     // Expect a SimResult. Use the harness slot duration plus a small buffer.
     let wait = Duration::from_secs(h.config.slot_calculator.slot_duration() + 5);
@@ -144,7 +142,7 @@ async fn test_harness_advances_anvil_chain() {
 
     let (rollup, host) = h.get_headers().await.unwrap();
 
-    h.mine_blocks(2).await.expect("mine blocks");
+    h.mine_blocks(2).await.unwrap();
 
     let (new_rollup, new_host) = h.get_headers().await.unwrap();
     assert_eq!(new_rollup.number, rollup.number + 2);
