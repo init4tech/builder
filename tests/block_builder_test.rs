@@ -125,7 +125,6 @@ async fn test_harness_simulates_full_flow() {
     h.start();
 
     let (prev_ru_header, prev_host_header) = h.get_headers().await.unwrap();
-
     h.tick_from_headers(prev_ru_header, prev_host_header).await;
 
     // Expect a SimResult. Use the harness slot duration plus a small buffer.

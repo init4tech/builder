@@ -52,13 +52,13 @@ pub struct TestHarness {
     pub config: BuilderConfig,
     /// System constants for the Harness
     pub constants: SignetSystemConstants,
-    /// Anvil provider made from the Rollup Anvil instance 
+    /// Anvil provider made from the Rollup Anvil instance
     pub rollup: RollupAnvilProvider,
     /// Anvilk provider made from the Host Anvil instance
     pub host: HostAnvilProvider,
     /// The Simulator task that is assembled each tick.
     pub simulator: SimulatorTask,
-    /// Transaction plumbing - Submit 
+    /// Transaction plumbing - Submit
     submit_tx: mpsc::UnboundedSender<SimResult>,
     /// Transaction plumbing - Receive
     submit_rx: mpsc::UnboundedReceiver<SimResult>,
@@ -70,14 +70,17 @@ pub struct TestHarness {
 type HostAnvilProvider = AnvilProvider<RootProvider<Ethereum>>;
 type RollupAnvilProvider = AnvilProvider<RootProvider<Ethereum>>;
 
+type RollupHeader = Header;
+type HostHeader = Header;
+type Headers = (RollupHeader, HostHeader);
+
 impl TestHarness {
     /// Create a new harness with a fresh Anvil rollup chain and default test config.
     pub async fn new() -> eyre::Result<Self> {
         setup_logging();
-
-        // Make a new test config and set its slot timing
         let mut config = setup_test_config()?;
-        
+        configure_slot_timing(&mut config)?;
+
         // Spawn host and rollup anvil chains (providers + keeping anvil alive)
         let host_anvil_provider = spawn_chain(signet_constants::pecorino::HOST_CHAIN_ID)?;
         let rollup_anvil_provider = spawn_chain(signet_constants::pecorino::RU_CHAIN_ID)?;
@@ -151,14 +154,15 @@ impl TestHarness {
     }
 
     /// Returns the latest rollup and host headers.
-    pub async fn get_headers(&self) -> eyre::Result<(Header, Header)> {
+    pub async fn get_headers(&self) -> eyre::Result<Headers> {
         let ru_block = self.rollup.get_block(BlockId::latest()).await?;
         let ru_header = ru_block.expect("rollup latest exists").header.inner;
 
         let host_block = self.host.get_block(BlockId::latest()).await?;
         let host_header = host_block.expect("host latest exists").header.inner;
 
-        Ok((ru_header, host_header))
+        let headers = (ru_header, host_header);
+        Ok(headers)
     }
 
     /// Tick a new SimEnv computed from the current host latest header.
@@ -179,8 +183,13 @@ impl TestHarness {
         assert!(deadline > header.timestamp);
         assert!(header.number < target_block_number);
 
-        let span =
-            tracing::info_span!("TestHarness::tick_from_host", target_block_number, deadline);
+        let span = tracing::info_span!(
+            "TestHarness::tick_from_host",
+            target_block_number = target_block_number,
+            deadline = deadline,
+            prev_host_number = header.number,
+            prev_host_timestamp = header.timestamp
+        );
         let sim_env = SimEnv { block_env, prev_header: header.clone(), prev_host: header, span };
 
         let _ = self.simulator.sim_env_tx.send(Some(sim_env));
@@ -196,17 +205,20 @@ impl TestHarness {
         // Make a new block env from the previous rollup header and our new simulation deadline.
         let block_env = test_block_env(self.config.clone(), target_ru_block_number, 7, deadline);
 
-        let span = tracing::info_span!("TestHarness::tick", target_ru_block_number, deadline);
+        let span = tracing::info_span!(
+            "TestHarness::tick",
+            target_ru_block_number = target_ru_block_number,
+            deadline = deadline,
+            prev_ru_number = prev_ru_header.number,
+            prev_host_number = prev_host_header.number
+        );
 
-        // Make a new SimEnv and send it to the simulator task.
-        let sim_env = SimEnv {
+        let _ = self.simulator.sim_env_tx.send(Some(SimEnv {
             block_env,
             prev_header: prev_ru_header.clone(),
             prev_host: prev_host_header,
             span,
-        };
-
-        let _ = self.simulator.sim_env_tx.send(Some(sim_env));
+        }));
     }
 
     /// Receive the next SimResult with a timeout.
