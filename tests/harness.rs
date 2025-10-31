@@ -38,7 +38,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-// 5 seconds of slot time means 3 seconds of simulation time.
+// Default test slot duration (seconds)
 const DEFAULT_SLOT_DURATION: u64 = 5; // seconds
 
 pub struct SimulatorTask {
@@ -163,36 +163,6 @@ impl TestHarness {
 
         let headers = (ru_header, host_header);
         Ok(headers)
-    }
-
-    /// Tick a new SimEnv computed from the current host latest header.
-    pub async fn tick_from_host(&self) {
-        let header = self
-            .host
-            .get_block(BlockId::latest())
-            .await
-            .expect("host latest block")
-            .expect("host latest exists")
-            .header
-            .inner;
-
-        let target_block_number = header.number + 1;
-        let deadline = header.timestamp + DEFAULT_SLOT_DURATION;
-        let block_env = test_block_env(self.config.clone(), target_block_number, 7, deadline);
-
-        assert!(deadline > header.timestamp);
-        assert!(header.number < target_block_number);
-
-        let span = tracing::info_span!(
-            "TestHarness::tick_from_host",
-            target_block_number = target_block_number,
-            deadline = deadline,
-            prev_host_number = header.number,
-            prev_host_timestamp = header.timestamp
-        );
-        let sim_env = SimEnv { block_env, prev_header: header.clone(), prev_host: header, span };
-
-        let _ = self.simulator.sim_env_tx.send(Some(sim_env));
     }
 
     /// Tick a new `SimEnv` computed from the current latest rollup and host headers.

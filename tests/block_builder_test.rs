@@ -38,22 +38,23 @@ async fn test_handle_build() {
 
     // Create a rollup provider
     let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
+
+    // Create a host provider 
     let host_provider = config.connect_host_provider().await.unwrap();
 
-    let block_env =
-        EnvTask::new(config.clone(), host_provider.clone(), ru_provider.clone()).spawn().0;
-
-    let block_builder =
-        Simulator::new(&config, host_provider.clone(), ru_provider.clone(), block_env);
+    // Provide a dummy env receiver; this test calls handle_build directly and
+    // doesn't use the env watch channel.
+    let (_env_tx, env_rx) = tokio::sync::watch::channel(None);
+    let block_builder = Simulator::new(&config, host_provider, ru_provider.clone(), env_rx);
 
     // Setup a sim cache
     let sim_items = SimCache::new();
 
     // Add two transactions from two senders to the sim cache
-    let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();
+    let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_u64), 11_000).unwrap();
     sim_items.add_tx(tx_1, 0);
 
-    let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
+    let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_u64), 10_000).unwrap();
     sim_items.add_tx(tx_2, 0);
 
     // Setup the block envs
@@ -95,8 +96,9 @@ async fn test_harness_ticks_and_emits() {
     // Add a transaction into the sim cache
     h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
 
-    // Tick host chain
-    h.tick_from_host().await;
+    // Tick using the latest rollup and host headers
+    let (prev_ru_header, prev_host_header) = h.get_headers().await.unwrap();
+    h.tick_from_headers(prev_ru_header, prev_host_header).await;
 
     // Expect a SimResult. Use the harness slot duration plus a small buffer so
     // we wait long enough for the simulator to complete heavy simulations.
