@@ -2,7 +2,7 @@ use crate::{
     quincey::Quincey,
     tasks::{
         block::{cfg::SignetCfgEnv, sim::SimResult},
-        submit::{BuilderHelperTask, FlashbotsTask},
+        submit::FlashbotsTask,
     },
 };
 use alloy::{
@@ -188,6 +188,7 @@ pub struct BuilderConfig {
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 
+    // TODO: Make this compatible with FromEnv again, somehow it broke
     /// The signet system constants.
     pub constants: SignetSystemConstants,
 }
@@ -329,19 +330,10 @@ impl BuilderConfig {
         &self,
         tx_channel: UnboundedSender<TxHash>,
     ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
-        match &self.flashbots_endpoint {
-            Some(url) => {
-                info!(url = url.as_str(), "spawning flashbots submit task");
-                let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
-                let (submit_channel, submit_jh) = submit.spawn();
-                Ok((submit_channel, submit_jh))
-            }
-            None => {
-                info!("spawning builder helper submit task");
-                let submit = BuilderHelperTask::new(self.clone(), tx_channel).await?;
-                let (submit_channel, submit_jh) = submit.spawn();
-                Ok((submit_channel, submit_jh))
-            }
-        }
+        let url = self.flashbots_endpoint.as_ref().expect("flashbots endpoint must be configured");
+        info!(url = url.as_str(), "spawning flashbots submit task");
+        let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
+        let (submit_channel, submit_jh) = submit.spawn();
+        Ok((submit_channel, submit_jh))
     }
 }
