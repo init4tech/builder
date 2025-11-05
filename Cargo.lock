@@ -1931,15 +1931,15 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "signet-constants 0.13.0",
+ "signet-constants",
  "signet-sim",
- "signet-tx-cache 0.13.0",
- "signet-types 0.13.0",
- "signet-zenith 0.13.0",
+ "signet-tx-cache",
+ "signet-types",
+ "signet-zenith",
  "tokio",
  "tokio-stream",
  "tracing",
- "trevm 0.30.1",
+ "trevm",
  "url",
 ]
 
@@ -3243,9 +3243,9 @@ dependencies = [
 
 [[package]]
 name = "init4-bin-base"
-version = "0.15.1"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "beac02e41167f4f3d0c1ad60633d94e415b23f20372ea5160331dbada391270e"
+checksum = "7519d5251ed1e80d8fc38c4b65459955cfea0e6c54241a902181f89883947256"
 dependencies = [
  "alloy",
  "async-trait",
@@ -3266,8 +3266,8 @@ dependencies = [
  "reqwest",
  "rustls 0.23.35",
  "serde",
- "signet-constants 0.12.0",
- "signet-tx-cache 0.12.0",
+ "signet-constants",
+ "signet-tx-cache",
  "thiserror 2.0.17",
  "tokio",
  "tower",
@@ -4065,19 +4065,8 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd6780a80ae0c52cc120a26a1a42c1ae51b247a253e4e06113d23d2c2edd078"
 dependencies = [
- "phf_macros 0.11.3",
- "phf_shared 0.11.3",
- "serde",
-]
-
-[[package]]
-name = "phf"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
-dependencies = [
- "phf_macros 0.13.1",
- "phf_shared 0.13.1",
+ "phf_macros",
+ "phf_shared",
  "serde",
 ]
 
@@ -4087,18 +4076,8 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
- "phf_shared 0.11.3",
+ "phf_shared",
  "rand 0.8.5",
-]
-
-[[package]]
-name = "phf_generator"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
-dependencies = [
- "fastrand",
- "phf_shared 0.13.1",
 ]
 
 [[package]]
@@ -4107,21 +4086,8 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f84ac04429c13a7ff43785d75ad27569f2951ce0ffd30a3321230db2fc727216"
 dependencies = [
- "phf_generator 0.11.3",
- "phf_shared 0.11.3",
- "proc-macro2",
- "quote",
- "syn 2.0.108",
-]
-
-[[package]]
-name = "phf_macros"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
-dependencies = [
- "phf_generator 0.13.1",
- "phf_shared 0.13.1",
+ "phf_generator",
+ "phf_shared",
  "proc-macro2",
  "quote",
  "syn 2.0.108",
@@ -4132,15 +4098,6 @@ name = "phf_shared"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
-dependencies = [
- "siphasher",
-]
-
-[[package]]
-name = "phf_shared"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher",
 ]
@@ -4665,36 +4622,17 @@ version = "29.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "718d90dce5f07e115d0e66450b1b8aa29694c1cf3f89ebddaddccc2ccbd2f13e"
 dependencies = [
- "revm-bytecode 6.2.2",
- "revm-context 9.1.0",
- "revm-context-interface 10.2.0",
- "revm-database 7.0.5",
- "revm-database-interface 7.0.5",
- "revm-handler 10.0.1",
- "revm-inspector 10.0.1",
- "revm-interpreter 25.0.3",
- "revm-precompile 27.0.0",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
-]
-
-[[package]]
-name = "revm"
-version = "30.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76df793c6ef3bef8f88f05b3873ebebce1494385a3ce8f58ad2e2e111aa0de11"
-dependencies = [
- "revm-bytecode 7.1.0",
- "revm-context 10.1.2",
- "revm-context-interface 11.1.2",
- "revm-database 9.0.3",
- "revm-database-interface 8.0.4",
- "revm-handler 11.2.0",
- "revm-inspector 11.2.0",
- "revm-interpreter 28.0.0",
- "revm-precompile 28.1.1",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-bytecode",
+ "revm-context",
+ "revm-context-interface",
+ "revm-database",
+ "revm-database-interface",
+ "revm-handler",
+ "revm-inspector",
+ "revm-interpreter",
+ "revm-precompile",
+ "revm-primitives",
+ "revm-state",
 ]
 
 [[package]]
@@ -4704,20 +4642,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66c52031b73cae95d84cd1b07725808b5fd1500da3e5e24574a3b2dc13d9f16d"
 dependencies = [
  "bitvec",
- "phf 0.11.3",
- "revm-primitives 20.2.1",
- "serde",
-]
-
-[[package]]
-name = "revm-bytecode"
-version = "7.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2b51c414b7e79edd4a0569d06e2c4c029f8b60e5f3ee3e2fa21dc6c3717ee3"
-dependencies = [
- "bitvec",
- "phf 0.13.1",
- "revm-primitives 21.0.1",
+ "phf",
+ "revm-primitives",
  "serde",
 ]
 
@@ -4730,28 +4656,11 @@ dependencies = [
  "bitvec",
  "cfg-if",
  "derive-where",
- "revm-bytecode 6.2.2",
- "revm-context-interface 10.2.0",
- "revm-database-interface 7.0.5",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
- "serde",
-]
-
-[[package]]
-name = "revm-context"
-version = "10.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7adcce0c14cf59b7128de34185a0fbf8f63309539b9263b35ead870d73584114"
-dependencies = [
- "bitvec",
- "cfg-if",
- "derive-where",
- "revm-bytecode 7.1.0",
- "revm-context-interface 11.1.2",
- "revm-database-interface 8.0.4",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-bytecode",
+ "revm-context-interface",
+ "revm-database-interface",
+ "revm-primitives",
+ "revm-state",
  "serde",
 ]
 
@@ -4765,25 +4674,9 @@ dependencies = [
  "alloy-eip7702",
  "auto_impl",
  "either",
- "revm-database-interface 7.0.5",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
- "serde",
-]
-
-[[package]]
-name = "revm-context-interface"
-version = "11.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d620a9725e443c171fb195a074331fa4a745fa5cbb0018b4bbf42619e64b563"
-dependencies = [
- "alloy-eip2930",
- "alloy-eip7702",
- "auto_impl",
- "either",
- "revm-database-interface 8.0.4",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-database-interface",
+ "revm-primitives",
+ "revm-state",
  "serde",
 ]
 
@@ -4794,26 +4687,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39a276ed142b4718dcf64bc9624f474373ed82ef20611025045c3fb23edbef9c"
 dependencies = [
  "alloy-eips",
- "revm-bytecode 6.2.2",
- "revm-database-interface 7.0.5",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
- "serde",
-]
-
-[[package]]
-name = "revm-database"
-version = "9.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2602625aa11ab1eda8e208e96b652c0bfa989b86c104a36537a62b081228af9"
-dependencies = [
- "alloy-eips",
  "alloy-provider",
  "alloy-transport",
- "revm-bytecode 7.1.0",
- "revm-database-interface 8.0.4",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-bytecode",
+ "revm-database-interface",
+ "revm-primitives",
+ "revm-state",
  "serde",
  "tokio",
 ]
@@ -4826,21 +4705,8 @@ checksum = "8c523c77e74eeedbac5d6f7c092e3851dbe9c7fec6f418b85992bd79229db361"
 dependencies = [
  "auto_impl",
  "either",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
- "serde",
-]
-
-[[package]]
-name = "revm-database-interface"
-version = "8.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58a4621143d6515e32f969306d9c85797ae0d3fe0c74784f1fda02ba441e5a08"
-dependencies = [
- "auto_impl",
- "either",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-primitives",
+ "revm-state",
  "serde",
  "tokio",
 ]
@@ -4853,33 +4719,14 @@ checksum = "550331ea85c1d257686e672081576172fe3d5a10526248b663bbf54f1bef226a"
 dependencies = [
  "auto_impl",
  "derive-where",
- "revm-bytecode 6.2.2",
- "revm-context 9.1.0",
- "revm-context-interface 10.2.0",
- "revm-database-interface 7.0.5",
- "revm-interpreter 25.0.3",
- "revm-precompile 27.0.0",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
- "serde",
-]
-
-[[package]]
-name = "revm-handler"
-version = "11.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1d8049b2fbff6636150f4740c95369aa174e41b0383034e0e256cfdffcfcd23"
-dependencies = [
- "auto_impl",
- "derive-where",
- "revm-bytecode 7.1.0",
- "revm-context 10.1.2",
- "revm-context-interface 11.1.2",
- "revm-database-interface 8.0.4",
- "revm-interpreter 28.0.0",
- "revm-precompile 28.1.1",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-bytecode",
+ "revm-context",
+ "revm-context-interface",
+ "revm-database-interface",
+ "revm-interpreter",
+ "revm-precompile",
+ "revm-primitives",
+ "revm-state",
  "serde",
 ]
 
@@ -4891,30 +4738,12 @@ checksum = "7c0a6e9ccc2ae006f5bed8bd80cd6f8d3832cd55c5e861b9402fdd556098512f"
 dependencies = [
  "auto_impl",
  "either",
- "revm-context 9.1.0",
- "revm-database-interface 7.0.5",
- "revm-handler 10.0.1",
- "revm-interpreter 25.0.3",
- "revm-primitives 20.2.1",
- "revm-state 7.0.5",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "revm-inspector"
-version = "11.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2a21dd773b654ec7e080025eecef4ac84c711150d1bd36acadf0546f471329a"
-dependencies = [
- "auto_impl",
- "either",
- "revm-context 10.1.2",
- "revm-database-interface 8.0.4",
- "revm-handler 11.2.0",
- "revm-interpreter 28.0.0",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-context",
+ "revm-database-interface",
+ "revm-handler",
+ "revm-interpreter",
+ "revm-primitives",
+ "revm-state",
  "serde",
  "serde_json",
 ]
@@ -4931,25 +4760,7 @@ dependencies = [
  "alloy-sol-types",
  "anstyle",
  "colorchoice",
- "revm 29.0.1",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "revm-inspectors"
-version = "0.31.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "782c38fa94f99b4b15f1690bffc2c3cbf06a0f460cf163b470d126914b47d343"
-dependencies = [
- "alloy-primitives",
- "alloy-rpc-types-eth",
- "alloy-rpc-types-trace",
- "alloy-sol-types",
- "anstyle",
- "colorchoice",
- "revm 30.2.0",
+ "revm",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -4961,22 +4772,9 @@ version = "25.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06575dc51b1d8f5091daa12a435733a90b4a132dca7ccee0666c7db3851bc30c"
 dependencies = [
- "revm-bytecode 6.2.2",
- "revm-context-interface 10.2.0",
- "revm-primitives 20.2.1",
- "serde",
-]
-
-[[package]]
-name = "revm-interpreter"
-version = "28.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1de5c790122f8ded67992312af8acd41ccfcee629b25b819e10c5b1f69caf57"
-dependencies = [
- "revm-bytecode 7.1.0",
- "revm-context-interface 11.1.2",
- "revm-primitives 21.0.1",
- "revm-state 8.1.0",
+ "revm-bytecode",
+ "revm-context-interface",
+ "revm-primitives",
  "serde",
 ]
 
@@ -4999,32 +4797,7 @@ dependencies = [
  "k256",
  "libsecp256k1",
  "p256",
- "revm-primitives 20.2.1",
- "ripemd",
- "rug",
- "secp256k1 0.31.1",
- "sha2 0.10.9",
-]
-
-[[package]]
-name = "revm-precompile"
-version = "28.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e57aadd7a2087705f653b5aaacc8ad4f8e851f5d330661e3f4c43b5475bbceae"
-dependencies = [
- "ark-bls12-381",
- "ark-bn254",
- "ark-ec",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "arrayref",
- "aurora-engine-modexp",
- "blst",
- "c-kzg",
- "cfg-if",
- "k256",
- "p256",
- "revm-primitives 21.0.1",
+ "revm-primitives",
  "ripemd",
  "rug",
  "secp256k1 0.31.1",
@@ -5044,38 +4817,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "revm-primitives"
-version = "21.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "536f30e24c3c2bf0d3d7d20fa9cf99b93040ed0f021fd9301c78cddb0dacda13"
-dependencies = [
- "alloy-primitives",
- "num_enum",
- "once_cell",
- "serde",
-]
-
-[[package]]
 name = "revm-state"
 version = "7.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f64fbacb86008394aaebd3454f9643b7d5a782bd251135e17c5b33da592d84d"
 dependencies = [
  "bitflags",
- "revm-bytecode 6.2.2",
- "revm-primitives 20.2.1",
- "serde",
-]
-
-[[package]]
-name = "revm-state"
-version = "8.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a0b4873815e31cbc3e5b183b9128b86c09a487c027aaf8cc5cf4b9688878f9b"
-dependencies = [
- "bitflags",
- "revm-bytecode 7.1.0",
- "revm-primitives 21.0.1",
+ "revm-bytecode",
+ "revm-primitives",
  "serde",
 ]
 
@@ -5699,45 +5448,17 @@ dependencies = [
 
 [[package]]
 name = "signet-bundle"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c247b8b7bdf32d08fd8ce345d3567f3f00ee597ef35e01564d793c41e321f205"
-dependencies = [
- "alloy",
- "serde",
- "signet-evm 0.12.0",
- "signet-types 0.12.0",
- "signet-zenith 0.12.0",
- "thiserror 2.0.17",
- "tracing",
- "trevm 0.30.1",
-]
-
-[[package]]
-name = "signet-bundle"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "250b22c00b6b664d4346438c2e56cb1035de8a6a6d0acbf6e9135702b422ef88"
 dependencies = [
  "alloy",
  "serde",
- "signet-evm 0.13.0",
- "signet-types 0.13.0",
+ "signet-evm",
+ "signet-types",
  "thiserror 2.0.17",
  "tracing",
- "trevm 0.29.0",
-]
-
-[[package]]
-name = "signet-constants"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a044fc6cc42e8100a8c4080a812430dfc41d2e85c2579e903c35b08ce5e7956b"
-dependencies = [
- "alloy",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
+ "trevm",
 ]
 
 [[package]]
@@ -5754,46 +5475,18 @@ dependencies = [
 
 [[package]]
 name = "signet-evm"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b014f5edb134a0376099bccce51fae44d833762c7f713e486d6048b1ee52e25d"
-dependencies = [
- "alloy",
- "signet-extract 0.12.0",
- "signet-journal 0.12.0",
- "signet-types 0.12.0",
- "signet-zenith 0.12.0",
- "thiserror 2.0.17",
- "tracing",
- "trevm 0.30.1",
-]
-
-[[package]]
-name = "signet-evm"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23851c76a2f8cbedb67ac8aae96c4a24d7a18df7cf618e532b1a273a0a64bd8a"
 dependencies = [
  "alloy",
- "signet-extract 0.13.0",
- "signet-journal 0.13.0",
- "signet-types 0.13.0",
- "signet-zenith 0.13.0",
+ "signet-extract",
+ "signet-journal",
+ "signet-types",
+ "signet-zenith",
  "thiserror 2.0.17",
  "tracing",
- "trevm 0.29.0",
-]
-
-[[package]]
-name = "signet-extract"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41782e8810ea9e081f3ea65d212c0a16d43e96350f372831c048fe2e73f24bfc"
-dependencies = [
- "alloy",
- "signet-types 0.12.0",
- "signet-zenith 0.12.0",
- "tracing",
+ "trevm",
 ]
 
 [[package]]
@@ -5803,21 +5496,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2e427fcc1cc6f619f9f6b91d5ad3aa9f89a6dab7a9b97c4f4799519d87a0cc4"
 dependencies = [
  "alloy",
- "signet-types 0.13.0",
- "signet-zenith 0.13.0",
+ "signet-types",
+ "signet-zenith",
  "tracing",
-]
-
-[[package]]
-name = "signet-journal"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59471ed6d55f2cd755eb229a8f6dd059e5186b69b1e8ec31c8648a5364398fed"
-dependencies = [
- "alloy",
- "futures-util",
- "thiserror 2.0.17",
- "trevm 0.30.1",
 ]
 
 [[package]]
@@ -5829,7 +5510,7 @@ dependencies = [
  "alloy",
  "futures-util",
  "thiserror 2.0.17",
- "trevm 0.29.0",
+ "trevm",
 ]
 
 [[package]]
@@ -5840,31 +5521,14 @@ checksum = "5c9273cef8ab792a34b70c66f1a7fb6dbeebbf80c1c7215cec6d2a61d3bed9ba"
 dependencies = [
  "alloy",
  "parking_lot",
- "signet-bundle 0.13.0",
- "signet-evm 0.13.0",
- "signet-types 0.13.0",
- "signet-zenith 0.13.0",
+ "signet-bundle",
+ "signet-evm",
+ "signet-types",
+ "signet-zenith",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
- "trevm 0.29.0",
-]
-
-[[package]]
-name = "signet-tx-cache"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092d3c5c5a8f4c636c404a5a54d393078a0ad0d1ae486cb85c7a41971d8b8fce"
-dependencies = [
- "alloy",
- "eyre",
- "reqwest",
- "serde",
- "signet-bundle 0.12.0",
- "signet-constants 0.12.0",
- "signet-types 0.12.0",
- "tracing",
- "uuid",
+ "trevm",
 ]
 
 [[package]]
@@ -5877,25 +5541,11 @@ dependencies = [
  "eyre",
  "reqwest",
  "serde",
- "signet-bundle 0.13.0",
- "signet-constants 0.13.0",
- "signet-types 0.13.0",
+ "signet-bundle",
+ "signet-constants",
+ "signet-types",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "signet-types"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fe99cb3143d341b48e42862eb28aabbc2e848c28ec764ffcd223b2154585856"
-dependencies = [
- "alloy",
- "chrono",
- "serde",
- "signet-constants 0.12.0",
- "signet-zenith 0.12.0",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -5907,21 +5557,9 @@ dependencies = [
  "alloy",
  "chrono",
  "serde",
- "signet-constants 0.13.0",
- "signet-zenith 0.13.0",
+ "signet-constants",
+ "signet-zenith",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "signet-zenith"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2cbd7f4422eac2f9069d472b64f72e9fd54d2c071112b9fb05d71fa2b45cc8a"
-dependencies = [
- "alloy",
- "alloy-core",
- "serde",
- "trevm 0.30.1",
 ]
 
 [[package]]
@@ -5933,7 +5571,7 @@ dependencies = [
  "alloy",
  "alloy-core",
  "serde",
- "trevm 0.29.0",
+ "trevm",
 ]
 
 [[package]]
@@ -6562,22 +6200,8 @@ checksum = "46c55b9cf58baa3727871f0d694bb0b07d6fcae6eea095fde796f338f880dbda"
 dependencies = [
  "alloy",
  "dashmap",
- "revm 29.0.1",
- "revm-inspectors 0.30.1",
- "thiserror 2.0.17",
- "tracing",
-]
-
-[[package]]
-name = "trevm"
-version = "0.30.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0181e5db5fea59f1705bb79da1306f6f94cb2b1bc0d53ae54f44abb3ce574f8b"
-dependencies = [
- "alloy",
- "dashmap",
- "revm 30.2.0",
- "revm-inspectors 0.31.2",
+ "revm",
+ "revm-inspectors",
  "thiserror 2.0.17",
  "tracing",
 ]
@@ -7312,43 +6936,3 @@ dependencies = [
  "quote",
  "syn 2.0.108",
 ]
-
-[[patch.unused]]
-name = "init4-bin-base"
-version = "0.12.5"
-
-[[patch.unused]]
-name = "signet-bundle"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-constants"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-evm"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-extract"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-journal"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-sim"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-tx-cache"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-types"
-version = "0.14.1"
-
-[[patch.unused]]
-name = "signet-zenith"
-version = "0.14.1"
