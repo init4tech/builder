@@ -33,7 +33,7 @@ async fn main() -> eyre::Result<()> {
     let cache_system = cache_tasks.spawn();
 
     // Set up the metrics task
-    let metrics = MetricsTask { host_provider };
+    let metrics = MetricsTask { host_provider: host_provider.clone() };
     let (tx_channel, metrics_jh) = metrics.spawn();
 
     // Set up the submit task. This will be either a Flashbots task or a
@@ -42,7 +42,7 @@ async fn main() -> eyre::Result<()> {
     let (submit_channel, submit_jh) = config.spawn_submit_task(tx_channel).await?;
 
     // Set up the simulator
-    let sim = Simulator::new(&config, ru_provider.clone(), block_env);
+    let sim = Simulator::new(&config, host_provider, ru_provider, block_env);
     let build_jh =
         sim.spawn_simulator_task(config.constants.clone(), cache_system.sim_cache, submit_channel);
 

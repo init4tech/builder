@@ -41,6 +41,7 @@ async fn test_handle_build() {
 
     // Create a rollup provider
     let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
+    let host_provider = config.connect_host_provider().await.unwrap();
 
     let block_env = EnvTask::new(
         config.clone(),
@@ -50,7 +51,7 @@ async fn test_handle_build() {
     .spawn()
     .0;
 
-    let block_builder = Simulator::new(&config, ru_provider.clone(), block_env);
+    let block_builder = Simulator::new(&config, host_provider, ru_provider.clone(), block_env);
 
     // Setup a sim cache
     let sim_items = SimCache::new();
