@@ -14,7 +14,7 @@ use alloy::{
 use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
-use signet_zenith::BundleHelper;
+use signet_zenith::Zenith;
 use tracing::{Instrument, debug};
 
 /// Preparation logic for transactions issued to the host chain by the
@@ -92,26 +92,32 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Converts the fills in the block to a vector of `FillPermit2`.
-    fn fills(&self) -> Vec<BundleHelper::FillPermit2> {
-        utils::convert_fills(self.block)
-    }
-
     /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
     async fn build_blob_tx(&self) -> eyre::Result<TransactionRequest> {
         let (v, r, s) = self.quincey_signature().await?;
 
-        // Build the block header
-        let header = BundleHelper::BlockHeader {
-            hostBlockNumber: self.sig_request().host_block_number,
+        let header = Zenith::BlockHeader {
             rollupChainId: U256::from(self.config.constants.ru_chain_id()),
+            hostBlockNumber: self.sig_request().host_block_number,
             gasLimit: self.sig_request().gas_limit,
             rewardAddress: self.sig_request().ru_reward_address,
             blockDataHash: *self.block.contents_hash(),
         };
-        debug!(?header.hostBlockNumber, "built rollup block header");
+        debug!(?header.hostBlockNumber, "built zenith block header");
 
-        let data = BundleHelper::submitCall { fills: self.fills(), header, v, r, s }.abi_encode();
+        let data = Zenith::submitBlockCall {
+            header,
+            v,
+            r,
+            s,
+            _4: self
+                .block
+                .host_transactions()
+                .iter()
+                .flat_map(|b| b.iter().cloned())
+                .collect::<alloy::primitives::Bytes>(),
+        }
+        .abi_encode();
 
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 

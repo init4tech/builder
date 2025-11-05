@@ -91,7 +91,7 @@ impl FlashbotsTask {
 
         let bundle_body = sim_result
             .block
-            .host_txns()
+            .host_transactions()
             .iter()
             .cloned()
             .chain(std::iter::once(tx_bytes))
