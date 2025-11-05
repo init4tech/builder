@@ -58,7 +58,7 @@ flowchart TD
    FlashbotsRelay ==> Ethereum
 
    %% Metrics
-   FlashbotsSubmit ==bundle hash==> Metrics
+   FlashbotsSubmit ==rollup block tx hash==> Metrics
 ```
 
 ### 💾 Simulation Task
@@ -88,7 +88,7 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
 Key                           | Required | Description
------------------------------ | -------- | ------------------------------------------------------------------------------------------
+----------------------------- | -------- | ----------------------------------------------------------------------------------------
 `HOST_CHAIN_ID`               | Yes      | Host-chain ID (e.g. `3151908`)
 `RU_CHAIN_ID`                 | Yes      | Rollup-chain ID (e.g. `14174`)
 `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain
