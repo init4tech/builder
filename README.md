@@ -33,19 +33,12 @@ flowchart TD
       Cache["🪏 Cache Task"]
       Simulator["💾 Simulator Task"]
       Metrics["📏 Metrics Task"]
-
-      %% Decision: route to Flashbots or Builder Helper
-      FB@{ shape: hex, label: "FLASHBOTS_ENDPOINT\nconfigured?" }
-      FB ==> | Yes | FlashbotsSubmit["🤖 Flashbots Submit"]
-      FB ==> | No  | HelperSubmit["🏗️ Builder Helper Submit"]
+      FlashbotsSubmit["📥 Flashbots Submit Task"]
    end
 
    %% Signing
    FlashbotsSubmit --hash--> Quincey
    Quincey -- signature --> FlashbotsSubmit
-
-   HelperSubmit -- hash --> Quincey
-   Quincey -- signature --> HelperSubmit
 
    %% Config wiring
    Config -.rollup rpc.-> Env
@@ -54,21 +47,18 @@ flowchart TD
    Config -.rollup rpc.-> Simulator
    Config -.host rpc.-> Metrics
    Config -.host rpc.-> FlashbotsSubmit
-   Config -.host rpc.-> HelperSubmit
 
    %% Core flow
    Env ==block env==> Simulator
    Cache ==sim cache==> Simulator
-   Simulator ==built block==> FB 
+   Simulator ==built block==> FlashbotsSubmit
 
    %% Network submission
    FlashbotsSubmit ==>|"tx bundle"| FlashbotsRelay["🛡️ Flashbots Relay"]
    FlashbotsRelay ==> Ethereum
-   HelperSubmit ==>|"blob tx"| Ethereum["⛓️ Ethereum L1"]
 
    %% Metrics
    FlashbotsSubmit ==bundle hash==> Metrics
-   HelperSubmit ==tx hash==> Metrics
 ```
 
 ### 💾 Simulation Task
