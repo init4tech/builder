@@ -1957,7 +1957,6 @@ version = "0.4.0"
 dependencies = [
  "alloy",
  "axum 0.7.9",
- "chrono",
  "eyre",
  "init4-bin-base",
  "openssl",
