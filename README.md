@@ -13,7 +13,7 @@ The Builder orchestrates a series of asynchronous actors that work together to b
 1. **Env** - watches the latest host and rollup blocks to monitor gas rates and block updates.
 2. **Cache** - polls bundle and transaction caches and adds them to the cache.
 3. **Simulator** - simulates transactions and bundles against rollup state and block environment to build them into a cohesive block.
-4. **Submit** - handles preparing and submitting the simulated block.
+4. **FlashbotsSubmit** - handles preparing and submitting the simulated block to a private Flashbots relay.
 5. **Metrics** - records block and tx data over time.
 
 ```mermaid
