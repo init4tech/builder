@@ -131,11 +131,8 @@ impl Simulator {
         block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
-
         // NB: Build AlloyDB from the previous block number's state, since block_env maps to the in-progress block
         let latest_block_number = BlockNumber::from(block_env.number.to::<u64>() - 1);
-
-        let max_host_gas = 45_000_000u64;
 
         let host_db = self.create_host_db(latest_block_number).await;
         let host_env = HostEnv::<_, NoOpInspector>::new(
@@ -144,6 +141,7 @@ impl Simulator {
             &self.config.cfg_env(),
             &block_env,
         );
+
         let rollup_db = self.create_rollup_db(latest_block_number);
         let rollup_env = RollupEnv::<_, NoOpInspector>::new(
             rollup_db,
@@ -159,7 +157,7 @@ impl Simulator {
             concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
-            max_host_gas,
+            block_env.gas_limit,
         );
 
         let built_block = block_build.build().in_current_span().await;
@@ -283,10 +281,6 @@ impl Simulator {
     }
 
     /// Creates an `AlloyDB` instance from the rollup provider.
-    ///
-    /// # Returns
-    ///
-    /// An `Option` containing the wrapped database or `None` if an error occurs.
     fn create_rollup_db(&self, latest_block_number: u64) -> RollupAlloyDatabaseProvider {
         // Make an AlloyDB instance from the rollup provider with that latest block number
         let alloy_db: AlloyDB<Ethereum, RuProvider> =

@@ -188,7 +188,6 @@ pub struct BuilderConfig {
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 
-    // TODO: Make this compatible with FromEnv again, somehow it broke
     /// The signet system constants.
     pub constants: SignetSystemConstants,
 }
