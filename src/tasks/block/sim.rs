@@ -2,15 +2,15 @@
 //! actor that handles the simulation of a stream of bundles and transactions
 //! and turns them into valid Pecorino blocks for network submission.
 use crate::{
-    config::{BuilderConfig, RuProvider},
+    config::{BuilderConfig, HostProvider, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::{eips::BlockId, network::Ethereum};
+use alloy::{eips::BlockId, network::Ethereum, primitives::BlockNumber};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     utils::calc::SlotCalculator,
 };
-use signet_sim::{BlockBuild, BuiltBlock, SimCache};
+use signet_sim::{BlockBuild, BuiltBlock, HostEnv, RollupEnv, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
 use tokio::{
@@ -27,7 +27,8 @@ use trevm::revm::{
     inspector::NoOpInspector,
 };
 
-type AlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
+type HostAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, HostProvider>>;
+type RollupAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
 
 /// `Simulator` is responsible for periodically building blocks and submitting them for
 /// signing and inclusion in the blockchain. It wraps a rollup provider and a slot
@@ -36,6 +37,8 @@ type AlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
 pub struct Simulator {
     /// Configuration for the builder.
     pub config: BuilderConfig,
+    /// Host Provider to interact with the host chain.
+    pub host_provider: HostProvider,
     /// A provider that cannot sign transactions, used for interacting with the rollup.
     pub ru_provider: RuProvider,
     /// The block configuration environment on which to simulate
@@ -88,10 +91,11 @@ impl Simulator {
     /// A new `Simulator` instance.
     pub fn new(
         config: &BuilderConfig,
+        host_provider: HostProvider,
         ru_provider: RuProvider,
         sim_env: watch::Receiver<Option<SimEnv>>,
     ) -> Self {
-        Self { config: config.clone(), ru_provider, sim_env }
+        Self { config: config.clone(), host_provider, ru_provider, sim_env }
     }
 
     /// Get the slot calculator.
@@ -129,17 +133,33 @@ impl Simulator {
         let concurrency_limit = self.config.concurrency_limit();
 
         // NB: Build AlloyDB from the previous block number's state, since block_env maps to the in-progress block
-        let db = self.create_db(block_env.number.to::<u64>() - 1).unwrap();
+        let latest_block_number = BlockNumber::from(block_env.number.to::<u64>() - 1);
 
-        let block_build: BlockBuild<_, NoOpInspector> = BlockBuild::new(
-            db,
+        let max_host_gas = 45_000_000u64;
+
+        let host_db = self.create_host_db(latest_block_number).await;
+        let host_env = HostEnv::<_, NoOpInspector>::new(
+            host_db,
+            constants.clone(),
+            &self.config.cfg_env(),
+            &block_env,
+        );
+        let rollup_db = self.create_rollup_db(latest_block_number);
+        let rollup_env = RollupEnv::<_, NoOpInspector>::new(
+            rollup_db,
             constants,
-            self.config.cfg_env(),
-            block_env,
+            &self.config.cfg_env(),
+            &block_env,
+        );
+
+        let block_build = BlockBuild::new(
+            rollup_env,
+            host_env,
             finish_by,
             concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
+            max_host_gas,
         );
 
         let built_block = block_build.build().in_current_span().await;
@@ -149,7 +169,7 @@ impl Simulator {
             "block simulation completed",
         );
         counter!("signet.builder.built_blocks").increment(1);
-        histogram!("signet.builder.built_blocks.tx_count").record(built_block.tx_count() as f64);
+        histogram!("signet.builder.built_blocks.tx_count").record(built_block.tx_count() as u32);
 
         Ok(built_block)
     }
@@ -251,12 +271,23 @@ impl Simulator {
         deadline.max(Instant::now())
     }
 
+    /// Creates an `AlloyDB` instnace from the host provider.
+    async fn create_host_db(&self, latest_block_number: u64) -> HostAlloyDatabaseProvider {
+        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::from(latest_block_number));
+
+        // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
+        // This is safe to unwrap because the main function sets the proper runtime settings.
+        //
+        // See: https://docs.rs/tokio/latest/tokio/attr.main.html
+        WrapDatabaseAsync::new(alloy_db).unwrap()
+    }
+
     /// Creates an `AlloyDB` instance from the rollup provider.
     ///
     /// # Returns
     ///
     /// An `Option` containing the wrapped database or `None` if an error occurs.
-    fn create_db(&self, latest_block_number: u64) -> Option<AlloyDatabaseProvider> {
+    fn create_rollup_db(&self, latest_block_number: u64) -> RollupAlloyDatabaseProvider {
         // Make an AlloyDB instance from the rollup provider with that latest block number
         let alloy_db: AlloyDB<Ethereum, RuProvider> =
             AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest_block_number));
@@ -265,7 +296,6 @@ impl Simulator {
         // This is safe to unwrap because the main function sets the proper runtime settings.
         //
         // See: https://docs.rs/tokio/latest/tokio/attr.main.html
-        let wrapped_db: AlloyDatabaseProvider = WrapDatabaseAsync::new(alloy_db).unwrap();
-        Some(wrapped_db)
+        WrapDatabaseAsync::new(alloy_db).unwrap()
     }
 }
