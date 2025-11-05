@@ -131,10 +131,10 @@ impl Simulator {
         block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
-        // NB: Build AlloyDB from the previous block number's state, since block_env maps to the in-progress block
         let latest_block_number = BlockNumber::from(block_env.number.to::<u64>() - 1);
+        let host_block_number = self.config.constants.rollup_block_to_host_block_num(latest_block_number);
 
-        let host_db = self.create_host_db(latest_block_number).await;
+        let host_db = self.create_host_db(host_block_number).await;
         let host_env = HostEnv::<_, NoOpInspector>::new(
             host_db,
             constants.clone(),
