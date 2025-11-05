@@ -53,14 +53,15 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
 url = "2.5.4"
 
-[patch.crates-io]
-signet-constants = { path = "../signet-sdk/crates/constants" }
-signet-types = { path = "../signet-sdk/crates/types" }
-signet-zenith = { path = "../signet-sdk/crates/zenith" }
-signet-sim = { path = "../signet-sdk/crates/sim" }
-signet-evm = { path = "../signet-sdk/crates/evm" }
-signet-extract = { path = "../signet-sdk/crates/extract" }
-signet-journal = { path = "../signet-sdk/crates/journal" }
-signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
-signet-bundle = { path = "../signet-sdk/crates/bundle" }
-init4-bin-base = { path = "../bin-base" }
+# comment / uncomment for local dev
+# [patch.crates-io]
+# signet-constants = { path = "../signet-sdk/crates/constants" }
+# signet-types = { path = "../signet-sdk/crates/types" }
+# signet-zenith = { path = "../signet-sdk/crates/zenith" }
+# signet-sim = { path = "../signet-sdk/crates/sim" }
+# signet-evm = { path = "../signet-sdk/crates/evm" }
+# signet-extract = { path = "../signet-sdk/crates/extract" }
+# signet-journal = { path = "../signet-sdk/crates/journal" }
+# signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
+# signet-bundle = { path = "../signet-sdk/crates/bundle" }
+# init4-bin-base = { path = "../bin-base" }
