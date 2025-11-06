@@ -8,7 +8,6 @@ use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{B256, Bytes, U256},
     providers::{Provider, WalletProvider},
-    rlp::Encodable,
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
