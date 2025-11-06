@@ -21,10 +21,13 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{Instrument, Span, debug, instrument};
-use trevm::revm::{
-    context::BlockEnv,
-    database::{AlloyDB, WrapDatabaseAsync},
-    inspector::NoOpInspector,
+use trevm::{
+    Block,
+    revm::{
+        context::BlockEnv,
+        database::{AlloyDB, WrapDatabaseAsync},
+        inspector::NoOpInspector,
+    },
 };
 
 type HostAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, HostProvider>>;
@@ -128,27 +131,34 @@ impl Simulator {
         constants: SignetSystemConstants,
         sim_items: SimCache,
         finish_by: Instant,
-        block_env: BlockEnv,
+        sim_env: SimEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
-        let latest_block_number = BlockNumber::from(block_env.number.to::<u64>() - 1);
-        let host_block_number = self.config.constants.rollup_block_to_host_block_num(latest_block_number);
 
+        let host_block_number = BlockNumber::from(sim_env.prev_host.number);
         let host_db = self.create_host_db(host_block_number).await;
+        let mut host_block_env = BlockEnv::default();
+        sim_env.prev_host.fill_block_env(&mut host_block_env);
         let host_env = HostEnv::<_, NoOpInspector>::new(
             host_db,
             constants.clone(),
-            &self.config.cfg_env(),
-            &block_env,
+            &self.config.host_cfg_env(),
+            &host_block_env,
         );
 
-        let rollup_db = self.create_rollup_db(latest_block_number);
+        let rollup_block_number = BlockNumber::from(sim_env.prev_header.number);
+        let rollup_db = self.create_rollup_db(rollup_block_number);
+        let mut rollup_block_env = BlockEnv::default();
+        sim_env.prev_header.fill_block_env(&mut rollup_block_env);
         let rollup_env = RollupEnv::<_, NoOpInspector>::new(
             rollup_db,
             constants,
-            &self.config.cfg_env(),
-            &block_env,
+            &self.config.ru_cfg_env(),
+            &rollup_block_env,
         );
+
+        // TODO
+        let max_host_gas: u64 = 0;
 
         let block_build = BlockBuild::new(
             rollup_env,
@@ -157,7 +167,7 @@ impl Simulator {
             concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
-            block_env.gas_limit,
+            max_host_gas,
         );
 
         let built_block = block_build.build().in_current_span().await;
@@ -235,7 +245,7 @@ impl Simulator {
             let sim_cache = cache.clone();
 
             let Ok(block) = self
-                .handle_build(constants.clone(), sim_cache, finish_by, sim_env.block_env.clone())
+                .handle_build(constants.clone(), sim_cache, finish_by, sim_env.clone())
                 .instrument(span.clone())
                 .await
                 .inspect_err(|err| span_error!(span, %err, "error during block build"))
