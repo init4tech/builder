@@ -8,7 +8,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use builder::{
-    tasks::{block::sim::Simulator, env::EnvTask},
+    tasks::{block::sim::Simulator, env::{EnvTask, SimEnv}},
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
 use signet_sim::SimCache;
@@ -51,7 +51,7 @@ async fn test_handle_build() {
     .spawn()
     .0;
 
-    let block_builder = Simulator::new(&config, host_provider, ru_provider.clone(), block_env);
+    let block_builder = Simulator::new(&config, host_provider.clone(), ru_provider.clone(), block_env);
 
     // Setup a sim cache
     let sim_items = SimCache::new();
@@ -63,15 +63,22 @@ async fn test_handle_build() {
     let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
     sim_items.add_tx(tx_2, 0);
 
-    // Setup the block env
+    // Setup the block envs
     let finish_by = Instant::now() + Duration::from_secs(2);
-    let header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
-    let number = header.number + 1;
-    let timestamp = header.timestamp + config.slot_calculator.slot_duration();
+    let host_header = host_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header;
+    let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let number = ru_header.number + 1;
+    let timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
     let block_env = test_block_env(config, number, 7, timestamp);
 
     // Spawn the block builder task
-    let got = block_builder.handle_build(constants, sim_items, finish_by, block_env).await;
+    let sim_env = SimEnv {
+        block_env: block_env.clone(),
+        prev_header: ru_header.clone(),
+        prev_host: host_header.into(),
+        span: tracing::Span::none(),
+    };
+    let got = block_builder.handle_build(constants, sim_items, finish_by, sim_env).await;
 
     // Assert on the built block
     assert!(got.is_ok());

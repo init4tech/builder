@@ -165,6 +165,15 @@ pub struct BuilderConfig {
     )]
     pub concurrency_limit: Option<usize>,
 
+    /// Optional maximum host gas coefficient to use when building blocks.
+    /// Defaults to 80% (80) if not set.
+    #[from_env(
+        var = "MAX_HOST_GAS_COEFFICIENT",
+        desc = "Optional maximum host gas coefficient, as a percentage, to use when building blocks",
+        default = 80
+    )]
+    pub max_host_gas_coefficient: Option<u8>,
+
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 
@@ -295,5 +304,14 @@ impl BuilderConfig {
                 .map(|p| p.get())
                 .unwrap_or(DEFAULT_CONCURRENCY_LIMIT)
         })
+    }
+
+    /// Returns the maximum host gas to use for block building based on the configured max host gas coefficient.
+    pub fn max_host_gas(&self, gas_limit: u64) -> u64 {
+        // Set max host gas to a percentage of the host block gas limit
+        let max_host_gas = ((gas_limit as u128
+            * (self.max_host_gas_coefficient.unwrap_or(80) as u128))
+            / 100u128) as u64;
+        max_host_gas
     }
 }
