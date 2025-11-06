@@ -131,9 +131,11 @@ impl Simulator {
         block_env: BlockEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
-        let latest_block_number = BlockNumber::from(block_env.number.to::<u64>() - 1);
-        let host_block_number = self.config.constants.rollup_block_to_host_block_num(latest_block_number);
 
+        let ru_block_number = BlockNumber::from(block_env.number.to::<u64>() - 1);
+
+        let host_block_number =
+            self.config.constants.rollup_block_to_host_block_num(ru_block_number);
         let host_db = self.create_host_db(host_block_number).await;
         let host_env = HostEnv::<_, NoOpInspector>::new(
             host_db,
@@ -142,7 +144,7 @@ impl Simulator {
             &block_env,
         );
 
-        let rollup_db = self.create_rollup_db(latest_block_number);
+        let rollup_db = self.create_rollup_db(ru_block_number);
         let rollup_env = RollupEnv::<_, NoOpInspector>::new(
             rollup_db,
             constants,
@@ -269,9 +271,9 @@ impl Simulator {
         deadline.max(Instant::now())
     }
 
-    /// Creates an `AlloyDB` instnace from the host provider.
-    async fn create_host_db(&self, latest_block_number: u64) -> HostAlloyDatabaseProvider {
-        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::from(latest_block_number));
+    /// Creates an `AlloyDB` instance from the host provider.
+    async fn create_host_db(&self, host_block_number: u64) -> HostAlloyDatabaseProvider {
+        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::from(host_block_number));
 
         // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
         // This is safe to unwrap because the main function sets the proper runtime settings.
@@ -281,10 +283,10 @@ impl Simulator {
     }
 
     /// Creates an `AlloyDB` instance from the rollup provider.
-    fn create_rollup_db(&self, latest_block_number: u64) -> RollupAlloyDatabaseProvider {
+    fn create_rollup_db(&self, ru_block_number: u64) -> RollupAlloyDatabaseProvider {
         // Make an AlloyDB instance from the rollup provider with that latest block number
         let alloy_db: AlloyDB<Ethereum, RuProvider> =
-            AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest_block_number));
+            AlloyDB::new(self.ru_provider.clone(), BlockId::from(ru_block_number));
 
         // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
         // This is safe to unwrap because the main function sets the proper runtime settings.

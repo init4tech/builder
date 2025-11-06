@@ -6,8 +6,9 @@ use crate::{
 use alloy::{
     consensus::{Header, SimpleCoder},
     network::{TransactionBuilder, TransactionBuilder4844},
-    primitives::{B256, U256},
+    primitives::{B256, Bytes, U256},
     providers::{Provider, WalletProvider},
+    rlp::Encodable,
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
@@ -105,19 +106,7 @@ impl<'a> SubmitPrep<'a> {
         };
         debug!(?header.hostBlockNumber, "built zenith block header");
 
-        let data = Zenith::submitBlockCall {
-            header,
-            v,
-            r,
-            s,
-            _4: self
-                .block
-                .host_transactions()
-                .iter()
-                .flat_map(|b| b.iter().cloned())
-                .collect::<alloy::primitives::Bytes>(),
-        }
-        .abi_encode();
+        let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
 
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
