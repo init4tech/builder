@@ -309,9 +309,7 @@ impl BuilderConfig {
     /// Returns the maximum host gas to use for block building based on the configured max host gas coefficient.
     pub fn max_host_gas(&self, gas_limit: u64) -> u64 {
         // Set max host gas to a percentage of the host block gas limit
-        let max_host_gas = ((gas_limit as u128
-            * (self.max_host_gas_coefficient.unwrap_or(80) as u128))
-            / 100u128) as u64;
-        max_host_gas
+        ((gas_limit as u128 * (self.max_host_gas_coefficient.unwrap_or(80) as u128)) / 100u128)
+            as u64
     }
 }
