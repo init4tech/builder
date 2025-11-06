@@ -300,9 +300,14 @@ impl BuilderConfig {
         Ok(Quincey::new_remote(client, url, token))
     }
 
-    /// Create a [`SignetCfgEnv`] using this config.
-    pub const fn cfg_env(&self) -> SignetCfgEnv {
+    /// Create a rollup [`SignetCfgEnv`] using this config.
+    pub const fn ru_cfg_env(&self) -> SignetCfgEnv {
         SignetCfgEnv { chain_id: self.ru_chain_id }
+    }
+
+    /// Create a host [`SignetCfgEnv`] using this config.
+    pub const fn host_cfg_env(&self) -> SignetCfgEnv {
+        SignetCfgEnv { chain_id: self.host_chain_id }
     }
 
     /// Memoizes the concurrency limit for the current system. Uses [`std::thread::available_parallelism`] if no
