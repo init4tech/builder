@@ -8,7 +8,10 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use builder::{
-    tasks::{block::sim::Simulator, env::{EnvTask, SimEnv}},
+    tasks::{
+        block::sim::Simulator,
+        env::{EnvTask, SimEnv},
+    },
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
 use signet_sim::SimCache;
@@ -51,7 +54,8 @@ async fn test_handle_build() {
     .spawn()
     .0;
 
-    let block_builder = Simulator::new(&config, host_provider.clone(), ru_provider.clone(), block_env);
+    let block_builder =
+        Simulator::new(&config, host_provider.clone(), ru_provider.clone(), block_env);
 
     // Setup a sim cache
     let sim_items = SimCache::new();
