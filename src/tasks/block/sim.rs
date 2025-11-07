@@ -5,7 +5,7 @@ use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::{eips::BlockId, network::Ethereum, primitives::BlockNumber};
+use alloy::{consensus::Header, eips::BlockId, network::Ethereum};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     utils::calc::SlotCalculator,
@@ -21,13 +21,9 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{Instrument, Span, debug, instrument};
-use trevm::{
-    Block,
-    revm::{
-        context::BlockEnv,
-        database::{AlloyDB, WrapDatabaseAsync},
-        inspector::NoOpInspector,
-    },
+use trevm::revm::{
+    database::{AlloyDB, WrapDatabaseAsync},
+    inspector::NoOpInspector,
 };
 
 type HostAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, HostProvider>>;
@@ -58,8 +54,18 @@ pub struct SimResult {
 }
 
 impl SimResult {
+    /// Get a reference to the previous host header.
+    pub const fn prev_host(&self) -> &Header {
+        self.sim_env.prev_host()
+    }
+
+    /// Get a reference to the previous rollup header.
+    pub const fn prev_rollup(&self) -> &Header {
+        self.sim_env.prev_rollup()
+    }
+
     /// Returns the block number of the built block.
-    pub const fn block_number(&self) -> u64 {
+    pub const fn rollup_block_number(&self) -> u64 {
         self.block.block_number()
     }
 
@@ -134,7 +140,7 @@ impl Simulator {
         sim_env: SimEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
-        let max_host_gas = self.config.max_host_gas(sim_env.prev_host.gas_limit);
+        let max_host_gas = self.config.max_host_gas(sim_env.prev_host().gas_limit);
 
         let (rollup_env, host_env) = self.create_envs(constants, &sim_env).await;
 
@@ -170,29 +176,25 @@ impl Simulator {
         HostEnv<HostAlloyDatabaseProvider, NoOpInspector>,
     ) {
         // Host DB and Env
-        let host_block_number = BlockNumber::from(sim_env.prev_host.number);
+        let host_block_number = sim_env.host_block_number();
         let host_db = self.create_host_db(host_block_number).await;
-        let mut host_block_env = BlockEnv::default();
-        sim_env.prev_host.fill_block_env(&mut host_block_env);
 
         let host_env = HostEnv::<HostAlloyDatabaseProvider, NoOpInspector>::new(
             host_db,
             constants.clone(),
             &self.config.host_cfg_env(),
-            &host_block_env,
+            sim_env.host_env(),
         );
 
         // Rollup DB and Env
-        let rollup_block_number = BlockNumber::from(sim_env.prev_header.number);
+        let rollup_block_number = sim_env.rollup_block_number();
         let rollup_db = self.create_rollup_db(rollup_block_number);
-        let mut rollup_block_env = BlockEnv::default();
-        sim_env.prev_header.fill_block_env(&mut rollup_block_env);
 
         let rollup_env = RollupEnv::<RollupAlloyDatabaseProvider, NoOpInspector>::new(
             rollup_db,
             constants,
             &self.config.ru_cfg_env(),
-            &rollup_block_env,
+            sim_env.rollup_env(),
         );
 
         (rollup_env, host_env)
