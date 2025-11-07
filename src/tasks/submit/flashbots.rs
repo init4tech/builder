@@ -79,7 +79,7 @@ impl FlashbotsTask {
             self.config.clone(),
         );
 
-        let tx = prep.prep_transaction(&sim_result.sim_env.prev_host).await?;
+        let tx = prep.prep_transaction(sim_result.prev_host()).await?;
 
         let sendable = self.host_provider().fill(tx.into_request()).await?;
 

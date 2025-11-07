@@ -1,6 +1,7 @@
 //! Tests for the block building task.
 
 use alloy::{
+    eips::BlockId,
     network::Ethereum,
     node_bindings::Anvil,
     primitives::U256,
@@ -10,7 +11,7 @@ use alloy::{
 use builder::{
     tasks::{
         block::sim::Simulator,
-        env::{EnvTask, SimEnv},
+        env::{EnvTask, Environment, SimEnv},
     },
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
@@ -26,8 +27,6 @@ use std::time::{Duration, Instant};
 #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_handle_build() {
-    use alloy::eips::BlockId;
-
     setup_logging();
 
     // Make a test config
@@ -69,7 +68,6 @@ async fn test_handle_build() {
 
     // Setup the block envs
     let finish_by = Instant::now() + Duration::from_secs(2);
-    let host_header = host_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header;
     let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
     let number = ru_header.number + 1;
     let timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
@@ -77,9 +75,8 @@ async fn test_handle_build() {
 
     // Spawn the block builder task
     let sim_env = SimEnv {
-        block_env: block_env.clone(),
-        prev_header: ru_header.clone(),
-        prev_host: host_header.into(),
+        host: Environment::for_testing(),
+        rollup: Environment::new(block_env, ru_header),
         span: tracing::Span::none(),
     };
     let got = block_builder.handle_build(constants, sim_items, finish_by, sim_env).await;
