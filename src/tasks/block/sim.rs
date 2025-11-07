@@ -167,6 +167,10 @@ impl Simulator {
     }
 
     // Helper to create rollup + host envs from the sim env.
+    #[instrument(skip_all, fields(
+        rollup_block = sim_env.rollup_block_number(),
+        host_block = sim_env.host_block_number(),
+    ))]
     async fn create_envs(
         &self,
         constants: SignetSystemConstants,
@@ -176,8 +180,7 @@ impl Simulator {
         HostEnv<HostAlloyDatabaseProvider, NoOpInspector>,
     ) {
         // Host DB and Env
-        let host_block_number = sim_env.host_block_number();
-        let host_db = self.create_host_db(host_block_number).await;
+        let host_db = self.create_host_db().await;
 
         let host_env = HostEnv::<HostAlloyDatabaseProvider, NoOpInspector>::new(
             host_db,
@@ -298,8 +301,8 @@ impl Simulator {
     }
 
     /// Creates an `AlloyDB` instnace from the host provider.
-    async fn create_host_db(&self, latest_block_number: u64) -> HostAlloyDatabaseProvider {
-        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::from(latest_block_number));
+    async fn create_host_db(&self) -> HostAlloyDatabaseProvider {
+        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::latest());
 
         // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
         // This is safe to unwrap because the main function sets the proper runtime settings.
