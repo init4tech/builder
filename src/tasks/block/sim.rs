@@ -60,12 +60,12 @@ impl SimResult {
     }
 
     /// Get a reference to the previous signet header.
-    pub const fn prev_header(&self) -> &Header {
-        self.sim_env.prev_header()
+    pub const fn prev_rollup(&self) -> &Header {
+        self.sim_env.prev_rollup()
     }
 
     /// Returns the block number of the built block.
-    pub const fn block_number(&self) -> u64 {
+    pub const fn rollup_block_number(&self) -> u64 {
         self.block.block_number()
     }
 
@@ -187,7 +187,7 @@ impl Simulator {
         );
 
         // Rollup DB and Env
-        let rollup_block_number = sim_env.block_number();
+        let rollup_block_number = sim_env.rollup_block_number();
         let rollup_db = self.create_rollup_db(rollup_block_number);
 
         let rollup_env = RollupEnv::<RollupAlloyDatabaseProvider, NoOpInspector>::new(
