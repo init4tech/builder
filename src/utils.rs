@@ -7,11 +7,6 @@ use alloy::{
 use signet_sim::BuiltBlock;
 use signet_zenith::BundleHelper::FillPermit2;
 
-/// Returns the current timestamp in seconds since the UNIX epoch.
-pub(crate) fn now() -> u64 {
-    chrono::Utc::now().timestamp() as u64
-}
-
 // This function converts &[SignedFill] into [FillPermit2]
 pub(crate) fn convert_fills(block: &BuiltBlock) -> Vec<FillPermit2> {
     block.host_fills().iter().map(FillPermit2::from).collect()

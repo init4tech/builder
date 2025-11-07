@@ -43,7 +43,6 @@ alloy = { version = "1.0.37", features = [
 ] }
 
 axum = "0.7.5"
-chrono = "0.4.40"
 eyre = "0.6.12"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12.22", features = ["blocking", "json"] }
