@@ -7,7 +7,7 @@ use alloy::{
 };
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, info_span};
+use tracing::{Instrument, Span, debug, info_span};
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// A task that constructs a BlockEnv for the next block in the rollup chain.
@@ -181,6 +181,8 @@ impl EnvTask {
             // Construct the block env using the previous block header
             let rollup_env = self.construct_block_env(rollup_header.into());
             let host_env = self.construct_block_env(host_header);
+            
+            debug!(host_env_block_number = ?host_env.block_env().number, %host_block_number, "host block number comparisons");
 
             span_debug!(
                 span,
