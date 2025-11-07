@@ -25,31 +25,82 @@ pub struct EnvTask {
     ru_provider: RuProvider,
 }
 
-/// Contains a signet BlockEnv and its corresponding host Header.
+/// An environment for simulating a block.
+#[derive(Debug, Clone)]
+pub struct Environment {
+    block_env: BlockEnv,
+    prev_header: Header,
+}
+
+impl Environment {
+    /// Create a new `Environment` with the given block environment and
+    /// previous header.
+    pub const fn new(block_env: BlockEnv, prev_header: Header) -> Self {
+        Self { block_env, prev_header }
+    }
+
+    /// Get a reference to the block environment.
+    pub const fn block_env(&self) -> &BlockEnv {
+        &self.block_env
+    }
+
+    /// Get a reference to the previous block header.
+    pub const fn prev_header(&self) -> &Header {
+        &self.prev_header
+    }
+
+    /// Create a new empty `Environment` for testing purposes.
+    #[doc(hidden)]
+    pub fn for_testing() -> Self {
+        Self { block_env: Default::default(), prev_header: Header::default() }
+    }
+}
+
+/// Contains environments to simulate both host and rollup blocks.
 #[derive(Debug, Clone)]
 pub struct SimEnv {
-    /// The signet block environment, for rollup block simulation.
-    pub block_env: BlockEnv,
-    /// The header of the previous rollup block.
-    pub prev_header: Header,
-    /// The header of the previous host block.
-    pub prev_host: Header,
-    /// A tracing span associated with this block
+    /// The host environment, for host block simulation.
+    pub host: Environment,
+
+    /// The rollup environment, for rollup block simulation.
+    pub rollup: Environment,
+
+    /// A tracing span associated with this block simulation.
     pub span: Span,
 }
 
 impl SimEnv {
-    /// Returns the block number of the signet block environment.
-    pub const fn block_number(&self) -> u64 {
-        self.prev_header.number.saturating_add(1)
+    /// Get a reference to previous rollup header.
+    pub const fn prev_rollup(&self) -> &Header {
+        &self.rollup.prev_header
     }
 
-    /// Returns the host block number for the signet block environment.
+    /// Get a reference to the previous host header.
+    pub const fn prev_host(&self) -> &Header {
+        &self.host.prev_header
+    }
+
+    /// Get the block number of the rollup block environment.
+    pub const fn rollup_block_number(&self) -> u64 {
+        self.prev_rollup().number.saturating_add(1)
+    }
+
+    /// Get the block number for the host block environment.
     pub const fn host_block_number(&self) -> u64 {
-        self.prev_host.number.saturating_add(1)
+        self.prev_host().number.saturating_add(1)
     }
 
-    /// Returns a reference to the tracing span associated with this block env.
+    /// Get a reference to the rollup block environment.
+    pub const fn rollup_env(&self) -> &BlockEnv {
+        &self.rollup.block_env
+    }
+
+    /// Get a reference to the host block environment.
+    pub const fn host_env(&self) -> &BlockEnv {
+        &self.host.block_env
+    }
+
+    /// Get a reference to the tracing span associated with this block env.
     pub const fn span(&self) -> &Span {
         &self.span
     }
@@ -71,8 +122,8 @@ impl EnvTask {
     }
 
     /// Construct a [`BlockEnv`] by from the previous block header.
-    fn construct_block_env(&self, previous: &Header) -> BlockEnv {
-        BlockEnv {
+    fn construct_block_env(&self, previous: Header) -> Environment {
+        let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
             // NB: EXACTLY the same as the previous block
@@ -87,14 +138,15 @@ impl EnvTask {
                 excess_blob_gas: 0,
                 blob_gasprice: 0,
             }),
-        }
+        };
+        Environment::new(env, previous)
     }
 
     /// Returns a sender that sends [`SimEnv`] for communicating the next block environment.
     async fn task_fut(self, sender: watch::Sender<Option<SimEnv>>) {
         let span = info_span!("EnvTask::task_fut::init");
 
-        let mut headers = match self.ru_provider.subscribe_blocks().await {
+        let mut rollup_headers = match self.ru_provider.subscribe_blocks().await {
             Ok(poller) => poller,
             Err(err) => {
                 span_error!(span, %err, "Failed to subscribe to blocks");
@@ -106,7 +158,7 @@ impl EnvTask {
         drop(span);
 
         while let Some(rollup_header) =
-            headers.next().instrument(info_span!("EnvTask::task_fut::stream")).await
+            rollup_headers.next().instrument(info_span!("EnvTask::task_fut::stream")).await
         {
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
@@ -118,7 +170,7 @@ impl EnvTask {
                 span,
                 error!("error fetching previous host block - skipping block submission")
             );
-            let prev_host = opt_unwrap_or_continue!(
+            let host_header = opt_unwrap_or_continue!(
                 host_block_opt,
                 span,
                 warn!("previous host block not found - skipping block submission")
@@ -127,23 +179,17 @@ impl EnvTask {
             .inner;
 
             // Construct the block env using the previous block header
-            let signet_env = self.construct_block_env(&rollup_header);
+            let rollup_env = self.construct_block_env(rollup_header.into());
+            let host_env = self.construct_block_env(host_header);
+
             span_debug!(
                 span,
-                signet_env_number = signet_env.number.to::<u64>(),
-                signet_env_basefee = signet_env.basefee,
-                "constructed signet block env"
+                rollup_env_number = rollup_env.block_env.number.to::<u64>(),
+                rollup_env_basefee = rollup_env.block_env.basefee,
+                "constructed block env"
             );
 
-            if sender
-                .send(Some(SimEnv {
-                    span,
-                    block_env: signet_env,
-                    prev_header: rollup_header.inner,
-                    prev_host,
-                }))
-                .is_err()
-            {
+            if sender.send(Some(SimEnv { span, rollup: rollup_env, host: host_env })).is_err() {
                 // The receiver has been dropped, so we can stop the task.
                 tracing::debug!("receiver dropped, stopping task");
                 break;

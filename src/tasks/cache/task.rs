@@ -16,7 +16,7 @@ use tracing::{debug, info};
 #[derive(Debug)]
 pub struct CacheTask {
     /// The channel to receive the block environment.
-    env: watch::Receiver<Option<SimEnv>>,
+    envs: watch::Receiver<Option<SimEnv>>,
     /// The channel to receive the transaction bundles.
     bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
     /// The channel to receive the transactions.
@@ -30,7 +30,7 @@ impl CacheTask {
         bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
         txns: mpsc::UnboundedReceiver<TxEnvelope>,
     ) -> Self {
-        Self { env, bundles, txns }
+        Self { envs: env, bundles, txns }
     }
 
     async fn task_future(mut self, cache: SimCache) {
@@ -38,16 +38,19 @@ impl CacheTask {
             let mut basefee = 0;
             tokio::select! {
                 biased;
-                res = self.env.changed() => {
+                res = self.envs.changed() => {
                     if res.is_err() {
                         debug!("Cache task: env channel closed, exiting");
                         break;
                     }
-                    if let Some(env) = self.env.borrow_and_update().as_ref() {
-                        basefee = env.block_env.basefee;
-                        info!(basefee, block_env_number = env.block_env.number.to::<u64>(), block_env_timestamp = env.block_env.timestamp.to::<u64>(), "rollup block env changed, clearing cache");
+
+                    if let Some(env) = self.envs.borrow_and_update().as_ref() {
+                        let sim_env = env.rollup_env();
+
+                        basefee = sim_env.basefee;
+                        info!(basefee, block_env_number = sim_env.number.to::<u64>(), block_env_timestamp = sim_env.timestamp.to::<u64>(), "rollup block env changed, clearing cache");
                         cache.clean(
-                            env.block_env.number.to(), env.block_env.timestamp.to()
+                            sim_env.number.to(), sim_env.timestamp.to()
                         );
                     }
                 }
