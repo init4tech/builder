@@ -143,6 +143,7 @@ impl Simulator {
         let max_host_gas = self.config.max_host_gas(sim_env.prev_host().gas_limit);
 
         let (rollup_env, host_env) = self.create_envs(constants, &sim_env).await;
+        debug!(rollup_env = ?rollup_env, host_env = ?host_env, "building with block environments");
 
         let block_build = BlockBuild::new(
             rollup_env,
@@ -188,6 +189,7 @@ impl Simulator {
             &self.config.host_cfg_env(),
             sim_env.host_env(),
         );
+        debug!(?host_env, "created host env");
 
         // Rollup DB and Env
         let rollup_block_number = sim_env.rollup_block_number();
@@ -199,6 +201,7 @@ impl Simulator {
             &self.config.ru_cfg_env(),
             sim_env.rollup_env(),
         );
+        debug!(?rollup_env, "created rollup env");
 
         (rollup_env, host_env)
     }
