@@ -59,7 +59,7 @@ impl SimResult {
         self.sim_env.prev_host()
     }
 
-    /// Get a reference to the previous signet header.
+    /// Get a reference to the previous rollup header.
     pub const fn prev_rollup(&self) -> &Header {
         self.sim_env.prev_rollup()
     }
