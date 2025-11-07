@@ -5,7 +5,7 @@ use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::{consensus::Header, eips::BlockId, network::Ethereum};
+use alloy::{consensus::Header, eips::BlockId, network::Ethereum, providers::Provider};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     utils::calc::SlotCalculator,
@@ -183,6 +183,9 @@ impl Simulator {
         // Host DB and Env
         let host_db = self.create_host_db().await;
 
+        let height = sim_env.host_block_number();
+        debug!(%height, "creating host env at block number");
+
         let host_env = HostEnv::<HostAlloyDatabaseProvider, NoOpInspector>::new(
             host_db,
             constants.clone(),
@@ -303,8 +306,11 @@ impl Simulator {
         deadline.max(Instant::now())
     }
 
-    /// Creates an `AlloyDB` instnace from the host provider.
+    /// Creates an `AlloyDB` instance from the host provider.
     async fn create_host_db(&self) -> HostAlloyDatabaseProvider {
+        let block_height = self.host_provider.get_block_number().await.unwrap();
+        debug!(%block_height, "creating alloyDB at block height");
+
         let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::latest());
 
         // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
@@ -316,6 +322,8 @@ impl Simulator {
 
     /// Creates an `AlloyDB` instance from the rollup provider.
     fn create_rollup_db(&self, latest_block_number: u64) -> RollupAlloyDatabaseProvider {
+        debug!(%latest_block_number, "creating rollup alloyDB at block height");
+
         // Make an AlloyDB instance from the rollup provider with that latest block number
         let alloy_db: AlloyDB<Ethereum, RuProvider> =
             AlloyDB::new(self.ru_provider.clone(), BlockId::from(latest_block_number));
