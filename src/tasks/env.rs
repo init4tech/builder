@@ -121,8 +121,29 @@ impl EnvTask {
         Self { config, host_provider, ru_provider }
     }
 
-    /// Construct a [`BlockEnv`] by from the previous block header.
-    fn construct_block_env(&self, previous: Header) -> Environment {
+    /// Construct a [`BlockEnv`] by the previous host header.
+    fn construct_host_env(&self, previous: Header) -> Environment {
+        let env = BlockEnv {
+            number: U256::from(previous.number),
+            beneficiary: self.config.builder_rewards_address,
+            // NB: EXACTLY the same as the previous block
+            timestamp: U256::from(previous.timestamp + self.config.slot_calculator.slot_duration()),
+            gas_limit: self.config.max_host_gas(previous.gas_limit),
+            basefee: previous
+                .next_block_base_fee(BaseFeeParams::ethereum())
+                .expect("signet has no non-1559 headers"),
+            difficulty: U256::ZERO,
+            prevrandao: Some(B256::random()),
+            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
+                excess_blob_gas: 0,
+                blob_gasprice: 0,
+            }),
+        };
+        Environment::new(env, previous)
+    }
+
+    /// Construct a [`BlockEnv`] for the next rollup block from the previous block header.
+    fn construct_rollup_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
@@ -179,8 +200,8 @@ impl EnvTask {
             .inner;
 
             // Construct the block env using the previous block header
-            let rollup_env = self.construct_block_env(rollup_header.into());
-            let host_env = self.construct_block_env(host_header);
+            let rollup_env = self.construct_rollup_env(rollup_header.into());
+            let host_env = self.construct_host_env(host_header);
             
             debug!(host_env_block_number = ?host_env.block_env().number, %host_block_number, "host block number comparisons");
 

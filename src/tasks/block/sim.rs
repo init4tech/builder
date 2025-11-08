@@ -143,7 +143,7 @@ impl Simulator {
         let max_host_gas = self.config.max_host_gas(sim_env.prev_host().gas_limit);
 
         let (rollup_env, host_env) = self.create_envs(constants, &sim_env).await;
-        debug!(rollup_env = ?rollup_env, host_env = ?host_env, "building with block environments");
+        debug!(rollup_block_height = ?rollup_env.block().number, host_block_height = ?host_env.block().number, "building with block environments");
 
         let block_build = BlockBuild::new(
             rollup_env,
@@ -168,10 +168,6 @@ impl Simulator {
     }
 
     // Helper to create rollup + host envs from the sim env.
-    #[instrument(skip_all, fields(
-        rollup_block = sim_env.rollup_block_number(),
-        host_block = sim_env.host_block_number(),
-    ))]
     async fn create_envs(
         &self,
         constants: SignetSystemConstants,
@@ -183,8 +179,9 @@ impl Simulator {
         // Host DB and Env
         let host_db = self.create_host_db().await;
 
-        let height = sim_env.host_block_number();
-        debug!(%height, "creating host env at block number");
+        let host_block_number = sim_env.host_block_number();
+        let host_env_block_number = sim_env.host_env().number;
+        debug!(%host_block_number, %host_env_block_number, " host env comparisons");
 
         let host_env = HostEnv::<HostAlloyDatabaseProvider, NoOpInspector>::new(
             host_db,
@@ -309,7 +306,7 @@ impl Simulator {
     /// Creates an `AlloyDB` instance from the host provider.
     async fn create_host_db(&self) -> HostAlloyDatabaseProvider {
         let block_height = self.host_provider.get_block_number().await.unwrap();
-        debug!(%block_height, "creating alloyDB at block height");
+        debug!(%block_height, "creating host alloyDB at block height");
 
         let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::latest());
 
