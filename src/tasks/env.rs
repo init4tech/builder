@@ -173,8 +173,8 @@ impl SimEnv {
     /// This function will panic if not called within a Tokio runtime.
     pub fn sim_rollup_env(
         &self,
-        provider: RuProvider,
         constants: &SignetSystemConstants,
+        provider: RuProvider,
     ) -> SimRollupEnv {
         let rollup_cfg = SignetCfgEnv { chain_id: constants.ru_chain_id() };
         RollupEnv::new(self.rollup_db(provider), constants.clone(), &rollup_cfg, self.rollup_env())
@@ -188,8 +188,8 @@ impl SimEnv {
     /// This function will panic if not called within a Tokio runtime.
     pub fn sim_host_env(
         &self,
-        provider: HostProvider,
         constants: &SignetSystemConstants,
+        provider: HostProvider,
     ) -> SimHostEnv {
         let host_cfg = SignetCfgEnv { chain_id: constants.host_chain_id() };
         HostEnv::new(self.host_db(provider), constants.clone(), &host_cfg, self.host_env())

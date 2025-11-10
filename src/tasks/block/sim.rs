@@ -105,6 +105,11 @@ impl Simulator {
         &self.config.slot_calculator
     }
 
+    /// Get the system constants.
+    pub const fn constants(&self) -> &SignetSystemConstants {
+        &self.config.constants
+    }
+
     /// Handles building a single block.
     ///
     /// Builds a block in the block environment with items from the simulation cache
@@ -127,17 +132,16 @@ impl Simulator {
     ))]
     pub async fn handle_build(
         &self,
-        constants: &SignetSystemConstants,
         sim_items: SimCache,
         finish_by: Instant,
-        sim_env: SimEnv,
+        sim_env: &SimEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
         let max_host_gas = self.config.max_host_gas(sim_env.prev_host().gas_limit);
 
-        let rollup_env = sim_env.sim_rollup_env(self.ru_provider.clone(), constants);
+        let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
 
-        let host_env = sim_env.sim_host_env(self.host_provider.clone(), constants);
+        let host_env = sim_env.sim_host_env(self.constants(), self.host_provider.clone());
 
         let block_build = BlockBuild::new(
             rollup_env,
@@ -175,13 +179,12 @@ impl Simulator {
     /// A `JoinHandle` for the spawned task.
     pub fn spawn_simulator_task(
         self,
-        constants: SignetSystemConstants,
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<SimResult>,
     ) -> JoinHandle<()> {
         debug!("starting simulator task");
 
-        tokio::spawn(async move { self.run_simulator(constants, cache, submit_sender).await })
+        tokio::spawn(async move { self.run_simulator(cache, submit_sender).await })
     }
 
     /// This function runs indefinitely, waiting for the block environment to be set and checking
@@ -202,7 +205,6 @@ impl Simulator {
     /// - `submit_sender`: A channel sender used to submit built blocks.
     async fn run_simulator(
         mut self,
-        constants: SignetSystemConstants,
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<SimResult>,
     ) {
@@ -224,7 +226,7 @@ impl Simulator {
             let sim_cache = cache.clone();
 
             let Ok(block) = self
-                .handle_build(&constants, sim_cache, finish_by, sim_env.clone())
+                .handle_build(sim_cache, finish_by, &sim_env)
                 .instrument(span.clone())
                 .await
                 .inspect_err(|err| span_error!(span, %err, "error during block build"))

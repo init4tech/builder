@@ -16,7 +16,6 @@ use builder::{
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
 use signet_sim::SimCache;
-use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
 
 /// Tests the `handle_build` method of the `Simulator`.
@@ -31,7 +30,6 @@ async fn test_handle_build() {
 
     // Make a test config
     let config = setup_test_config().unwrap();
-    let constants = SignetSystemConstants::pecorino();
 
     // Create an anvil instance for testing
     let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
@@ -74,7 +72,7 @@ async fn test_handle_build() {
         rollup: Environment::new(block_env, ru_header),
         span: tracing::Span::none(),
     };
-    let got = block_builder.handle_build(&constants, sim_items, finish_by, sim_env).await;
+    let got = block_builder.handle_build(sim_items, finish_by, &sim_env).await;
 
     // Assert on the built block
     assert!(got.is_ok());
