@@ -137,7 +137,6 @@ impl Simulator {
         sim_env: &SimEnv,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
-        let max_host_gas = self.config.max_host_gas(sim_env.prev_host().gas_limit);
 
         let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
 
@@ -150,7 +149,7 @@ impl Simulator {
             concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
-            max_host_gas,
+            self.config.max_host_gas(sim_env.prev_host().gas_limit),
         );
 
         let built_block = block_build.build().in_current_span().await;

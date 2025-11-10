@@ -13,7 +13,7 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, debug, info_span};
+use tracing::{Instrument, Span, info_span};
 use trevm::revm::{
     context::BlockEnv,
     context_interface::block::BlobExcessGasAndPrice,
@@ -209,7 +209,7 @@ impl EnvTask {
     /// Construct a [`BlockEnv`] by the previous host header.
     fn construct_host_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
-            number: U256::from(previous.number),
+            number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
             // NB: EXACTLY the same as the previous block
             timestamp: U256::from(previous.timestamp + self.config.slot_calculator.slot_duration()),
@@ -287,8 +287,6 @@ impl EnvTask {
             // Construct the block env using the previous block header
             let rollup_env = self.construct_rollup_env(rollup_header.into());
             let host_env = self.construct_host_env(host_header);
-
-            debug!(host_env_block_number = ?host_env.block_env().number, %host_block_number, "host block number comparisons");
 
             span_debug!(
                 span,
