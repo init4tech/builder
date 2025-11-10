@@ -206,35 +206,14 @@ impl EnvTask {
         Self { config, host_provider, ru_provider }
     }
 
-    /// Construct a [`BlockEnv`] by the previous host header.
-    fn construct_host_env(&self, previous: Header) -> Environment {
+    /// Construct a [`BlockEnv`] for the _next_ block from the previous block's [`Header`].
+    fn construct_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
             // NB: EXACTLY the same as the previous block
             timestamp: U256::from(previous.timestamp + self.config.slot_calculator.slot_duration()),
             gas_limit: self.config.max_host_gas(previous.gas_limit),
-            basefee: previous
-                .next_block_base_fee(BaseFeeParams::ethereum())
-                .expect("signet has no non-1559 headers"),
-            difficulty: U256::ZERO,
-            prevrandao: Some(B256::random()),
-            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
-                excess_blob_gas: 0,
-                blob_gasprice: 0,
-            }),
-        };
-        Environment::new(env, previous)
-    }
-
-    /// Construct a [`BlockEnv`] for the next rollup block from the previous block header.
-    fn construct_rollup_env(&self, previous: Header) -> Environment {
-        let env = BlockEnv {
-            number: U256::from(previous.number + 1),
-            beneficiary: self.config.builder_rewards_address,
-            // NB: EXACTLY the same as the previous block
-            timestamp: U256::from(previous.timestamp + self.config.slot_calculator.slot_duration()),
-            gas_limit: self.config.rollup_block_gas_limit,
             basefee: previous
                 .next_block_base_fee(BaseFeeParams::ethereum())
                 .expect("signet has no non-1559 headers"),
@@ -284,9 +263,9 @@ impl EnvTask {
             .header
             .inner;
 
-            // Construct the block env using the previous block header
-            let rollup_env = self.construct_rollup_env(rollup_header.into());
-            let host_env = self.construct_host_env(host_header);
+            // Construct the block envs using the previous block headers for each.
+            let rollup_env = self.construct_env(rollup_header.into());
+            let host_env = self.construct_env(host_header);
 
             span_debug!(
                 span,
