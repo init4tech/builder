@@ -81,6 +81,16 @@ impl SimEnv {
     }
 
     /// Get the block number of the rollup block environment.
+    pub const fn prev_rollup_block_number(&self) -> u64 {
+        self.prev_rollup().number
+    }
+
+    /// Get the block number for the host block environment.
+    pub const fn prev_host_block_number(&self) -> u64 {
+        self.prev_host().number
+    }
+
+    /// Get the block number of the rollup block environment.
     pub const fn rollup_block_number(&self) -> u64 {
         self.prev_rollup().number.saturating_add(1)
     }
@@ -202,7 +212,7 @@ impl EnvTask {
             // Construct the block env using the previous block header
             let rollup_env = self.construct_rollup_env(rollup_header.into());
             let host_env = self.construct_host_env(host_header);
-            
+
             debug!(host_env_block_number = ?host_env.block_env().number, %host_block_number, "host block number comparisons");
 
             span_debug!(

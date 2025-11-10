@@ -5,7 +5,7 @@ use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::{consensus::Header, eips::BlockId, network::Ethereum, providers::Provider};
+use alloy::{consensus::Header, eips::BlockId, network::Ethereum};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     utils::calc::SlotCalculator,
@@ -177,11 +177,8 @@ impl Simulator {
         HostEnv<HostAlloyDatabaseProvider, NoOpInspector>,
     ) {
         // Host DB and Env
-        let host_db = self.create_host_db().await;
-
-        let host_block_number = sim_env.host_block_number();
-        let host_env_block_number = sim_env.host_env().number;
-        debug!(%host_block_number, %host_env_block_number, " host env comparisons");
+        let prev_host_block_number = sim_env.prev_host_block_number();
+        let host_db = self.create_host_db(prev_host_block_number).await;
 
         let host_env = HostEnv::<HostAlloyDatabaseProvider, NoOpInspector>::new(
             host_db,
@@ -192,8 +189,8 @@ impl Simulator {
         debug!(?host_env, "created host env");
 
         // Rollup DB and Env
-        let rollup_block_number = sim_env.rollup_block_number();
-        let rollup_db = self.create_rollup_db(rollup_block_number);
+        let prev_rollup_block_number = sim_env.prev_rollup_block_number();
+        let rollup_db = self.create_rollup_db(prev_rollup_block_number);
 
         let rollup_env = RollupEnv::<RollupAlloyDatabaseProvider, NoOpInspector>::new(
             rollup_db,
@@ -304,11 +301,10 @@ impl Simulator {
     }
 
     /// Creates an `AlloyDB` instance from the host provider.
-    async fn create_host_db(&self) -> HostAlloyDatabaseProvider {
-        let block_height = self.host_provider.get_block_number().await.unwrap();
-        debug!(%block_height, "creating host alloyDB at block height");
+    async fn create_host_db(&self, latest_block_number: u64) -> HostAlloyDatabaseProvider {
+        debug!(%latest_block_number, "creating host alloyDB at block height");
 
-        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::latest());
+        let alloy_db = AlloyDB::new(self.host_provider.clone(), BlockId::from(latest_block_number));
 
         // Wrap the AlloyDB instance in a WrapDatabaseAsync and return it.
         // This is safe to unwrap because the main function sets the proper runtime settings.
