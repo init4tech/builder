@@ -110,10 +110,6 @@ pub struct BuilderConfig {
     )]
     pub flashbots_endpoint: Option<url::Url>,
 
-    /// Address of the Zenith contract on Host.
-    #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
-    pub zenith_address: Address,
-
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
     #[from_env(
@@ -261,7 +257,7 @@ impl BuilderConfig {
 
     /// Connect to the Zenith instance, using the specified provider.
     pub const fn connect_zenith(&self, provider: HostProvider) -> ZenithInstance {
-        Zenith::new(self.zenith_address, provider)
+        Zenith::new(self.constants.host_zenith(), provider)
     }
 
     /// Get an oauth2 token for the builder, starting the authenticator if it
