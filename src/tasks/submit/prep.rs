@@ -119,7 +119,11 @@ impl<'a> SubmitPrep<'a> {
         debug!(nonce, "assigned nonce to rollup block transaction");
 
         // Create a blob transaction with the blob header and signature values and return it
-        let tx = self.build_blob_tx().await?.with_to(self.config.constants.host_zenith()).with_nonce(nonce);
+        let tx = self
+            .build_blob_tx()
+            .await?
+            .with_to(self.config.constants.host_zenith())
+            .with_nonce(nonce);
 
         Ok(tx)
     }
