@@ -1,14 +1,35 @@
-use crate::config::{BuilderConfig, HostProvider, RuProvider};
+use crate::{
+    config::{BuilderConfig, HostProvider, RuProvider},
+    tasks::block::cfg::SignetCfgEnv,
+};
 use alloy::{
     consensus::Header,
     eips::eip1559::BaseFeeParams,
+    network::Ethereum,
     primitives::{B256, U256},
-    providers::Provider,
+    providers::{Provider, network::Network},
 };
+use signet_constants::SignetSystemConstants;
+use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
 use tracing::{Instrument, Span, debug, info_span};
-use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
+use trevm::revm::{
+    context::BlockEnv,
+    context_interface::block::BlobExcessGasAndPrice,
+    database::{AlloyDB, WrapDatabaseAsync},
+    inspector::NoOpInspector,
+};
+
+/// Type aliases for database providers.
+pub type HostAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, HostProvider>>;
+/// Type aliases for database providers.
+pub type RollupAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuProvider>>;
+
+/// Type aliases for simulation environments.
+pub type SimRollupEnv = RollupEnv<RollupAlloyDatabaseProvider, NoOpInspector>;
+/// Type aliases for simulation environments.
+pub type SimHostEnv = HostEnv<HostAlloyDatabaseProvider, NoOpInspector>;
 
 /// A task that constructs a BlockEnv for the next block in the rollup chain.
 #[derive(Debug, Clone)]
@@ -53,6 +74,11 @@ impl Environment {
     #[doc(hidden)]
     pub fn for_testing() -> Self {
         Self { block_env: Default::default(), prev_header: Header::default() }
+    }
+
+    /// Create a new [`AlloyDB`] for this environment using the given provider.
+    pub fn alloy_db<N: Network, P: Provider<N>>(&self, provider: P) -> AlloyDB<N, P> {
+        AlloyDB::new(provider, self.prev_header.number.into())
     }
 }
 
@@ -118,6 +144,55 @@ impl SimEnv {
     /// Clones the span for use in other tasks.
     pub fn clone_span(&self) -> Span {
         self.span.clone()
+    }
+
+    /// Create an [`AlloyDB`] for the rollup environment using the given
+    /// provider.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if not called within a Tokio runtime.
+    pub fn rollup_db(&self, provider: RuProvider) -> RollupAlloyDatabaseProvider {
+        WrapDatabaseAsync::new(self.rollup.alloy_db(provider)).expect("in tokio runtime")
+    }
+
+    /// Create an [`AlloyDB`] for the host environment using the given provider.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if not called within a Tokio runtime.
+    pub fn host_db(&self, provider: HostProvider) -> HostAlloyDatabaseProvider {
+        WrapDatabaseAsync::new(self.host.alloy_db(provider)).expect("in tokio runtime")
+    }
+
+    /// Create a simulated rollup environment using the given provider,
+    /// constants, and configuration.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if not called within a Tokio runtime.
+    pub fn sim_rollup_env(
+        &self,
+        provider: RuProvider,
+        constants: &SignetSystemConstants,
+        cfg: &SignetCfgEnv,
+    ) -> SimRollupEnv {
+        RollupEnv::new(self.rollup_db(provider), constants.clone(), cfg, self.rollup_env())
+    }
+
+    /// Create a simulated host environment using the given provider,
+    /// constants, and configuration.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if not called within a Tokio runtime.
+    pub fn sim_host_env(
+        &self,
+        provider: HostProvider,
+        constants: &SignetSystemConstants,
+        config: &SignetCfgEnv,
+    ) -> SimHostEnv {
+        HostEnv::new(self.host_db(provider), constants.clone(), config, self.host_env())
     }
 }
 
