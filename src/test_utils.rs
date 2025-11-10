@@ -23,8 +23,6 @@ use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndP
 pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
         // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
-        host_chain_id: 11155111, // Sepolia chain ID
-        ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
         host_rpc: "ws://host-rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .map(ProviderConfig::new)

@@ -62,8 +62,8 @@ impl<'a> SubmitPrep<'a> {
 
             SignRequest {
                 host_block_number: U256::from(host_block_number),
-                host_chain_id: U256::from(self.config.host_chain_id),
-                ru_chain_id: U256::from(self.config.ru_chain_id),
+                host_chain_id: U256::from(self.config.constants.host_chain_id()),
+                ru_chain_id: U256::from(self.config.constants.ru_chain_id()),
                 gas_limit: U256::from(self.config.rollup_block_gas_limit),
                 ru_reward_address: self.config.builder_rewards_address,
                 contents: *self.block.contents_hash(),

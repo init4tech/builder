@@ -1,4 +1,4 @@
-use crate::{quincey::Quincey, tasks::block::cfg::SignetCfgEnv};
+use crate::quincey::Quincey;
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -66,14 +66,6 @@ pub const DEFAULT_CONCURRENCY_LIMIT: usize = 8;
 /// chain.
 #[derive(Debug, Clone, FromEnv)]
 pub struct BuilderConfig {
-    /// The chain ID of the host chain.
-    #[from_env(var = "HOST_CHAIN_ID", desc = "The chain ID of the host chain")]
-    pub host_chain_id: u64,
-
-    /// The chain ID of the rollup chain.
-    #[from_env(var = "RU_CHAIN_ID", desc = "The chain ID of the rollup chain")]
-    pub ru_chain_id: u64,
-
     /// URL for Host RPC node.
     #[from_env(
         var = "HOST_RPC_URL",
@@ -187,7 +179,7 @@ impl BuilderConfig {
         static ONCE: tokio::sync::OnceCell<LocalOrAws> = tokio::sync::OnceCell::const_new();
 
         ONCE.get_or_try_init(|| async {
-            LocalOrAws::load(&self.builder_key, Some(self.host_chain_id)).await
+            LocalOrAws::load(&self.builder_key, Some(self.constants.host_chain_id())).await
         })
         .await
         .cloned()
@@ -197,7 +189,7 @@ impl BuilderConfig {
     /// Connect to the Sequencer signer.
     pub async fn connect_sequencer_signer(&self) -> eyre::Result<Option<LocalOrAws>> {
         if let Some(sequencer_key) = &self.sequencer_key {
-            LocalOrAws::load(sequencer_key, Some(self.host_chain_id))
+            LocalOrAws::load(sequencer_key, Some(self.constants.host_chain_id()))
                 .await
                 .map_err(Into::into)
                 .map(Some)
@@ -276,16 +268,6 @@ impl BuilderConfig {
         let token = self.oauth_token();
 
         Ok(Quincey::new_remote(client, url, token))
-    }
-
-    /// Create a rollup [`SignetCfgEnv`] using this config.
-    pub const fn ru_cfg_env(&self) -> SignetCfgEnv {
-        SignetCfgEnv { chain_id: self.ru_chain_id }
-    }
-
-    /// Create a host [`SignetCfgEnv`] using this config.
-    pub const fn host_cfg_env(&self) -> SignetCfgEnv {
-        SignetCfgEnv { chain_id: self.host_chain_id }
     }
 
     /// Memoizes the concurrency limit for the current system. Uses [`std::thread::available_parallelism`] if no
