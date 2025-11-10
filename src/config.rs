@@ -114,13 +114,6 @@ pub struct BuilderConfig {
     #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
     pub zenith_address: Address,
 
-    /// Address of the Builder Helper contract on Host.
-    #[from_env(
-        var = "BUILDER_HELPER_ADDRESS",
-        desc = "address of the Builder Helper contract on Host"
-    )]
-    pub builder_helper_address: Address,
-
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
     #[from_env(
