@@ -175,9 +175,9 @@ impl SimEnv {
         &self,
         provider: RuProvider,
         constants: &SignetSystemConstants,
-        cfg: &SignetCfgEnv,
     ) -> SimRollupEnv {
-        RollupEnv::new(self.rollup_db(provider), constants.clone(), cfg, self.rollup_env())
+        let rollup_cfg = SignetCfgEnv { chain_id: constants.ru_chain_id() };
+        RollupEnv::new(self.rollup_db(provider), constants.clone(), &rollup_cfg, self.rollup_env())
     }
 
     /// Create a simulated host environment using the given provider,
@@ -190,9 +190,9 @@ impl SimEnv {
         &self,
         provider: HostProvider,
         constants: &SignetSystemConstants,
-        config: &SignetCfgEnv,
     ) -> SimHostEnv {
-        HostEnv::new(self.host_db(provider), constants.clone(), config, self.host_env())
+        let host_cfg = SignetCfgEnv { chain_id: constants.host_chain_id() };
+        HostEnv::new(self.host_db(provider), constants.clone(), &host_cfg, self.host_env())
     }
 }
 

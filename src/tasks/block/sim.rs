@@ -135,14 +135,9 @@ impl Simulator {
         let concurrency_limit = self.config.concurrency_limit();
         let max_host_gas = self.config.max_host_gas(sim_env.prev_host().gas_limit);
 
-        let rollup_env =
-            sim_env.sim_rollup_env(self.ru_provider.clone(), constants, &self.config.ru_cfg_env());
+        let rollup_env = sim_env.sim_rollup_env(self.ru_provider.clone(), constants);
 
-        let host_env = sim_env.sim_host_env(
-            self.host_provider.clone(),
-            constants,
-            &self.config.host_cfg_env(),
-        );
+        let host_env = sim_env.sim_host_env(self.host_provider.clone(), constants);
 
         let block_build = BlockBuild::new(
             rollup_env,
