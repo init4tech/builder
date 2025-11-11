@@ -34,7 +34,6 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .unwrap()
             .try_into()
             .unwrap(),
-        tx_broadcast_urls: vec!["http://localhost:9000".into()],
         flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()),
         zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),

@@ -92,16 +92,6 @@ pub struct BuilderConfig {
     #[from_env(var = "TX_POOL_URL", desc = "URL of the tx pool to poll for incoming transactions")]
     pub tx_pool_url: url::Url,
 
-    /// Additional RPC URLs to which the builder should broadcast transactions.
-    /// * Should not include the `HOST_RPC_URL` value, as that is already sent to by default.
-    /// * Setting this can incur `already known` errors.
-    #[from_env(
-        var = "TX_BROADCAST_URLS",
-        desc = "Additional RPC URLs to which the builder broadcasts transactions",
-        optional
-    )]
-    pub tx_broadcast_urls: Vec<Cow<'static, str>>,
-
     /// Configuration for the Flashbots provider to submit
     /// SignetBundles and Rollup blocks to the Host chain
     /// as private MEV bundles via Flashbots.
@@ -246,17 +236,6 @@ impl BuilderConfig {
         let flashbots: FlashbotsProvider =
             ProviderBuilder::new().wallet(signer).connect_http(endpoint);
         Ok(flashbots)
-    }
-
-    /// Connect additional broadcast providers.
-    pub fn connect_additional_broadcast(&self) -> Vec<RootProvider> {
-        self.tx_broadcast_urls
-            .iter()
-            .map(|url| {
-                let url = url.parse::<url::Url>().expect("Invalid URL in tx_broadcast_urls");
-                RootProvider::new_http(url)
-            })
-            .collect::<Vec<_>>()
     }
 
     /// Connect to the Zenith instance, using the specified provider.
