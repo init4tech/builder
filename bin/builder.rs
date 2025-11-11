@@ -1,7 +1,10 @@
 use builder::{
     config::BuilderConfig,
     service::serve_builder,
-    tasks::{block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask},
+    tasks::{
+        block::sim::Simulator, cache::CacheTasks, env::EnvTask, metrics::MetricsTask,
+        submit::FlashbotsTask,
+    },
 };
 use init4_bin_base::{
     deps::tracing::{info, info_span},
@@ -33,13 +36,12 @@ async fn main() -> eyre::Result<()> {
     let cache_system = cache_tasks.spawn();
 
     // Set up the metrics task
-    let metrics = MetricsTask { host_provider };
+    let metrics = MetricsTask::new(host_provider.clone());
     let (tx_channel, metrics_jh) = metrics.spawn();
 
-    // Set up the submit task. This will be either a Flashbots task or a
-    // BuilderHelper task depending on whether a Flashbots endpoint is
-    // configured.
-    let (submit_channel, submit_jh) = config.spawn_submit_task(tx_channel).await?;
+    // Spawn the Flashbots task
+    let submit = FlashbotsTask::new(config.clone(), tx_channel).await?;
+    let (submit_channel, submit_jh) = submit.spawn();
 
     // Set up the simulator
     let sim = Simulator::new(&config, ru_provider.clone(), block_env);
