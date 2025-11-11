@@ -1,13 +1,7 @@
-use crate::{
-    quincey::Quincey,
-    tasks::{
-        block::{cfg::SignetCfgEnv, sim::SimResult},
-        submit::FlashbotsTask,
-    },
-};
+use crate::{quincey::Quincey, tasks::block::cfg::SignetCfgEnv};
 use alloy::{
     network::{Ethereum, EthereumWallet},
-    primitives::{Address, TxHash},
+    primitives::Address,
     providers::{
         self, Identity, ProviderBuilder, RootProvider,
         fillers::{
@@ -29,8 +23,7 @@ use init4_bin_base::{
 use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
-use tokio::{join, sync::mpsc::UnboundedSender, task::JoinHandle};
-use tracing::info;
+use tokio::join;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -109,15 +102,12 @@ pub struct BuilderConfig {
     )]
     pub tx_broadcast_urls: Vec<Cow<'static, str>>,
 
-    /// Configuration for the Flashbots provider.
-    /// * If set, the builder will submit blocks as MEV bundles to Flashbots instead of
-    ///   submitting them directly to the Host chain.
-    /// * If not set, the builder defaults to submitting blocks directly to the Host chain
-    ///   using the Builder Helper contract.
+    /// Configuration for the Flashbots provider to submit
+    /// SignetBundles and Rollup blocks to the Host chain
+    /// as private MEV bundles via Flashbots.
     #[from_env(
         var = "FLASHBOTS_ENDPOINT",
-        desc = "Flashbots endpoint for privately submitting rollup blocks",
-        optional
+        desc = "Flashbots endpoint for privately submitting Signet bundles"
     )]
     pub flashbots_endpoint: Option<url::Url>,
 
@@ -322,18 +312,5 @@ impl BuilderConfig {
                 .map(|p| p.get())
                 .unwrap_or(DEFAULT_CONCURRENCY_LIMIT)
         })
-    }
-
-    /// Spawn a submit task, either Flashbots or BuilderHelper depending on
-    /// configuration.
-    pub async fn spawn_submit_task(
-        &self,
-        tx_channel: UnboundedSender<TxHash>,
-    ) -> eyre::Result<(UnboundedSender<SimResult>, JoinHandle<()>)> {
-        let url = self.flashbots_endpoint.as_ref().expect("flashbots endpoint must be configured");
-        info!(url = url.as_str(), "spawning flashbots submit task");
-        let submit = FlashbotsTask::new(self.clone(), tx_channel).await?;
-        let (submit_channel, submit_jh) = submit.spawn();
-        Ok((submit_channel, submit_jh))
     }
 }
