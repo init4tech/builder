@@ -1,6 +1,7 @@
 //! Tests for the block building task.
 
 use alloy::{
+    eips::BlockId,
     network::Ethereum,
     node_bindings::Anvil,
     primitives::U256,
@@ -8,11 +9,13 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use builder::{
-    tasks::{block::sim::Simulator, env::EnvTask},
+    tasks::{
+        block::sim::Simulator,
+        env::{EnvTask, Environment, SimEnv},
+    },
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
 };
 use signet_sim::SimCache;
-use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
 
 /// Tests the `handle_build` method of the `Simulator`.
@@ -23,13 +26,10 @@ use std::time::{Duration, Instant};
 #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_handle_build() {
-    use alloy::eips::BlockId;
-
     setup_logging();
 
     // Make a test config
     let config = setup_test_config().unwrap();
-    let constants = SignetSystemConstants::pecorino();
 
     // Create an anvil instance for testing
     let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
@@ -41,16 +41,13 @@ async fn test_handle_build() {
 
     // Create a rollup provider
     let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
+    let host_provider = config.connect_host_provider().await.unwrap();
 
-    let block_env = EnvTask::new(
-        config.clone(),
-        config.connect_host_provider().await.unwrap(),
-        ru_provider.clone(),
-    )
-    .spawn()
-    .0;
+    let block_env =
+        EnvTask::new(config.clone(), host_provider.clone(), ru_provider.clone()).spawn().0;
 
-    let block_builder = Simulator::new(&config, ru_provider.clone(), block_env);
+    let block_builder =
+        Simulator::new(&config, host_provider.clone(), ru_provider.clone(), block_env);
 
     // Setup a sim cache
     let sim_items = SimCache::new();
@@ -62,15 +59,20 @@ async fn test_handle_build() {
     let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
     sim_items.add_tx(tx_2, 0);
 
-    // Setup the block env
+    // Setup the block envs
     let finish_by = Instant::now() + Duration::from_secs(2);
-    let header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
-    let number = header.number + 1;
-    let timestamp = header.timestamp + config.slot_calculator.slot_duration();
+    let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let number = ru_header.number + 1;
+    let timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
     let block_env = test_block_env(config, number, 7, timestamp);
 
     // Spawn the block builder task
-    let got = block_builder.handle_build(constants, sim_items, finish_by, block_env).await;
+    let sim_env = SimEnv {
+        host: Environment::for_testing(),
+        rollup: Environment::new(block_env, ru_header),
+        span: tracing::Span::none(),
+    };
+    let got = block_builder.handle_build(sim_items, finish_by, &sim_env).await;
 
     // Assert on the built block
     assert!(got.is_ok());

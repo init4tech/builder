@@ -6,7 +6,7 @@ use crate::{
 use alloy::{
     consensus::{Header, SimpleCoder},
     network::{TransactionBuilder, TransactionBuilder4844},
-    primitives::{B256, U256},
+    primitives::{B256, Bytes, U256},
     providers::{Provider, WalletProvider},
     rpc::types::TransactionRequest,
     sol_types::SolCall,
@@ -14,7 +14,7 @@ use alloy::{
 use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
-use signet_zenith::BundleHelper;
+use signet_zenith::Zenith;
 use tracing::{Instrument, debug};
 
 /// Preparation logic for transactions issued to the host chain by the
@@ -62,8 +62,8 @@ impl<'a> SubmitPrep<'a> {
 
             SignRequest {
                 host_block_number: U256::from(host_block_number),
-                host_chain_id: U256::from(self.config.host_chain_id),
-                ru_chain_id: U256::from(self.config.ru_chain_id),
+                host_chain_id: U256::from(self.config.constants.host_chain_id()),
+                ru_chain_id: U256::from(self.config.constants.ru_chain_id()),
                 gas_limit: U256::from(self.config.rollup_block_gas_limit),
                 ru_reward_address: self.config.builder_rewards_address,
                 contents: *self.block.contents_hash(),
@@ -92,26 +92,20 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Converts the fills in the block to a vector of `FillPermit2`.
-    fn fills(&self) -> Vec<BundleHelper::FillPermit2> {
-        utils::convert_fills(self.block)
-    }
-
     /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
     async fn build_blob_tx(&self) -> eyre::Result<TransactionRequest> {
         let (v, r, s) = self.quincey_signature().await?;
 
-        // Build the block header
-        let header = BundleHelper::BlockHeader {
-            hostBlockNumber: self.sig_request().host_block_number,
+        let header = Zenith::BlockHeader {
             rollupChainId: U256::from(self.config.constants.ru_chain_id()),
+            hostBlockNumber: self.sig_request().host_block_number,
             gasLimit: self.sig_request().gas_limit,
             rewardAddress: self.sig_request().ru_reward_address,
             blockDataHash: *self.block.contents_hash(),
         };
-        debug!(?header.hostBlockNumber, "built rollup block header");
+        debug!(?header.hostBlockNumber, "built zenith block header");
 
-        let data = BundleHelper::submitCall { fills: self.fills(), header, v, r, s }.abi_encode();
+        let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
 
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
@@ -128,7 +122,7 @@ impl<'a> SubmitPrep<'a> {
         let tx = self
             .build_blob_tx()
             .await?
-            .with_to(self.config.builder_helper_address)
+            .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
 
         Ok(tx)

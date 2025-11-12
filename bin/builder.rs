@@ -44,9 +44,8 @@ async fn main() -> eyre::Result<()> {
     let (submit_channel, submit_jh) = submit.spawn();
 
     // Set up the simulator
-    let sim = Simulator::new(&config, ru_provider.clone(), block_env);
-    let build_jh =
-        sim.spawn_simulator_task(config.constants.clone(), cache_system.sim_cache, submit_channel);
+    let sim = Simulator::new(&config, host_provider, ru_provider, block_env);
+    let build_jh = sim.spawn_simulator_task(cache_system.sim_cache, submit_channel);
 
     // Start the healthcheck server
     let server = serve_builder(([0, 0, 0, 0], config.builder_port));

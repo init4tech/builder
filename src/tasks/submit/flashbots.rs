@@ -79,7 +79,7 @@ impl FlashbotsTask {
             self.config.clone(),
         );
 
-        let tx = prep.prep_transaction(&sim_result.sim_env.prev_host).await?;
+        let tx = prep.prep_transaction(sim_result.prev_host()).await?;
 
         let sendable = self.host_provider().fill(tx.into_request()).await?;
 
@@ -91,7 +91,7 @@ impl FlashbotsTask {
 
         let bundle_body = sim_result
             .block
-            .host_txns()
+            .host_transactions()
             .iter()
             .cloned()
             .chain(std::iter::once(tx_bytes))

@@ -18,17 +18,17 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.13.1", features = ["perms", "aws" ] }
+init4-bin-base = { version = "0.16.0", features = ["perms", "aws"] }
 
-signet-constants = { version = "0.11.2" }
-signet-sim = { version = "0.11.2" }
-signet-tx-cache = { version = "0.11.2" }
-signet-types = { version = "0.11.2" }
-signet-zenith = { version = "0.11.2" }
+signet-constants = { version = "0.13.0" }
+signet-sim = { version = "0.13.0" }
+signet-tx-cache = { version = "0.13.0" }
+signet-types = { version = "0.13.0" }
+signet-zenith = { version = "0.13.0" }
 
-trevm = { version = "0.29.0", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.29", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "1.0.37", features = [
+alloy = { version = "1.0.35", features = [
     "full",
     "json-rpc",
     "signer-aws",
@@ -39,7 +39,7 @@ alloy = { version = "1.0.37", features = [
     "node-bindings",
     "serde",
     "getrandom",
-    "provider-mev-api"
+    "provider-mev-api",
 ] }
 
 axum = "0.7.5"
@@ -52,3 +52,16 @@ tracing = "0.1.41"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
 url = "2.5.4"
+
+# comment / uncomment for local dev
+# [patch.crates-io]
+# signet-constants = { path = "../signet-sdk/crates/constants" }
+# signet-types = { path = "../signet-sdk/crates/types" }
+# signet-zenith = { path = "../signet-sdk/crates/zenith" }
+# signet-sim = { path = "../signet-sdk/crates/sim" }
+# signet-evm = { path = "../signet-sdk/crates/evm" }
+# signet-extract = { path = "../signet-sdk/crates/extract" }
+# signet-journal = { path = "../signet-sdk/crates/journal" }
+# signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
+# signet-bundle = { path = "../signet-sdk/crates/bundle" }
+# init4-bin-base = { path = "../bin-base" }

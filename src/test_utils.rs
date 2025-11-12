@@ -23,8 +23,6 @@ use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndP
 pub fn setup_test_config() -> Result<BuilderConfig> {
     let config = BuilderConfig {
         // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
-        host_chain_id: 11155111, // Sepolia chain ID
-        ru_chain_id: signet_constants::pecorino::RU_CHAIN_ID,
         host_rpc: "ws://host-rpc.pecorino.signet.sh"
             .parse::<BuiltInConnectionString>()
             .map(ProviderConfig::new)
@@ -35,7 +33,6 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             .try_into()
             .unwrap(),
         flashbots_endpoint: Some("https://relay-sepolia.flashbots.net:443".parse().unwrap()),
-        zenith_address: Address::default(),
         quincey_url: "http://localhost:8080".into(),
         sequencer_key: None,
         builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
@@ -51,12 +48,12 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             oauth_token_url: "http://localhost:8080".parse().unwrap(),
             oauth_token_refresh_interval: 300, // 5 minutes
         },
-        builder_helper_address: Address::default(),
         concurrency_limit: None, // NB: Defaults to available parallelism
         slot_calculator: SlotCalculator::new(
             1740681556, // pecorino start timestamp as sane default
             0, 1,
         ),
+        max_host_gas_coefficient: Some(80),
         constants: SignetSystemConstants::pecorino(),
     };
     Ok(config)

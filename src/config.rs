@@ -1,4 +1,4 @@
-use crate::{quincey::Quincey, tasks::block::cfg::SignetCfgEnv};
+use crate::quincey::Quincey;
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
@@ -66,14 +66,6 @@ pub const DEFAULT_CONCURRENCY_LIMIT: usize = 8;
 /// chain.
 #[derive(Debug, Clone, FromEnv)]
 pub struct BuilderConfig {
-    /// The chain ID of the host chain.
-    #[from_env(var = "HOST_CHAIN_ID", desc = "The chain ID of the host chain")]
-    pub host_chain_id: u64,
-
-    /// The chain ID of the rollup chain.
-    #[from_env(var = "RU_CHAIN_ID", desc = "The chain ID of the rollup chain")]
-    pub ru_chain_id: u64,
-
     /// URL for Host RPC node.
     #[from_env(
         var = "HOST_RPC_URL",
@@ -100,17 +92,6 @@ pub struct BuilderConfig {
         desc = "Flashbots endpoint for privately submitting Signet bundles"
     )]
     pub flashbots_endpoint: Option<url::Url>,
-
-    /// Address of the Zenith contract on Host.
-    #[from_env(var = "ZENITH_ADDRESS", desc = "address of the Zenith contract on Host")]
-    pub zenith_address: Address,
-
-    /// Address of the Builder Helper contract on Host.
-    #[from_env(
-        var = "BUILDER_HELPER_ADDRESS",
-        desc = "address of the Builder Helper contract on Host"
-    )]
-    pub builder_helper_address: Address,
 
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
@@ -165,10 +146,18 @@ pub struct BuilderConfig {
     )]
     pub concurrency_limit: Option<usize>,
 
+    /// Optional maximum host gas coefficient to use when building blocks.
+    /// Defaults to 80% (80) if not set.
+    #[from_env(
+        var = "MAX_HOST_GAS_COEFFICIENT",
+        desc = "Optional maximum host gas coefficient, as a percentage, to use when building blocks",
+        default = 80
+    )]
+    pub max_host_gas_coefficient: Option<u8>,
+
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 
-    // TODO: Make this compatible with FromEnv again, somehow it broke
     /// The signet system constants.
     pub constants: SignetSystemConstants,
 }
@@ -179,7 +168,7 @@ impl BuilderConfig {
         static ONCE: tokio::sync::OnceCell<LocalOrAws> = tokio::sync::OnceCell::const_new();
 
         ONCE.get_or_try_init(|| async {
-            LocalOrAws::load(&self.builder_key, Some(self.host_chain_id)).await
+            LocalOrAws::load(&self.builder_key, Some(self.constants.host_chain_id())).await
         })
         .await
         .cloned()
@@ -189,7 +178,7 @@ impl BuilderConfig {
     /// Connect to the Sequencer signer.
     pub async fn connect_sequencer_signer(&self) -> eyre::Result<Option<LocalOrAws>> {
         if let Some(sequencer_key) = &self.sequencer_key {
-            LocalOrAws::load(sequencer_key, Some(self.host_chain_id))
+            LocalOrAws::load(sequencer_key, Some(self.constants.host_chain_id()))
                 .await
                 .map_err(Into::into)
                 .map(Some)
@@ -240,7 +229,7 @@ impl BuilderConfig {
 
     /// Connect to the Zenith instance, using the specified provider.
     pub const fn connect_zenith(&self, provider: HostProvider) -> ZenithInstance {
-        Zenith::new(self.zenith_address, provider)
+        Zenith::new(self.constants.host_zenith(), provider)
     }
 
     /// Get an oauth2 token for the builder, starting the authenticator if it
@@ -270,11 +259,6 @@ impl BuilderConfig {
         Ok(Quincey::new_remote(client, url, token))
     }
 
-    /// Create a [`SignetCfgEnv`] using this config.
-    pub const fn cfg_env(&self) -> SignetCfgEnv {
-        SignetCfgEnv { chain_id: self.ru_chain_id }
-    }
-
     /// Memoizes the concurrency limit for the current system. Uses [`std::thread::available_parallelism`] if no
     /// value is set. If that for some reason fails, it returns the default concurrency limit.
     pub fn concurrency_limit(&self) -> usize {
@@ -291,5 +275,12 @@ impl BuilderConfig {
                 .map(|p| p.get())
                 .unwrap_or(DEFAULT_CONCURRENCY_LIMIT)
         })
+    }
+
+    /// Returns the maximum host gas to use for block building based on the configured max host gas coefficient.
+    pub fn max_host_gas(&self, gas_limit: u64) -> u64 {
+        // Set max host gas to a percentage of the host block gas limit
+        ((gas_limit as u128 * (self.max_host_gas_coefficient.unwrap_or(80) as u128)) / 100u128)
+            as u64
     }
 }

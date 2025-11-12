@@ -4,13 +4,6 @@ use alloy::{
     primitives::{B256, Signature},
     rpc::types::TransactionRequest,
 };
-use signet_sim::BuiltBlock;
-use signet_zenith::BundleHelper::FillPermit2;
-
-// This function converts &[SignedFill] into [FillPermit2]
-pub(crate) fn convert_fills(block: &BuiltBlock) -> Vec<FillPermit2> {
-    block.host_fills().iter().map(FillPermit2::from).collect()
-}
 
 /// Extracts the components of a signature.
 /// Currently alloy has no function for extracting the components of a signature.
