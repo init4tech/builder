@@ -22,21 +22,6 @@ use tokio::{
 };
 use tracing::{Instrument, Span, debug, instrument};
 
-/// `Simulator` is responsible for periodically building blocks and submitting them for
-/// signing and inclusion in the blockchain. It wraps a rollup provider and a slot
-/// calculator with a builder configuration.
-#[derive(Debug)]
-pub struct Simulator {
-    /// Configuration for the builder.
-    pub config: BuilderConfig,
-    /// Host Provider to interact with the host chain.
-    pub host_provider: HostProvider,
-    /// A provider that cannot sign transactions, used for interacting with the rollup.
-    pub ru_provider: RuProvider,
-    /// The block configuration environment on which to simulate
-    pub sim_env: watch::Receiver<Option<SimEnv>>,
-}
-
 /// SimResult bundles a BuiltBlock to the BlockEnv it was simulated against.
 #[derive(Debug, Clone)]
 pub struct SimResult {
@@ -79,25 +64,30 @@ impl SimResult {
     }
 }
 
-impl Simulator {
-    /// Creates a new `Simulator` instance.
-    ///
-    /// # Arguments
-    ///
-    /// - `config`: The configuration for the builder.
-    /// - `ru_provider`: A provider for interacting with the rollup.
-    /// - `block_env`: A receiver for the block environment to simulate against.
-    ///
-    /// # Returns
-    ///
-    /// A new `Simulator` instance.
-    pub fn new(
-        config: &BuilderConfig,
-        host_provider: HostProvider,
-        ru_provider: RuProvider,
-        sim_env: watch::Receiver<Option<SimEnv>>,
-    ) -> Self {
-        Self { config: config.clone(), host_provider, ru_provider, sim_env }
+/// A task that builds blocks based on incoming [`SimEnv`]s and a simulation
+/// cache.
+#[derive(Debug)]
+pub struct SimulatorTask {
+    /// Configuration for the builder.
+    config: &'static BuilderConfig,
+    /// Host Provider to interact with the host chain.
+    host_provider: HostProvider,
+    /// A provider that cannot sign transactions, used for interacting with the rollup.
+    ru_provider: RuProvider,
+    /// The block configuration environments on which to simulate
+    envs: watch::Receiver<Option<SimEnv>>,
+}
+
+impl SimulatorTask {
+    /// Create a new `SimulatorTask` instance. This task must be spawned to
+    /// begin processing incoming block environments.
+    pub async fn new(envs: watch::Receiver<Option<SimEnv>>) -> eyre::Result<Self> {
+        let config = crate::config();
+
+        let (host_provider, ru_provider) =
+            tokio::try_join!(config.connect_host_provider(), config.connect_ru_provider())?;
+
+        Ok(Self { config, host_provider, ru_provider, envs })
     }
 
     /// Get the slot calculator.
@@ -110,18 +100,17 @@ impl Simulator {
         &self.config.constants
     }
 
-    /// Handles building a single block.
+    /// Build a single block
     ///
-    /// Builds a block in the block environment with items from the simulation cache
-    /// against the database state. When the `finish_by` deadline is reached, it
-    /// stops simulating and returns the block.
+    /// Build a block in the sim environment with items from the simulation
+    /// cache against the database state. When the `finish_by` deadline is
+    /// reached, it stops simulating and returns the block.
     ///
     /// # Arguments
     ///
-    /// - `constants`: The system constants for the rollup.
     /// - `sim_items`: The simulation cache containing transactions and bundles.
     /// - `finish_by`: The deadline by which the block must be built.
-    /// - `block_env`: The block environment to simulate against.
+    /// - `sim_env`: The block environment to simulate against.
     ///
     /// # Returns
     ///
@@ -209,11 +198,11 @@ impl Simulator {
     ) {
         loop {
             // Wait for the block environment to be set
-            if self.sim_env.changed().await.is_err() {
+            if self.envs.changed().await.is_err() {
                 tracing::error!("block_env channel closed - shutting down simulator task");
                 return;
             }
-            let Some(sim_env) = self.sim_env.borrow_and_update().clone() else { return };
+            let Some(sim_env) = self.envs.borrow_and_update().clone() else { return };
 
             let span = sim_env.span();
             span_info!(span, "new block environment received");

@@ -21,7 +21,7 @@ use tracing::{Instrument, debug, debug_span};
 #[derive(Debug)]
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
-    config: BuilderConfig,
+    config: &'static BuilderConfig,
     /// Quincey instance for block signing.
     quincey: Quincey,
     /// Zenith instance.
@@ -35,18 +35,15 @@ pub struct FlashbotsTask {
 }
 
 impl FlashbotsTask {
-    /// Creates a new `FlashbotsTask` instance with initialized providers and connections.
-    ///
-    /// Sets up Quincey for block signing, host provider for transaction submission,
-    /// Flashbots provider for bundle submission, and Zenith instance for contract interactions.
-    pub async fn new(
-        config: BuilderConfig,
-        outbound: mpsc::UnboundedSender<TxHash>,
-    ) -> eyre::Result<FlashbotsTask> {
+    /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
+    /// channel and handles their preparation, submission to the Flashbots network.
+    pub async fn new(outbound: mpsc::UnboundedSender<TxHash>) -> eyre::Result<FlashbotsTask> {
+        let config = crate::config();
+
         let (quincey, host_provider, flashbots, builder_key) = tokio::try_join!(
             config.connect_quincey(),
             config.connect_host_provider(),
-            config.connect_flashbots(&config),
+            config.connect_flashbots(),
             config.connect_builder_signer()
         )?;
 

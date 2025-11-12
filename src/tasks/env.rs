@@ -186,7 +186,7 @@ impl SimEnv {
 #[derive(Debug, Clone)]
 pub struct EnvTask {
     /// Builder configuration values.
-    config: BuilderConfig,
+    config: &'static BuilderConfig,
 
     /// Host provider is used to get the latest host block header for
     /// constructing the next block environment.
@@ -202,13 +202,16 @@ pub struct EnvTask {
 
 impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
-    pub const fn new(
-        config: BuilderConfig,
-        host_provider: HostProvider,
-        quincey: Quincey,
-        ru_provider: RuProvider,
-    ) -> Self {
-        Self { config, host_provider, quincey, ru_provider }
+    pub async fn new() -> eyre::Result<Self> {
+        let config = crate::config();
+
+        let (host_provider, quincey, ru_provider) = tokio::try_join!(
+            config.connect_host_provider(),
+            config.connect_quincey(),
+            config.connect_ru_provider(),
+        )?;
+
+        Ok(Self { config, host_provider, quincey, ru_provider })
     }
 
     /// Construct a [`BlockEnv`] for the next host block from the previous host header.
@@ -280,7 +283,7 @@ impl EnvTask {
                 self.host_provider.get_block_by_number(host_block_number.into()),
                 // We want to check that we're able to sign for the block we're gonna start building.
                 // If not, we just want to skip all the work.
-                self.quincey.preflight_check(&self.config.constants, host_block_number + 1)
+                self.quincey.preflight_check(host_block_number + 1)
             );
 
             res_unwrap_or_continue!(

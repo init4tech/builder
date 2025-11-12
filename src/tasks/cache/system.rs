@@ -1,38 +1,33 @@
 use signet_sim::SimCache;
 use tokio::{sync::watch, task::JoinHandle};
 
-use crate::{
-    config::BuilderConfig,
-    tasks::{
-        cache::{BundlePoller, CacheTask, TxPoller},
-        env::SimEnv,
-    },
+use crate::tasks::{
+    cache::{BundlePoller, CacheTask, TxPoller},
+    env::SimEnv,
 };
 
 /// The block builder's cache system.
 #[derive(Debug)]
 pub struct CacheTasks {
-    /// The builder config.
-    pub config: BuilderConfig,
     /// The block environment receiver.
-    pub block_env: watch::Receiver<Option<SimEnv>>,
+    block_env: watch::Receiver<Option<SimEnv>>,
 }
 
 impl CacheTasks {
     /// Create a new [`CacheSystem`] with the given components.
-    pub const fn new(config: BuilderConfig, block_env: watch::Receiver<Option<SimEnv>>) -> Self {
-        Self { config, block_env }
+    pub const fn new(block_env: watch::Receiver<Option<SimEnv>>) -> Self {
+        Self { block_env }
     }
 
     /// Spawn a new [`CacheSystem`], which starts the
     /// [`CacheTask`], [`TxPoller`], and [`BundlePoller`] internally and yields their [`JoinHandle`]s.
     pub fn spawn(&self) -> CacheSystem {
         // Tx Poller pulls transactions from the cache
-        let tx_poller = TxPoller::new(&self.config);
+        let tx_poller = TxPoller::new();
         let (tx_receiver, tx_poller) = tx_poller.spawn();
 
         // Bundle Poller pulls bundles from the cache
-        let bundle_poller = BundlePoller::new(&self.config, self.config.oauth_token());
+        let bundle_poller = BundlePoller::new();
         let (bundle_receiver, bundle_poller) = bundle_poller.spawn();
 
         // Set up the cache task
