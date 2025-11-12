@@ -9,9 +9,11 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     setup_logging();
 
     let config = setup_test_config().unwrap();
+
     let (mut env_watcher, _jh) = EnvTask::new(
         config.clone(),
         config.connect_host_provider().await?,
+        config.connect_quincey().await?,
         config.connect_ru_provider().await?,
     )
     .spawn();

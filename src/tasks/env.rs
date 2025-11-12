@@ -1,5 +1,6 @@
 use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
+    quincey::Quincey,
     tasks::block::cfg::SignetCfgEnv,
 };
 use alloy::{
@@ -30,21 +31,6 @@ pub type RollupAlloyDatabaseProvider = WrapDatabaseAsync<AlloyDB<Ethereum, RuPro
 pub type SimRollupEnv = RollupEnv<RollupAlloyDatabaseProvider, NoOpInspector>;
 /// Type aliases for simulation environments.
 pub type SimHostEnv = HostEnv<HostAlloyDatabaseProvider, NoOpInspector>;
-
-/// A task that constructs a BlockEnv for the next block in the rollup chain.
-#[derive(Debug, Clone)]
-pub struct EnvTask {
-    /// Builder configuration values.
-    config: BuilderConfig,
-
-    /// Host provider is used to get the latest host block header for
-    /// constructing the next block environment.
-    host_provider: HostProvider,
-
-    /// Rollup provider is used to get the latest rollup block header for
-    /// simulation.
-    ru_provider: RuProvider,
-}
 
 /// An environment for simulating a block.
 #[derive(Debug, Clone)]
@@ -196,14 +182,33 @@ impl SimEnv {
     }
 }
 
+/// A task that constructs a BlockEnv for the next block in the rollup chain.
+#[derive(Debug, Clone)]
+pub struct EnvTask {
+    /// Builder configuration values.
+    config: BuilderConfig,
+
+    /// Host provider is used to get the latest host block header for
+    /// constructing the next block environment.
+    host_provider: HostProvider,
+
+    /// Quincey instance for slot checking.
+    quincey: Quincey,
+
+    /// Rollup provider is used to get the latest rollup block header for
+    /// simulation.
+    ru_provider: RuProvider,
+}
+
 impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
     pub const fn new(
         config: BuilderConfig,
         host_provider: HostProvider,
+        quincey: Quincey,
         ru_provider: RuProvider,
     ) -> Self {
-        Self { config, host_provider, ru_provider }
+        Self { config, host_provider, quincey, ru_provider }
     }
 
     /// Construct a [`BlockEnv`] for the next host block from the previous host header.
@@ -271,11 +276,23 @@ impl EnvTask {
 
             let span = info_span!("SimEnv", %host_block_number, %rollup_header.hash, %rollup_header.number);
 
+            let (host_block_res, quincey_res) = tokio::join!(
+                self.host_provider.get_block_by_number(host_block_number.into()),
+                self.quincey.preflight_check(&self.config.constants, host_block_number)
+            );
+
+            res_unwrap_or_continue!(
+                quincey_res,
+                span,
+                error!("error checking quincey slot - skipping block submission"),
+            );
+
             let host_block_opt = res_unwrap_or_continue!(
-                self.host_provider.get_block_by_number(host_block_number.into()).await,
+                host_block_res,
                 span,
                 error!("error fetching previous host block - skipping block submission")
             );
+
             let host_header = opt_unwrap_or_continue!(
                 host_block_opt,
                 span,
@@ -283,6 +300,16 @@ impl EnvTask {
             )
             .header
             .inner;
+
+            if rollup_header.timestamp != host_header.timestamp {
+                span_warn!(
+                    span,
+                    rollup_timestamp = rollup_header.timestamp,
+                    host_timestamp = host_header.timestamp,
+                    "rollup block timestamp differs from host block timestamp. - skipping block submission"
+                );
+                continue;
+            }
 
             // Construct the block env using the previous block header
             let rollup_env = self.construct_rollup_env(rollup_header.into());

@@ -26,9 +26,11 @@ async fn main() -> eyre::Result<()> {
     // RU WS connection is invalid.
     let (ru_provider, host_provider) =
         tokio::try_join!(config.connect_ru_provider(), config.connect_host_provider(),)?;
+    let quincey = config.connect_quincey().await?;
 
     // Spawn the EnvTask
-    let env_task = EnvTask::new(config.clone(), host_provider.clone(), ru_provider.clone());
+    let env_task =
+        EnvTask::new(config.clone(), host_provider.clone(), quincey, ru_provider.clone());
     let (block_env, env_jh) = env_task.spawn();
 
     // Spawn the cache system
