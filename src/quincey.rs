@@ -5,7 +5,6 @@ use alloy::{
 use eyre::bail;
 use init4_bin_base::{perms::SharedToken, utils::signer::LocalOrAws};
 use reqwest::Client;
-use signet_constants::SignetSystemConstants;
 use signet_types::{SignRequest, SignResponse};
 use tracing::{debug, info, instrument, trace};
 
@@ -95,15 +94,12 @@ impl Quincey {
     /// Perform a preflight check to ensure that the Quincey service will
     /// be able to sign a request with the provided parameters at this
     /// point in time.
-    #[instrument(skip(self, constants))]
-    pub async fn preflight_check(
-        &self,
-        constants: &SignetSystemConstants,
-        host_block_number: u64,
-    ) -> eyre::Result<()> {
+    #[instrument(skip(self))]
+    pub async fn preflight_check(&self, host_block_number: u64) -> eyre::Result<()> {
         if self.is_local() {
             return Ok(());
         }
+        let constants = crate::constants();
         let req = SignRequest {
             host_block_number: U256::from(host_block_number),
             host_chain_id: U256::from(constants.host_chain_id()),
