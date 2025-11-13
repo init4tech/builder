@@ -131,7 +131,7 @@ impl FlashbotsTask {
     ///
     /// Combines all host transactions from the rollup block with the prepared rollup block
     /// submission transaction, wrapping each as a non-revertible bundle item.
-    /// 
+    ///
     /// The rollup block transaction is placed last in the bundle.
     fn build_bundle_body(
         &self,
