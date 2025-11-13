@@ -62,7 +62,7 @@ impl FlashbotsTask {
     pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
         // This function is left for forwards compatibility when we want to add
         // different bundle preparation methods in the future.
-        self.prepare_bundle_helper(sim_result).await
+        self.prepare_bundle(sim_result).await
     }
 
     /// Prepares a MEV bundle containing the host transactions and the rollup block.
@@ -72,7 +72,7 @@ impl FlashbotsTask {
     /// 2. Tracking the transaction hash for monitoring
     /// 3. Encoding the transaction for bundle inclusion
     /// 4. Constructing the complete bundle body
-    async fn prepare_bundle_helper(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
+    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
         // Prepare and sign the transaction
         let block_tx = self.prepare_signed_transaction(sim_result).await?;
 
@@ -131,7 +131,7 @@ impl FlashbotsTask {
     ///
     /// Combines all host transactions from the rollup block with the prepared rollup block
     /// submission transaction, wrapping each as a non-revertible bundle item.
-    ///
+    /// 
     /// The rollup block transaction is placed last in the bundle.
     fn build_bundle_body(
         &self,
