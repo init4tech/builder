@@ -14,14 +14,13 @@ use tokio::select;
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
     let init_span_guard = info_span!("builder initialization");
+    builder::config_from_env();
 
-    // Spawn the EnvTask
+    // Set up env and metrics tasks
     let (env_task, metrics_task) = tokio::try_join!(EnvTask::new(), MetricsTask::new())?;
 
-    // Spawn the Env task
+    // Spawn the env and metrics tasks
     let (block_env, env_jh) = env_task.spawn();
-
-    // Spawn the metrics task
     let (tx_channel, metrics_jh) = metrics_task.spawn();
 
     // Set up the cache, submit, and simulator tasks
