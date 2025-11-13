@@ -2,7 +2,7 @@
 ### STAGE 0: Create base chef image for building
 ### Use a Debian bookworm-based Rust image so GLIBC matches the final runtime (bookworm ships glibc 2.36)
 ### cargo-chef is then installed into this pinned base
-FROM --platform=$TARGETPLATFORM rust:bookworm AS chef
+FROM --platform=$BUILDPLATFORM rust:bookworm AS chef
 
 RUN cargo install cargo-chef
 
@@ -33,7 +33,7 @@ COPY --exclude=target . .
 RUN --mount=type=ssh cargo build --release --bin zenith-builder-example
 
 # Stage 3: Final image for running in the env
-FROM --platform=$TARGETPLATFORM debian:bookworm-slim
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim
 RUN apt-get update && apt-get -y upgrade && apt-get install -y \
 		libssl-dev \
 		ca-certificates
