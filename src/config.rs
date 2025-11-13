@@ -215,13 +215,10 @@ impl BuilderConfig {
     }
 
     /// Connect to a Flashbots bundle provider.
-    pub async fn connect_flashbots(
-        &self,
-        config: &BuilderConfig,
-    ) -> Result<FlashbotsProvider, eyre::Error> {
+    pub async fn connect_flashbots(&self) -> Result<FlashbotsProvider, eyre::Error> {
         let endpoint =
-            config.flashbots_endpoint.clone().expect("flashbots endpoint must be configured");
-        let signer = config.connect_builder_signer().await?;
+            self.flashbots_endpoint.clone().expect("flashbots endpoint must be configured");
+        let signer = self.connect_builder_signer().await?;
         let flashbots: FlashbotsProvider =
             ProviderBuilder::new().wallet(signer).connect_http(endpoint);
         Ok(flashbots)

@@ -33,5 +33,41 @@ pub mod utils;
 /// Test utilitites
 pub mod test_utils;
 
+use init4_bin_base::utils::from_env::FromEnv;
 // Anonymous import suppresses warnings about unused imports.
 use openssl as _;
+use signet_constants::SignetSystemConstants;
+use std::sync::OnceLock;
+
+/// Global static configuration for the Builder binary.
+pub static CONFIG: OnceLock<config::BuilderConfig> = OnceLock::new();
+
+/// Load the Builder configuration from the environment and store it in the
+/// global static CONFIG variable. Returns a reference to the configuration.
+///
+/// # Panics
+///
+/// Panics if the configuration cannot be loaded from the environment AND no
+/// other configuration has been previously initialized.
+pub fn config_from_env() -> &'static config::BuilderConfig {
+    CONFIG.get_or_init(|| config::BuilderConfig::from_env().expect("Failed to load Builder config"))
+}
+
+/// Get a reference to the global Builder configuration.
+///
+/// # Panics
+///
+/// Panics if the configuration has not been initialized.
+pub fn config() -> &'static config::BuilderConfig {
+    CONFIG.get().expect("Builder config not initialized")
+}
+
+/// Get a reference to the Signet system constants from the global Builder
+/// configuration.
+///
+/// # Panics
+///
+/// Panics if the configuration has not been initialized.
+pub fn constants() -> &'static SignetSystemConstants {
+    &config().constants
+}

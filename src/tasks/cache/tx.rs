@@ -18,15 +18,22 @@ struct TxPoolResponse {
     transactions: Vec<TxEnvelope>,
 }
 
-/// Implements a poller for the block builder to pull transactions from the transaction pool.
+/// Implements a poller for the block builder to pull transactions from the
+/// transaction pool.
 #[derive(Debug, Clone)]
 pub struct TxPoller {
     /// Config values from the Builder.
-    pub config: BuilderConfig,
+    config: &'static BuilderConfig,
     /// Reqwest Client for fetching transactions from the cache.
-    pub client: Client,
+    client: Client,
     /// Defines the interval at which the service should poll the cache.
-    pub poll_interval_ms: u64,
+    poll_interval_ms: u64,
+}
+
+impl Default for TxPoller {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// [`TxPoller`] implements a poller task that fetches transactions from the transaction pool
@@ -34,13 +41,14 @@ pub struct TxPoller {
 impl TxPoller {
     /// Returns a new [`TxPoller`] with the given config.
     /// * Defaults to 1000ms poll interval (1s).
-    pub fn new(config: &BuilderConfig) -> Self {
-        Self { config: config.clone(), client: Client::new(), poll_interval_ms: POLL_INTERVAL_MS }
+    pub fn new() -> Self {
+        Self::new_with_poll_interval_ms(POLL_INTERVAL_MS)
     }
 
     /// Returns a new [`TxPoller`] with the given config and cache polling interval in milliseconds.
-    pub fn new_with_poll_interval_ms(config: &BuilderConfig, poll_interval_ms: u64) -> Self {
-        Self { config: config.clone(), client: Client::new(), poll_interval_ms }
+    pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
+        let config = crate::config();
+        Self { config, client: Client::new(), poll_interval_ms }
     }
 
     /// Returns the poll duration as a [`Duration`].

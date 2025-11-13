@@ -1,16 +1,12 @@
 //! Tests for the block building task.
 
 use alloy::{
-    eips::BlockId,
-    network::Ethereum,
-    node_bindings::Anvil,
-    primitives::U256,
-    providers::{Provider, RootProvider},
+    eips::BlockId, node_bindings::Anvil, primitives::U256, providers::Provider,
     signers::local::PrivateKeySigner,
 };
 use builder::{
     tasks::{
-        block::sim::Simulator,
+        block::sim::SimulatorTask,
         env::{EnvTask, Environment, SimEnv},
     },
     test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
@@ -18,7 +14,7 @@ use builder::{
 use signet_sim::SimCache;
 use std::time::{Duration, Instant};
 
-/// Tests the `handle_build` method of the `Simulator`.
+/// Tests the `handle_build` method of the `SimulatorTask`.
 ///
 /// This test sets up a simulated environment using Anvil, creates a block builder,
 /// and verifies that the block builder can successfully build a block containing
@@ -29,7 +25,7 @@ async fn test_handle_build() {
     setup_logging();
 
     // Make a test config
-    let config = setup_test_config().unwrap();
+    let config = setup_test_config();
 
     // Create an anvil instance for testing
     let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
@@ -39,18 +35,9 @@ async fn test_handle_build() {
     let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
     let test_key_1 = PrivateKeySigner::from_signing_key(keys[1].clone().into());
 
-    // Create a rollup provider
-    let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
-    let host_provider = config.connect_host_provider().await.unwrap();
+    let block_env = EnvTask::new().await.unwrap().spawn().0;
 
-    // Create a quincey client
-    let quincey = config.connect_quincey().await.unwrap();
-
-    let block_env =
-        EnvTask::new(config.clone(), host_provider.clone(), quincey, ru_provider.clone()).spawn().0;
-
-    let block_builder =
-        Simulator::new(&config, host_provider.clone(), ru_provider.clone(), block_env);
+    let block_builder = SimulatorTask::new(block_env).await.unwrap();
 
     // Setup a sim cache
     let sim_items = SimCache::new();
@@ -64,10 +51,12 @@ async fn test_handle_build() {
 
     // Setup the block envs
     let finish_by = Instant::now() + Duration::from_secs(2);
+
+    let ru_provider = builder::config().connect_ru_provider().await.unwrap();
     let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
     let number = ru_header.number + 1;
     let timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
-    let block_env = test_block_env(config, number, 7, timestamp);
+    let block_env = test_block_env(number, 7, timestamp);
 
     // Spawn the block builder task
     let sim_env = SimEnv {
