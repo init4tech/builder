@@ -16,8 +16,8 @@ use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, debug_span};
 
-/// Handles construction, simulation, and submission of rollup blocks to the
-/// Flashbots network.
+/// Handles preparation and submission of simulated rollup blocks to the
+/// Flashbots relay as MEV bundles.
 #[derive(Debug)]
 pub struct FlashbotsTask {
     /// Builder configuration for the task.
@@ -31,12 +31,14 @@ pub struct FlashbotsTask {
     /// The key used to sign requests to the Flashbots relay.
     signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
-    _outbound: mpsc::UnboundedSender<TxHash>,
+    outbound: mpsc::UnboundedSender<TxHash>,
 }
 
 impl FlashbotsTask {
-    /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
-    /// channel and handles their preparation, submission to the Flashbots network.
+    /// Creates a new `FlashbotsTask` instance with initialized providers and connections.
+    ///
+    /// Sets up Quincey for block signing, host provider for transaction submission,
+    /// Flashbots provider for bundle submission, and Zenith instance for contract interactions.
     pub async fn new(
         config: BuilderConfig,
         outbound: mpsc::UnboundedSender<TxHash>,
@@ -50,55 +52,40 @@ impl FlashbotsTask {
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, _outbound: outbound })
+        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound })
     }
 
-    /// Returns a reference to the inner `HostProvider`
-    pub fn host_provider(&self) -> HostProvider {
-        self.zenith.provider().clone()
-    }
-
-    /// Returns a reference to the inner `FlashbotsProvider`
-    pub const fn flashbots(&self) -> &FlashbotsProvider {
-        &self.flashbots
-    }
-
-    /// Prepares a MEV bundle with the configured submit call
+    /// Prepares a MEV bundle from a simulation result.
+    ///
+    /// This function serves as an entry point for bundle preparation and is left
+    /// for forward compatibility when adding different bundle preparation methods.
     pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
         // This function is left for forwards compatibility when we want to add
         // different bundle preparation methods in the future.
-        self.prepare_bundle_helper(sim_result).await
+        self.prepare_bundle(sim_result).await
     }
 
-    /// Prepares a BundleHelper call containing the rollup block and corresponding fills into a MEV bundle.
-    async fn prepare_bundle_helper(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
-        let prep = SubmitPrep::new(
-            &sim_result.block,
-            self.host_provider(),
-            self.quincey.clone(),
-            self.config.clone(),
-        );
+    /// Prepares a MEV bundle containing the host transactions and the rollup block.
+    ///
+    /// This method orchestrates the bundle preparation by:
+    /// 1. Preparing and signing the submission transaction
+    /// 2. Tracking the transaction hash for monitoring
+    /// 3. Encoding the transaction for bundle inclusion
+    /// 4. Constructing the complete bundle body
+    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
+        // Prepare and sign the transaction
+        let block_tx = self.prepare_signed_transaction(sim_result).await?;
 
-        let tx = prep.prep_transaction(sim_result.prev_host()).await?;
+        // Track the outbound transaction
+        self.track_outbound_tx(&block_tx);
 
-        let sendable = self.host_provider().fill(tx.into_request()).await?;
+        // Encode the transaction
+        let tx_bytes = block_tx.encoded_2718().into();
 
-        let tx_bytes = sendable
-            .as_envelope()
-            .ok_or_eyre("failed to get envelope from filled tx")?
-            .encoded_2718()
-            .into();
+        // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
+        let bundle_body = self.build_bundle_body(sim_result, tx_bytes);
 
-        let bundle_body = sim_result
-            .block
-            .host_transactions()
-            .iter()
-            .cloned()
-            .chain(std::iter::once(tx_bytes))
-            .map(|tx| BundleItem::Tx { tx, can_revert: false })
-            .collect::<Vec<_>>();
-
-        // Only valid in the specific host block
+        // Create the MEV bundle (valid only in the specific host block)
         Ok(MevSendBundle::new(
             sim_result.host_block_number(),
             Some(sim_result.host_block_number()),
@@ -107,7 +94,64 @@ impl FlashbotsTask {
         ))
     }
 
-    /// Task future that runs the Flashbots submission loop.
+    /// Prepares and signs the submission transaction for the rollup block.
+    ///
+    /// Creates a `SubmitPrep` instance to build the transaction, then fills
+    /// and signs it using the host provider.
+    async fn prepare_signed_transaction(
+        &self,
+        sim_result: &SimResult,
+    ) -> eyre::Result<alloy::consensus::TxEnvelope> {
+        let prep = SubmitPrep::new(
+            &sim_result.block,
+            self.host_provider(),
+            self.quincey.clone(),
+            self.config.clone(),
+        );
+
+        let tx = prep.prep_transaction(sim_result.prev_host()).await?;
+        let sendable = self.host_provider().fill(tx.into_request()).await?;
+
+        sendable.as_envelope().ok_or_eyre("failed to get envelope from filled tx").cloned()
+    }
+
+    /// Tracks the outbound transaction hash and increments submission metrics.
+    ///
+    /// Sends the transaction hash to the outbound channel for monitoring.
+    /// Logs a debug message if the channel is closed.
+    fn track_outbound_tx(&self, envelope: &alloy::consensus::TxEnvelope) {
+        counter!("signet.builder.flashbots.").increment(1);
+        let hash = *envelope.tx_hash();
+        if self.outbound.send(hash).is_err() {
+            debug!("outbound channel closed, could not track tx hash");
+        }
+    }
+
+    /// Constructs the MEV bundle body from host transactions and the submission transaction.
+    ///
+    /// Combines all host transactions from the rollup block with the prepared rollup block
+    /// submission transaction, wrapping each as a non-revertible bundle item.
+    ///
+    /// The rollup block transaction is placed last in the bundle.
+    fn build_bundle_body(
+        &self,
+        sim_result: &SimResult,
+        tx_bytes: alloy::primitives::Bytes,
+    ) -> Vec<BundleItem> {
+        sim_result
+            .block
+            .host_transactions()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(tx_bytes))
+            .map(|tx| BundleItem::Tx { tx, can_revert: false })
+            .collect()
+    }
+
+    /// Main task loop that processes simulation results and submits bundles to Flashbots.
+    ///
+    /// Receives `SimResult`s from the inbound channel, prepares MEV bundles, and submits
+    /// them to the Flashbots relay. Skips empty blocks and continues processing on errors.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         debug!("starting flashbots task");
 
@@ -172,7 +216,19 @@ impl FlashbotsTask {
         }
     }
 
-    /// Spawns the Flashbots task that handles incoming `SimResult`s.
+    /// Returns a clone of the host provider for transaction operations.
+    fn host_provider(&self) -> HostProvider {
+        self.zenith.provider().clone()
+    }
+
+    /// Returns a reference to the Flashbots provider.
+    const fn flashbots(&self) -> &FlashbotsProvider {
+        &self.flashbots
+    }
+
+    /// Spawns the Flashbots task in a new Tokio task.
+    ///
+    /// Returns a channel sender for submitting `SimResult`s and a join handle for the task.
     pub fn spawn(self) -> (mpsc::UnboundedSender<SimResult>, JoinHandle<()>) {
         let (sender, inbound) = mpsc::unbounded_channel::<SimResult>();
         let handle = tokio::spawn(self.task_future(inbound));

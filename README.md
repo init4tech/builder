@@ -73,9 +73,7 @@ When the deadline is reached, the simulator is stopped, and all open simulation 
 
 ### ✨ Submit Task
 
-If Flashbots endpoint has been configured the Flashbots submit task will prepare a Flashbots bundle out of that Signet block, and then submits that bundle to the Flashbots endpoint.
-
-If a Flashbots endpoint has _not_ been configured, the Builder uses the [builder helper contract] and to craft a rollup block transaction and submits that to the default mempool. This mode of operation is only for testing on private networks and should not be used in production, since it can leak sensitive transaction data from the Signet block.
+The Flashbots submit task prepares a Flashbots bundle out of the Signet block and its host transactions and then submits that bundle to the Flashbots endpoint. It sends the hash of the rollup block transaction for to the Metrics task for further tracking.
 
 If the block received from simulation is empty, the submit task will ignore it.
 
@@ -88,32 +86,29 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
 Key                           | Required | Description
------------------------------ | -------- | ----------------------------------------------------------------------------------------
-`HOST_CHAIN_ID`               | Yes      | Host-chain ID (e.g. `3151908`)
-`RU_CHAIN_ID`                 | Yes      | Rollup-chain ID (e.g. `14174`)
+----------------------------- | -------- | ------------------------------------------------------------------------------
+`RUST_LOG`                    | No       | The log level of the builder
+`CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)
 `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain
 `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain
-`TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)
-`TX_BROADCAST_URLS`           | No       | Additional endpoints for blob txs (comma-separated, slash required)
-`FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to. Defaults to the BuilderHelper submit task if not set.
-`ZENITH_ADDRESS`              | Yes      | Zenith contract address
-`BUILDER_HELPER_ADDRESS`      | Yes      | Builder helper contract address
 `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint
-`BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)
-`SEQUENCER_KEY`               | Yes      | AWS KMS key ID _or_ local private key for sequencer signing
+`SEQUENCER_KEY`               | No       | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing
+`TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)
+`FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to
+`ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for rollup block gas limit
+`MAX_HOST_GAS_COEFFICIENT`    | No       | Optional maximum host gas coefficient, as a percentage, to use when building blocks
 `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing
+`AWS_ACCESS_KEY_ID`           | No       | AWS secret access key ID (required if not using `BUILDER_KEY`)
+`AWS_SECRET_ACCESS_KEY`       | No       | AWS secret access key (required if not using `BUILDER_KEY`)
+`AWS_DEFAULT_REGION`          | No       | AWS region for the KMS key in question (required if not using `BUILDER_KEY`)
+`BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)
 `BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards
-`ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for block gas limit
-`CONCURRENCY_LIMIT`           | No       | Max concurrent tasks the simulator uses
+`CONCURRENCY_LIMIT`           | No       | Optional max number of concurrent tasks the simulator uses. Defaults to a system call to determine optimal parallelism
 `OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder
 `OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder
 `OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins
 `OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token
 `AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.
-`CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)
-`SLOT_OFFSET`                 | No       | Slot timing offset in seconds. Required if `CHAIN_NAME` is not present
-`SLOT_DURATION`               | No       | Slot duration in seconds. Required if `CHAIN_NAME` is not present
-`START_TIMESTAMP`             | No       | UNIX timestamp for slot 0\. Required if `CHAIN_NAME` is not present
 
 --------------------------------------------------------------------------------
 
@@ -188,5 +183,3 @@ The previous header's basefee is tracked through the build loop and used for gas
 ## 🪪 License
 
 This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
-
-[builder helper contract]: https://github.com/init4tech/helper-contracts/blob/main/src/BuilderHelper.sol
