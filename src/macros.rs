@@ -26,6 +26,14 @@ macro_rules! span_info {
 
 /// Helper macro to log a warning event within a span that is not currently
 /// entered.
+macro_rules! span_warn {
+    ($span:expr, $($arg:tt)*) => {
+        span_scoped!($span, warn!($($arg)*))
+    };
+}
+
+/// Helper macro to log a warning event within a span that is not currently
+/// entered.
 macro_rules! span_error {
     ($span:expr, $($arg:tt)*) => {
         span_scoped!($span, error!($($arg)*))
@@ -34,7 +42,7 @@ macro_rules! span_error {
 
 /// Helper macro to unwrap a result or continue the loop with a tracing event.
 macro_rules! res_unwrap_or_continue {
-    ($result:expr, $span:expr, $level:ident!($($arg:tt)*)) => {
+    ($result:expr, $span:expr, $level:ident!($($arg:tt)*) $(,)?) => {
         match $result {
             Ok(value) => value,
             Err(err) => {

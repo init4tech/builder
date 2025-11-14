@@ -1,7 +1,11 @@
-use alloy::signers::Signer;
+use alloy::{
+    primitives::{Address, B256, U256},
+    signers::Signer,
+};
 use eyre::bail;
 use init4_bin_base::{perms::SharedToken, utils::signer::LocalOrAws};
 use reqwest::Client;
+use signet_constants::SignetSystemConstants;
 use signet_types::{SignRequest, SignResponse};
 use tracing::{debug, info, instrument, trace};
 
@@ -33,6 +37,16 @@ impl Quincey {
     /// Creates a new Quincey client for making requests to the Quincey API.
     pub const fn new_owned(client: LocalOrAws) -> Self {
         Self::Owned(client)
+    }
+
+    /// Returns `true` if the signer is local.
+    pub const fn is_local(&self) -> bool {
+        matches!(self, Self::Owned(_))
+    }
+
+    /// Returns `true` if the signer is remote.
+    pub const fn is_remote(&self) -> bool {
+        matches!(self, Self::Remote { .. })
     }
 
     async fn sup_owned(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
@@ -76,5 +90,28 @@ impl Quincey {
             Self::Owned(_) => self.sup_owned(sig_request).await,
             Self::Remote { .. } => self.sup_remote(sig_request).await,
         }
+    }
+
+    /// Perform a preflight check to ensure that the Quincey service will
+    /// be able to sign a request with the provided parameters at this
+    /// point in time.
+    #[instrument(skip(self, constants))]
+    pub async fn preflight_check(
+        &self,
+        constants: &SignetSystemConstants,
+        host_block_number: u64,
+    ) -> eyre::Result<()> {
+        if self.is_local() {
+            return Ok(());
+        }
+        let req = SignRequest {
+            host_block_number: U256::from(host_block_number),
+            host_chain_id: U256::from(constants.host_chain_id()),
+            ru_chain_id: U256::from(constants.ru_chain_id()),
+            gas_limit: U256::ZERO,
+            ru_reward_address: Address::ZERO,
+            contents: B256::ZERO,
+        };
+        self.sup_remote(&req).await.map(|_| ())
     }
 }
