@@ -15,31 +15,37 @@ use std::{
 
 use alloy::{
     consensus::Header,
-    eips::BlockId,
-    network::Ethereum,
+    eips::{BlockId, eip1559::BaseFeeParams},
+    network::{Ethereum, EthereumWallet},
     node_bindings::Anvil,
-    primitives::U256,
-    providers::{Provider, RootProvider, ext::AnvilApi, layers::AnvilProvider},
+    primitives::{B256, U256},
+    providers::{
+        Provider, ProviderBuilder, RootProvider,
+        ext::AnvilApi,
+        fillers::{BlobGasFiller, SimpleNonceManager},
+        layers::AnvilProvider,
+    },
     signers::local::PrivateKeySigner,
 };
 use builder::{
-    config::BuilderConfig,
+    config::{BuilderConfig, HostProvider},
     tasks::{
         block::sim::{SimResult, Simulator},
-        env::SimEnv,
+        env::{Environment, SimEnv},
     },
-    test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
+    test_utils::{new_signed_tx_with_max_fee, setup_logging, setup_test_config},
 };
 use init4_bin_base::utils::calc::SlotCalculator;
 use signet_sim::SimCache;
-use signet_types::constants::SignetSystemConstants;
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
+use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 // Default test slot duration (seconds)
 const DEFAULT_SLOT_DURATION: u64 = 5; // seconds
+const TEST_TX_MAX_FEE: u128 = 1_000_000_000_000;
 
 pub struct SimulatorTask {
     sim_env_tx: watch::Sender<Option<SimEnv>>,
@@ -50,21 +56,19 @@ pub struct SimulatorTask {
 pub struct TestHarness {
     /// Builder configuration for the Harness
     pub config: BuilderConfig,
-    /// System constants for the Harness
-    pub constants: SignetSystemConstants,
     /// Anvil provider made from the Rollup Anvil instance
     pub rollup: RollupAnvilProvider,
-    /// Anvilk provider made from the Host Anvil instance
+    /// Anvil provider made from the Host Anvil instance
     pub host: HostAnvilProvider,
     /// The Simulator task that is assembled each tick.
     pub simulator: SimulatorTask,
     /// Transaction plumbing - Submit
-    submit_tx: mpsc::UnboundedSender<SimResult>,
+    pub submit_tx: mpsc::UnboundedSender<SimResult>,
     /// Transaction plumbing - Receive
-    submit_rx: mpsc::UnboundedReceiver<SimResult>,
+    pub submit_rx: mpsc::UnboundedReceiver<SimResult>,
     /// Keeps the simulator task alive for the duration of the harness so the
     /// background task isn't aborted when `start()` returns.
-    simulator_handle: Option<JoinHandle<()>>,
+    pub simulator_handle: Option<JoinHandle<()>>,
 }
 
 type HostAnvilProvider = AnvilProvider<RootProvider<Ethereum>>;
@@ -94,7 +98,6 @@ impl TestHarness {
 
         Ok(Self {
             config,
-            constants: SignetSystemConstants::pecorino(),
             rollup: rollup_anvil_provider,
             host: host_anvil_provider,
             simulator: SimulatorTask { sim_env_tx, sim_env_rx, sim_cache },
@@ -106,7 +109,8 @@ impl TestHarness {
 
     /// Add a signed transaction from a provided signer to the sim cache.
     pub fn add_tx(&self, signer: &PrivateKeySigner, nonce: u64, value: U256, mpfpg: u128) {
-        let tx = new_signed_tx(signer, nonce, value, mpfpg).expect("tx signing");
+        let tx = new_signed_tx_with_max_fee(signer, nonce, value, mpfpg, TEST_TX_MAX_FEE)
+            .expect("tx signing");
         // group index 0 for simplicity in tests
         self.simulator.sim_cache.add_tx(tx, 0);
     }
@@ -127,28 +131,34 @@ impl TestHarness {
     }
 
     /// Starts the simulator task.
-    pub fn start(&mut self) {
+    pub async fn start(&mut self) {
         if self.simulator_handle.is_some() {
             tracing::warn!("TestHarness simulator already running");
             return;
         }
-
         tracing::debug!("TestHarness starting simulator task");
+
         // Spawn the simulator background task
         let cache = self.simulator.sim_cache.clone();
-        let constants = self.constants.clone();
 
-        // Create a rollup provider from the rollup anvil
+        // Rollup provider
         let ru_provider = RootProvider::<Ethereum>::new_http(self.rollup.anvil().endpoint_url());
 
-        // Wire up the simulator with that provider and submit channels
+        // Host provider
+        let host_provider = self.host_provider().await;
+
+        // Wire up the simulator with the providers and submit channels
         let submit_tx = self.submit_tx.clone();
-        let simulator =
-            Simulator::new(&self.config, ru_provider, self.simulator.sim_env_rx.clone());
+        let simulator = Simulator::new(
+            &self.config,
+            host_provider,
+            ru_provider,
+            self.simulator.sim_env_rx.clone(),
+        );
 
         // Keep the JoinHandle on the harness so the task isn't aborted when
         // this function returns.
-        let jh = simulator.spawn_simulator_task(constants, cache, submit_tx);
+        let jh = simulator.spawn_simulator_task(cache, submit_tx);
         self.simulator_handle = Some(jh);
         tracing::debug!("TestHarness spawned simulator task");
     }
@@ -161,19 +171,20 @@ impl TestHarness {
         let host_block = self.host.get_block(BlockId::latest()).await?;
         let host_header = host_block.expect("host latest exists").header.inner;
 
+        tracing::debug!(
+            rollup_header_number = ru_header.number,
+            rollup_header_gas_limit = ru_header.gas_limit
+        );
+
         let headers = (ru_header, host_header);
         Ok(headers)
     }
 
     /// Tick a new `SimEnv` computed from the current latest rollup and host headers.
     pub async fn tick_from_headers(&self, prev_ru_header: Header, prev_host_header: Header) {
+        // Set new simulation deadline and target block number from previous header
         let target_ru_block_number = prev_ru_header.number + 1;
-
-        // Set new simulation deadline from previous header
         let deadline = prev_ru_header.timestamp + self.config.slot_calculator.slot_duration();
-
-        // Make a new block env from the previous rollup header and our new simulation deadline.
-        let block_env = test_block_env(self.config.clone(), target_ru_block_number, 7, deadline);
 
         let span = tracing::info_span!(
             "TestHarness::tick",
@@ -183,12 +194,13 @@ impl TestHarness {
             prev_host_number = prev_host_header.number
         );
 
-        let _ = self.simulator.sim_env_tx.send(Some(SimEnv {
-            block_env,
-            prev_header: prev_ru_header.clone(),
-            prev_host: prev_host_header,
-            span,
-        }));
+        let host_env = build_host_environment(&self.config, prev_host_header);
+        let rollup_env = build_rollup_environment(&self.config, prev_ru_header);
+
+        self.simulator
+            .sim_env_tx
+            .send(Some(SimEnv { host: host_env, rollup: rollup_env, span }))
+            .expect("send sim_env environment");
     }
 
     /// Receive the next SimResult with a timeout.
@@ -207,6 +219,25 @@ impl TestHarness {
             let _ = tokio::time::timeout(Duration::from_millis(200), handle).await;
         }
     }
+
+    /// Returns a host provider configured with the builder's wallet and blob gas params
+    async fn host_provider(&self) -> HostProvider {
+        let wallet = EthereumWallet::from(
+            self.config.connect_builder_signer().await.expect("builder signer"),
+        );
+
+        let host_provider_inner =
+            RootProvider::<Ethereum>::new_http(self.host.anvil().endpoint_url());
+
+        ProviderBuilder::new_with_network()
+            .disable_recommended_fillers()
+            .filler(BlobGasFiller)
+            .with_gas_estimation()
+            .with_nonce_management(SimpleNonceManager::default())
+            .fetch_chain_id()
+            .wallet(wallet)
+            .connect_provider(host_provider_inner)
+    }
 }
 
 // This function sets the slot timing to start now with a 10 second slot duration for tests.
@@ -214,6 +245,48 @@ fn configure_slot_timing(config: &mut BuilderConfig) -> Result<(), eyre::Error> 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     config.slot_calculator = SlotCalculator::new(now, 0, DEFAULT_SLOT_DURATION);
     Ok(())
+}
+
+/// Builds a host environment from the given prev_header for the _next_ block.
+fn build_host_environment(config: &BuilderConfig, prev_header: Header) -> Environment {
+    let block_env = BlockEnv {
+        number: U256::from(prev_header.number + 1),
+        beneficiary: config.builder_rewards_address,
+        timestamp: U256::from(prev_header.timestamp + config.slot_calculator.slot_duration()),
+        gas_limit: config.max_host_gas(prev_header.gas_limit),
+        basefee: prev_header
+            .next_block_base_fee(BaseFeeParams::ethereum())
+            .expect("signet has no non-1559 headers"),
+        difficulty: U256::ZERO,
+        prevrandao: Some(B256::random()),
+        blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
+            excess_blob_gas: 0,
+            blob_gasprice: 0,
+        }),
+    };
+
+    Environment::new(block_env, prev_header)
+}
+
+/// Builds a rollup environment from the given prev_header for the _next_ block.
+fn build_rollup_environment(config: &BuilderConfig, prev_header: Header) -> Environment {
+    let block_env = BlockEnv {
+        number: U256::from(prev_header.number + 1),
+        beneficiary: config.builder_rewards_address,
+        timestamp: U256::from(prev_header.timestamp + config.slot_calculator.slot_duration()),
+        gas_limit: config.rollup_block_gas_limit,
+        basefee: prev_header
+            .next_block_base_fee(BaseFeeParams::ethereum())
+            .expect("signet has no non-1559 headers"),
+        difficulty: U256::ZERO,
+        prevrandao: Some(B256::random()),
+        blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
+            excess_blob_gas: 0,
+            blob_gasprice: 0,
+        }),
+    };
+
+    Environment::new(block_env, prev_header)
 }
 
 // Spawn an Anvil instance and return its provider and an AnvilProvider wrapper that

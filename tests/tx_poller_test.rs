@@ -2,7 +2,7 @@ use alloy::{primitives::U256, signers::local::PrivateKeySigner};
 use builder::{
     config::BuilderConfig,
     tasks::cache::TxPoller,
-    test_utils::{new_signed_tx, setup_logging, setup_test_config},
+    test_utils::{new_signed_tx_with_max_fee, setup_logging, setup_test_config},
 };
 // Import the refactored function
 use eyre::{Ok, Result};
@@ -34,7 +34,7 @@ async fn post_tx(config: &BuilderConfig) -> Result<()> {
     let client = reqwest::Client::new();
 
     let wallet = PrivateKeySigner::random();
-    let tx_envelope = new_signed_tx(&wallet, 1, U256::from(1), 10_000)?;
+    let tx_envelope = new_signed_tx_with_max_fee(&wallet, 1, U256::from(1), 10_000, 10_000_000)?;
 
     let url = format!("{}/transactions", config.tx_pool_url);
     let response = client.post(&url).json(&tx_envelope).send().await?;

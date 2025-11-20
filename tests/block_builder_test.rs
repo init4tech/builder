@@ -11,9 +11,9 @@ use alloy::{
 use builder::{
     tasks::{
         block::sim::Simulator,
-        env::{EnvTask, Environment, SimEnv},
+        env::{Environment, SimEnv},
     },
-    test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
+    test_utils::{new_signed_tx_with_max_fee, setup_logging, setup_test_config, test_block_env},
 };
 use signet_sim::SimCache;
 use std::time::{Duration, Instant};
@@ -39,7 +39,7 @@ async fn test_handle_build() {
     // Create a rollup provider
     let ru_provider = RootProvider::<Ethereum>::new_http(anvil_instance.endpoint_url());
 
-    // Create a host provider 
+    // Create a host provider
     let host_provider = config.connect_host_provider().await.unwrap();
 
     // Provide a dummy env receiver; this test calls handle_build directly and
@@ -51,10 +51,12 @@ async fn test_handle_build() {
     let sim_items = SimCache::new();
 
     // Add two transactions from two senders to the sim cache
-    let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_u64), 11_000).unwrap();
+    let tx_1 =
+        new_signed_tx_with_max_fee(&test_key_0, 0, U256::from(1_u64), 11_000, 10_000_000).unwrap();
     sim_items.add_tx(tx_1, 0);
 
-    let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_u64), 10_000).unwrap();
+    let tx_2 =
+        new_signed_tx_with_max_fee(&test_key_1, 0, U256::from(2_u64), 10_000, 10_000_000).unwrap();
     sim_items.add_tx(tx_2, 0);
 
     // Setup the block envs
@@ -91,7 +93,7 @@ async fn test_harness_ticks_and_emits() {
     let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
 
     // Start simulator and tick a new SimEnv
-    h.start();
+    h.start().await;
 
     // Add a transaction into the sim cache
     h.add_tx(&test_key_0, 0, U256::from(1_u64), 11_000);
@@ -123,7 +125,7 @@ async fn test_harness_simulates_full_flow() {
     h.add_tx(&test_key_1, 0, U256::from(2_u64), 10_000);
 
     // Start simulator and tick a new SimEnv
-    h.start();
+    h.start().await;
 
     h.mine_blocks(1).await.unwrap();
 
@@ -154,6 +156,103 @@ async fn test_harness_stops() {
     setup_logging();
     let mut h = TestHarness::new().await.unwrap();
 
-    h.start();
+    h.start().await;
+
+    h.stop().await;
+
+    assert_eq!(h.simulator_handle.is_none(), true);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_timeout_without_results() {
+    setup_logging();
+    let mut h = TestHarness::new().await.unwrap();
+
+    h.start().await;
+
+    let wait = Duration::from_millis(250);
+    let got = h.recv_result(wait).await;
+
+    h.stop().await;
+
+    assert!(got.is_none(), "expected timeout when no blocks are mined");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_start_is_idempotent() {
+    setup_logging();
+    let mut h = TestHarness::new().await.unwrap();
+
+    h.start().await;
+    let first_id = h.simulator_handle.as_ref().expect("simulator handle").id();
+
+    h.start().await;
+    let second_id = h.simulator_handle.as_ref().expect("simulator handle").id();
+
+    h.stop().await;
+
+    assert_eq!(first_id, second_id, "second start should reuse existing task");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_stop_without_start() {
+    setup_logging();
+    let mut h = TestHarness::new().await.unwrap();
+
+    h.stop().await;
+
+    assert!(h.simulator_handle.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_emits_multiple_results() {
+    setup_logging();
+    let mut h = TestHarness::new().await.unwrap();
+
+    let keys = h.rollup.anvil().keys();
+    let signer = PrivateKeySigner::from_signing_key(keys[0].clone().into());
+
+    // First tick uses a transaction added before the simulator starts.
+    h.add_tx(&signer, 0, U256::from(1_u64), 11_000);
+    h.start().await;
+    h.mine_blocks(1).await.unwrap();
+
+    let wait = Duration::from_secs(h.config.slot_calculator.slot_duration() + 5);
+    let first = h.recv_result(wait).await.expect("first sim result");
+    assert_eq!(first.block.tx_count(), 1);
+
+    // Second tick shouldn't need new transactions to emit a block.
+    h.mine_blocks(1).await.unwrap();
+    let second = h.recv_result(wait).await.expect("second sim result");
+    assert_eq!(second.block.tx_count(), 0);
+    assert_eq!(second.block.block_number(), first.block.block_number() + 1);
+
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_harness_result_matches_headers() {
+    setup_logging();
+    let mut h = TestHarness::new().await.unwrap();
+
+    let keys = h.rollup.anvil().keys();
+    let signer = PrivateKeySigner::from_signing_key(keys[0].clone().into());
+
+    // Capture the headers the harness should target.
+    let (prev_rollup, prev_host) = h.get_headers().await.unwrap();
+
+    h.add_tx(&signer, 0, U256::from(1_u64), 11_000);
+    h.start().await;
+    h.mine_blocks(1).await.unwrap();
+
+    let wait = Duration::from_secs(h.config.slot_calculator.slot_duration() + 5);
+    let got = h.recv_result(wait).await.expect("sim result");
+
+    assert_eq!(got.block.tx_count(), 1);
+    assert_eq!(got.rollup_block_number(), prev_rollup.number + 2);
+    assert_eq!(got.host_block_number(), prev_host.number + 2);
+    assert_eq!(got.prev_rollup().number, prev_rollup.number + 1);
+    assert_eq!(got.prev_host().number, prev_host.number + 1);
+
     h.stop().await;
 }

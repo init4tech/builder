@@ -58,17 +58,18 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
     Ok(pecorino_config)
 }
 
-/// Returns a new signed test transaction with the provided nonce, value, and mpfpg.
-pub fn new_signed_tx(
+/// Returns a new signed test transaction with the provided nonce, value, mpfpg, and max fee.
+pub fn new_signed_tx_with_max_fee(
     wallet: &PrivateKeySigner,
     nonce: u64,
     value: U256,
     mpfpg: u128,
+    max_fee_per_gas: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
         chain_id: pecorino::RU_CHAIN_ID,
         nonce,
-        max_fee_per_gas: 10_000_000,
+        max_fee_per_gas,
         max_priority_fee_per_gas: mpfpg,
         to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value,
