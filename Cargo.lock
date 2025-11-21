@@ -2454,6 +2454,7 @@ dependencies = [
  "reth-chainspec",
  "serde",
  "signet-block-processor",
+ "signet-bundle",
  "signet-constants",
  "signet-genesis",
  "signet-sim",

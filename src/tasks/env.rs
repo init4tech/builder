@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy::{
     consensus::Header,
-    eips::eip1559::BaseFeeParams,
+    eips::{BlockId, eip1559::BaseFeeParams},
     network::Ethereum,
     primitives::{B256, U256},
     providers::{Provider, network::Network},
@@ -67,7 +67,7 @@ impl Environment {
 
     /// Create a new [`AlloyDB`] for this environment using the given provider.
     pub fn alloy_db<N: Network, P: Provider<N>>(&self, provider: P) -> AlloyDB<N, P> {
-        AlloyDB::new(provider, self.prev_header.number.into())
+        AlloyDB::new(provider, BlockId::latest())
     }
 }
 
