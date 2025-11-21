@@ -91,7 +91,7 @@ pub struct BuilderConfig {
         var = "FLASHBOTS_ENDPOINT",
         desc = "Flashbots endpoint for privately submitting Signet bundles"
     )]
-    pub flashbots_endpoint: Option<url::Url>,
+    pub flashbots_endpoint: url::Url,
 
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
@@ -219,11 +219,9 @@ impl BuilderConfig {
         &self,
         config: &BuilderConfig,
     ) -> Result<FlashbotsProvider, eyre::Error> {
-        let endpoint =
-            config.flashbots_endpoint.clone().expect("flashbots endpoint must be configured");
         let signer = config.connect_builder_signer().await?;
         let flashbots: FlashbotsProvider =
-            ProviderBuilder::new().wallet(signer).connect_http(endpoint);
+            ProviderBuilder::new().wallet(signer).connect_http(config.flashbots_endpoint.clone());
         Ok(flashbots)
     }
 
