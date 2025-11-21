@@ -86,7 +86,7 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
 Key                           | Required | Description
------------------------------ | -------- | ------------------------------------------------------------------------------
+----------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------
 `RUST_LOG`                    | No       | The log level of the builder
 `CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)
 `HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain
@@ -97,7 +97,8 @@ Key                           | Required | Description
 `FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to
 `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for rollup block gas limit
 `MAX_HOST_GAS_COEFFICIENT`    | No       | Optional maximum host gas coefficient, as a percentage, to use when building blocks
-`BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signing
+`BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signin
+`BLOCK_QUERY_CUTOFF_BUFFER`   | Yes      | Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process
 `AWS_ACCESS_KEY_ID`           | No       | AWS secret access key ID (required if not using `BUILDER_KEY`)
 `AWS_SECRET_ACCESS_KEY`       | No       | AWS secret access key (required if not using `BUILDER_KEY`)
 `AWS_DEFAULT_REGION`          | No       | AWS region for the KMS key in question (required if not using `BUILDER_KEY`)
