@@ -15,6 +15,7 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     let (block_env, _jh) = EnvTask::new(
         config.clone(),
         config.connect_host_provider().await?,
+        config.connect_quincey().await?,
         config.connect_ru_provider().await?,
     )
     .spawn();
