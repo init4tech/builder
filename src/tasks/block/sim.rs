@@ -128,7 +128,9 @@ impl Simulator {
     /// A `Result` containing the built block or an error.
     #[instrument(skip_all, fields(
         tx_count = sim_items.len(),
-        millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis()
+        millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis(),
+        host_block_number = sim_env.rollup_block_number(),
+        rollup_block_number = sim_env.host_block_number(),
     ))]
     pub async fn handle_build(
         &self,
@@ -139,8 +141,11 @@ impl Simulator {
         let concurrency_limit = self.config.concurrency_limit();
 
         let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
-
         let host_env = sim_env.sim_host_env(self.constants(), self.host_provider.clone());
+
+        let ru_number = rollup_env.block().number;
+        let host_number = host_env.block().number;
+        debug!(?ru_number, ?host_number, "starting block simulation");
 
         let block_build = BlockBuild::new(
             rollup_env,
@@ -238,24 +243,31 @@ impl Simulator {
         }
     }
 
-    /// Calculates the deadline for the current block simulation.
+    /// Calculates the deadline for the current block simulation in milliseconds.
     ///
     /// # Returns
     ///
-    /// An `Instant` representing the simulation deadline, as calculated by
-    /// determining the time left in the current slot and adding that to the
-    /// current timestamp in UNIX seconds.
+    /// An `Instant` representing the simulation deadline as calculated by determining
+    /// the milliseconds  left in the current slot and adding that to the current
+    /// timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
-        // Get the current timepoint within the slot.
-        let timepoint =
-            self.slot_calculator().current_point_within_slot().expect("host chain has started");
+        // Get the current number of milliseconds into the slot.
+        let timepoint_ms =
+            self.slot_calculator().current_point_within_slot_ms().expect("host chain has started");
+        let slot_duration = Duration::from_secs(self.slot_calculator().slot_duration()).as_millis();
+        let elapsed_in_slot = Duration::from_millis(timepoint_ms);
+        let query_cutoff_buffer = Duration::from_millis(self.config.block_query_cutoff_buffer);
 
-        // We have the timepoint in seconds into the slot. To find out what's
-        // remaining, we need to subtract it from the slot duration
-        // we also subtract 3 seconds to account for the sequencer stopping signing.
-        let remaining = (self.slot_calculator().slot_duration() - timepoint).saturating_sub(3);
+        // To find the remaining slot time, subtract the timepoint from the slot duration.
+        // Then subtract the block query cutoff buffer from the slot duration to account for
+        // the sequencer stopping signing.
+        let remaining = slot_duration
+            .saturating_sub(elapsed_in_slot.as_millis())
+            .saturating_sub(query_cutoff_buffer.as_millis());
 
-        let deadline = Instant::now() + Duration::from_secs(remaining);
+        // The deadline is then calculated by adding the remaining time from this instant.
+        // NB: Downcast is okay because u64 will work for 500 million+ years.
+        let deadline = Instant::now() + Duration::from_millis(remaining as u64);
         deadline.max(Instant::now())
     }
 }
