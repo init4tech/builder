@@ -278,7 +278,9 @@ impl EnvTask {
 
             let (host_block_res, quincey_res) = tokio::join!(
                 self.host_provider.get_block_by_number(host_block_number.into()),
-                self.quincey.preflight_check(&self.config.constants, host_block_number)
+                // We want to check that we're able to sign for the block we're gonna start building.
+                // If not, we just want to skip all the work.
+                self.quincey.preflight_check(&self.config.constants, host_block_number + 1)
             );
 
             res_unwrap_or_continue!(
