@@ -129,7 +129,7 @@ impl SimulatorTask {
 
         let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
         let host_env = sim_env.sim_host_env(self.constants(), self.host_provider.clone());
-        
+
         let block_build = BlockBuild::new(
             rollup_env,
             host_env,
