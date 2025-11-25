@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy::{
     consensus::Header,
-    eips::{eip1559::BaseFeeParams},
+    eips::eip1559::BaseFeeParams,
     network::Ethereum,
     primitives::{B256, U256},
     providers::{Provider, network::Network},
