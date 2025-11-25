@@ -55,6 +55,16 @@ impl CacheTask {
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
+
+                    let env_block = self.envs.borrow().as_ref().map(|e| e.rollup_env().number.to::<u64>()).unwrap_or_default();
+                    let bundle_block = bundle.bundle.block_number();
+
+                    // Don't insert bundles for past blocks
+                    if env_block > bundle_block {
+                        debug!(env.block = env_block, bundle.block = bundle_block, "skipping bundle insert");
+                        continue;
+                    }
+
                     let res = cache.add_bundle(bundle.bundle, basefee);
                     // Skip bundles that fail to be added to the cache
                     if let Err(e) = res {
