@@ -55,6 +55,16 @@ const FLASHBOTS_SUBMISSION_DURATION_MS: &str = "signet.builder.flashbots.submiss
 const FLASHBOTS_SUBMISSION_DURATION_MS_HELP: &str =
     "Duration of Flashbots bundle submission requests in milliseconds";
 
+// -- Cache --
+const CACHE_BUNDLES_RECEIVED: &str = "signet.builder.cache.bundles_received";
+const CACHE_BUNDLES_RECEIVED_HELP: &str = "Number of bundles received by the cache";
+
+const CACHE_BUNDLES_DROPPED: &str = "signet.builder.cache.bundles_dropped";
+const CACHE_BUNDLES_DROPPED_HELP: &str = "Number of bundles dropped due to add failures";
+
+const CACHE_TXS_RECEIVED: &str = "signet.builder.cache.txs_received";
+const CACHE_TXS_RECEIVED_HELP: &str = "Number of transactions received by the cache";
+
 // -- Block Building --
 const BUILT_BLOCKS: &str = "signet.builder.built_blocks";
 const BUILT_BLOCKS_HELP: &str = "Number of blocks built by the simulator";
@@ -94,6 +104,11 @@ static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
     describe_counter!(FLASHBOTS_EMPTY_BLOCKS, FLASHBOTS_EMPTY_BLOCKS_HELP);
     describe_counter!(FLASHBOTS_SUBMISSIONS, FLASHBOTS_SUBMISSIONS_HELP);
     describe_histogram!(FLASHBOTS_SUBMISSION_DURATION_MS, FLASHBOTS_SUBMISSION_DURATION_MS_HELP);
+
+    // Cache
+    describe_counter!(CACHE_BUNDLES_RECEIVED, CACHE_BUNDLES_RECEIVED_HELP);
+    describe_counter!(CACHE_BUNDLES_DROPPED, CACHE_BUNDLES_DROPPED_HELP);
+    describe_counter!(CACHE_TXS_RECEIVED, CACHE_TXS_RECEIVED_HELP);
 
     // Block building
     describe_counter!(BUILT_BLOCKS, BUILT_BLOCKS_HELP);
@@ -171,6 +186,26 @@ pub fn flashbots_submissions() -> Counter {
 pub fn flashbots_submission_duration_ms() -> Histogram {
     LazyLock::force(&DESCRIBE);
     histogram!(FLASHBOTS_SUBMISSION_DURATION_MS)
+}
+
+// -- Cache --
+
+/// Counter for bundles received by the cache.
+pub fn cache_bundles_received() -> Counter {
+    LazyLock::force(&DESCRIBE);
+    counter!(CACHE_BUNDLES_RECEIVED)
+}
+
+/// Counter for bundles dropped due to add failures.
+pub fn cache_bundles_dropped() -> Counter {
+    LazyLock::force(&DESCRIBE);
+    counter!(CACHE_BUNDLES_DROPPED)
+}
+
+/// Counter for transactions received by the cache.
+pub fn cache_txs_received() -> Counter {
+    LazyLock::force(&DESCRIBE);
+    counter!(CACHE_TXS_RECEIVED)
 }
 
 // -- Block Building --
