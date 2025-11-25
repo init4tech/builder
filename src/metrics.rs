@@ -51,6 +51,10 @@ const FLASHBOTS_EMPTY_BLOCKS_HELP: &str = "Number of empty blocks skipped";
 const FLASHBOTS_SUBMISSIONS: &str = "signet.builder.flashbots.submissions";
 const FLASHBOTS_SUBMISSIONS_HELP: &str = "Number of submission attempts to Flashbots";
 
+const FLASHBOTS_SUBMISSION_DURATION_MS: &str = "signet.builder.flashbots.submission_duration_ms";
+const FLASHBOTS_SUBMISSION_DURATION_MS_HELP: &str =
+    "Duration of Flashbots bundle submission requests in milliseconds";
+
 // -- Block Building --
 const BUILT_BLOCKS: &str = "signet.builder.built_blocks";
 const BUILT_BLOCKS_HELP: &str = "Number of blocks built by the simulator";
@@ -89,6 +93,7 @@ static DESCRIBE: LazyLock<()> = LazyLock::new(|| {
     describe_counter!(FLASHBOTS_BUNDLE_PREP_FAILURES, FLASHBOTS_BUNDLE_PREP_FAILURES_HELP);
     describe_counter!(FLASHBOTS_EMPTY_BLOCKS, FLASHBOTS_EMPTY_BLOCKS_HELP);
     describe_counter!(FLASHBOTS_SUBMISSIONS, FLASHBOTS_SUBMISSIONS_HELP);
+    describe_histogram!(FLASHBOTS_SUBMISSION_DURATION_MS, FLASHBOTS_SUBMISSION_DURATION_MS_HELP);
 
     // Block building
     describe_counter!(BUILT_BLOCKS, BUILT_BLOCKS_HELP);
@@ -160,6 +165,12 @@ pub fn flashbots_empty_blocks() -> Counter {
 pub fn flashbots_submissions() -> Counter {
     LazyLock::force(&DESCRIBE);
     counter!(FLASHBOTS_SUBMISSIONS)
+}
+
+/// Histogram for Flashbots bundle submission duration in milliseconds.
+pub fn flashbots_submission_duration_ms() -> Histogram {
+    LazyLock::force(&DESCRIBE);
+    histogram!(FLASHBOTS_SUBMISSION_DURATION_MS)
 }
 
 // -- Block Building --

@@ -14,6 +14,7 @@ use alloy::{
 };
 use eyre::OptionExt;
 use init4_bin_base::utils::signer::LocalOrAws;
+use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, debug_span};
 
@@ -196,12 +197,16 @@ impl FlashbotsTask {
             let signer = self.signer.clone();
 
             tokio::spawn(async move {
+                let start = Instant::now();
                 let response = flashbots
                     .send_mev_bundle(bundle.clone())
                     .with_auth(signer.clone())
                     .into_future()
                     .instrument(submit_span.clone())
                     .await;
+
+                metrics::flashbots_submission_duration_ms()
+                    .record(start.elapsed().as_millis() as f64);
 
                 match response {
                     Ok(resp) => {
