@@ -53,7 +53,7 @@ pub fn setup_test_config() -> Result<BuilderConfig> {
             1740681556, // pecorino start timestamp as sane default
             0, 1,
         ),
-        block_query_cutoff_buffer: 2,
+        block_query_cutoff_buffer: 3000,
         max_host_gas_coefficient: Some(80),
         constants: SignetSystemConstants::pecorino(),
     };
