@@ -139,8 +139,7 @@ impl SimEnv {
     ///
     /// This function will panic if not called within a Tokio runtime.
     pub fn rollup_db(&self, provider: RuProvider) -> RollupAlloyDatabaseProvider {
-        debug!(block_number = ?BlockId::latest(), "creating alloy DB for rollup");
-        WrapDatabaseAsync::new(self.rollup.alloy_db(provider, BlockId::latest())).expect("in tokio runtime")
+        WrapDatabaseAsync::new(self.rollup.alloy_db(provider, BlockId::pending())).expect("in tokio runtime")
     }
 
     /// Create an [`AlloyDB`] for the host environment using the given provider.
@@ -149,8 +148,8 @@ impl SimEnv {
     ///
     /// This function will panic if not called within a Tokio runtime.
     pub fn host_db(&self, provider: HostProvider) -> HostAlloyDatabaseProvider {
-        debug!(block_number = ?BlockId::number(self.prev_host().number), "creating alloy DB for host");
-        WrapDatabaseAsync::new(self.host.alloy_db(provider, BlockId::number(self.prev_host().number))).expect("in tokio runtime")
+        debug!(block_number = ?BlockId::pending(), "creating alloy DB for host");
+        WrapDatabaseAsync::new(self.host.alloy_db(provider, BlockId::pending())).expect("in tokio runtime")
     }
 
     /// Create a simulated rollup environment using the given provider,
