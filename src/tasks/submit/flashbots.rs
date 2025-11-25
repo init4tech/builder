@@ -2,6 +2,7 @@
 //! submits them to the Flashbots relay as bundles.
 use crate::{
     config::{BuilderConfig, FlashbotsProvider, HostProvider, ZenithInstance},
+    metrics,
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
@@ -12,7 +13,8 @@ use alloy::{
     rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
 };
 use eyre::OptionExt;
-use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
+use init4_bin_base::utils::signer::LocalOrAws;
+use std::time::Instant;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, debug_span};
 
@@ -120,7 +122,7 @@ impl FlashbotsTask {
     /// Sends the transaction hash to the outbound channel for monitoring.
     /// Logs a debug message if the channel is closed.
     fn track_outbound_tx(&self, envelope: &alloy::consensus::TxEnvelope) {
-        counter!("signet.builder.flashbots.").increment(1);
+        metrics::flashbots_submissions().increment(1);
         let hash = *envelope.tx_hash();
         if self.outbound.send(hash).is_err() {
             debug!("outbound channel closed, could not track tx hash");
@@ -166,7 +168,7 @@ impl FlashbotsTask {
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
-                counter!("signet.builder.flashbots.empty_block").increment(1);
+                metrics::flashbots_empty_blocks().increment(1);
                 span_debug!(span, "received empty block - skipping");
                 continue;
             }
@@ -175,7 +177,7 @@ impl FlashbotsTask {
             // Prepare a MEV bundle with the configured call type from the sim result
             let result =
                 self.prepare(&sim_result).instrument(span.clone()).await.inspect_err(|error| {
-                    counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
+                    metrics::flashbots_bundle_prep_failures().increment(1);
                     span_debug!(span, %error, "bundle preparation failed");
                 });
             let bundle = match result {
@@ -195,6 +197,7 @@ impl FlashbotsTask {
             let signer = self.signer.clone();
 
             tokio::spawn(async move {
+                let start = Instant::now();
                 let response = flashbots
                     .send_mev_bundle(bundle.clone())
                     .with_auth(signer.clone())
@@ -202,9 +205,12 @@ impl FlashbotsTask {
                     .instrument(submit_span.clone())
                     .await;
 
+                metrics::flashbots_submission_duration_ms()
+                    .record(start.elapsed().as_millis() as f64);
+
                 match response {
                     Ok(resp) => {
-                        counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                        metrics::flashbots_bundles_submitted().increment(1);
                         span_debug!(
                             submit_span,
                             hash = resp.map(|r| r.bundle_hash.to_string()),
@@ -212,7 +218,7 @@ impl FlashbotsTask {
                         );
                     }
                     Err(err) => {
-                        counter!("signet.builder.flashbots.submission_failures").increment(1);
+                        metrics::flashbots_submission_failures().increment(1);
                         span_error!(submit_span, %err, "MEV bundle submission failed - error returned");
                     }
                 }

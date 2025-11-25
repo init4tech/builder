@@ -1,9 +1,8 @@
-use crate::config::HostProvider;
+use crate::{config::HostProvider, metrics};
 use alloy::{
     primitives::TxHash,
     providers::{PendingTransactionBuilder, PendingTransactionError, Provider as _, WatchTxError},
 };
-use init4_bin_base::deps::metrics::{counter, histogram};
 use std::time::{Duration, Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, error, info_span};
@@ -47,24 +46,24 @@ impl MetricsTask {
                 Ok(receipt) => {
                     // record how long it took to mine the transaction
                     // potential improvement: use the block timestamp to calculate the time elapsed
-                    histogram!("metrics.tx_mine_time").record(start.elapsed().as_millis() as f64);
+                    metrics::tx_mine_time_ms().record(start.elapsed().as_millis() as f64);
 
                     // log whether the transaction reverted
                     if receipt.status() {
-                        counter!("metrics.tx_succeeded").increment(1);
+                        metrics::tx_succeeded().increment(1);
                         debug!("tx succeeded");
                     } else {
-                        counter!("metrics.tx_reverted").increment(1);
+                        metrics::tx_reverted().increment(1);
                         debug!("tx reverted");
                     }
                 }
                 Err(PendingTransactionError::TxWatcher(WatchTxError::Timeout)) => {
                     // log that the transaction timed out
-                    counter!("metrics.tx_not_mined").increment(1);
+                    metrics::tx_not_mined().increment(1);
                     debug!("tx not mined");
                 }
                 Err(e) => {
-                    counter!("metrics.rpc_error").increment(1);
+                    metrics::rpc_error().increment(1);
                     error!(error = ?e, "rpc error");
                 }
             }

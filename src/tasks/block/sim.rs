@@ -3,13 +3,11 @@
 //! and turns them into valid Pecorino blocks for network submission.
 use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
+    metrics,
     tasks::env::SimEnv,
 };
 use alloy::consensus::Header;
-use init4_bin_base::{
-    deps::metrics::{counter, histogram},
-    utils::calc::SlotCalculator,
-};
+use init4_bin_base::utils::calc::SlotCalculator;
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
@@ -158,8 +156,8 @@ impl Simulator {
             block_number = built_block.block_number(),
             "block simulation completed",
         );
-        counter!("signet.builder.built_blocks").increment(1);
-        histogram!("signet.builder.built_blocks.tx_count").record(built_block.tx_count() as u32);
+        metrics::built_blocks().increment(1);
+        metrics::built_blocks_tx_count().record(built_block.tx_count() as u32);
 
         Ok(built_block)
     }
