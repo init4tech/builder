@@ -1,4 +1,4 @@
-use crate::tasks::env::SimEnv;
+use crate::{metrics, tasks::env::SimEnv};
 use alloy::consensus::TxEnvelope;
 use signet_sim::SimCache;
 use signet_tx_cache::types::TxCacheBundle;
@@ -34,8 +34,8 @@ impl CacheTask {
     }
 
     async fn task_future(mut self, cache: SimCache) {
+        let mut basefee = 0;
         loop {
-            let mut basefee = 0;
             tokio::select! {
                 biased;
                 res = self.envs.changed() => {
@@ -55,14 +55,17 @@ impl CacheTask {
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
+                    metrics::cache_bundles_received().increment(1);
                     let res = cache.add_bundle(bundle.bundle, basefee);
                     // Skip bundles that fail to be added to the cache
                     if let Err(e) = res {
+                        metrics::cache_bundles_dropped().increment(1);
                         debug!(?e, "Failed to add bundle to cache");
                         continue;
                     }
                 }
                 Some(txn) = self.txns.recv() => {
+                    metrics::cache_txs_received().increment(1);
                     cache.add_tx(txn, basefee);
                 }
             }
