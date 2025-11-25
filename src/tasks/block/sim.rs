@@ -117,9 +117,7 @@ impl SimulatorTask {
     /// A `Result` containing the built block or an error.
     #[instrument(skip_all, fields(
         tx_count = sim_items.len(),
-        millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis(),
-        host_block_number = sim_env.rollup_block_number(),
-        rollup_block_number = sim_env.host_block_number(),
+        millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis()
     ))]
     pub async fn handle_build(
         &self,
@@ -131,11 +129,7 @@ impl SimulatorTask {
 
         let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
         let host_env = sim_env.sim_host_env(self.constants(), self.host_provider.clone());
-
-        let ru_number = rollup_env.block().number;
-        let host_number = host_env.block().number;
-        debug!(?ru_number, ?host_number, "starting block simulation");
-
+        
         let block_build = BlockBuild::new(
             rollup_env,
             host_env,
