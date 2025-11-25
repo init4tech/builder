@@ -67,7 +67,7 @@ impl Environment {
 
     /// Create a new [`AlloyDB`] for this environment using the given provider.
     pub fn alloy_db<N: Network, P: Provider<N>>(&self, provider: P) -> AlloyDB<N, P> {
-        AlloyDB::new(provider, BlockId::latest())
+        AlloyDB::new(provider, self.prev_header.number.into())
     }
 }
 
