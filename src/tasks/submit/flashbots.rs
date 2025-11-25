@@ -191,28 +191,32 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so all
             // events inside the async send are attributed to the submit span.
-            let response = self
-                .flashbots()
-                .send_mev_bundle(bundle.clone())
-                .with_auth(self.signer.clone())
-                .into_future()
-                .instrument(submit_span.clone())
-                .await;
+            let flashbots = self.flashbots().to_owned();
+            let signer = self.signer.clone();
 
-            match response {
-                Ok(resp) => {
-                    counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                    span_debug!(
-                        submit_span,
-                        hash = resp.map(|r| r.bundle_hash.to_string()),
-                        "received bundle hash after submitted to flashbots"
-                    );
+            tokio::spawn(async move {
+                let response = flashbots
+                    .send_mev_bundle(bundle.clone())
+                    .with_auth(signer.clone())
+                    .into_future()
+                    .instrument(submit_span.clone())
+                    .await;
+
+                match response {
+                    Ok(resp) => {
+                        counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                        span_debug!(
+                            submit_span,
+                            hash = resp.map(|r| r.bundle_hash.to_string()),
+                            "received bundle hash after submitted to flashbots"
+                        );
+                    }
+                    Err(err) => {
+                        counter!("signet.builder.flashbots.submission_failures").increment(1);
+                        span_error!(submit_span, %err, "MEV bundle submission failed - error returned");
+                    }
                 }
-                Err(err) => {
-                    counter!("signet.builder.flashbots.submission_failures").increment(1);
-                    span_error!(submit_span, %err, "MEV bundle submission failed - error returned");
-                }
-            }
+            });
         }
     }
 
