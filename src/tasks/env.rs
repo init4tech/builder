@@ -14,7 +14,7 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, info_span};
+use tracing::{Instrument, Span, debug, info_span};
 use trevm::revm::{
     context::BlockEnv,
     context_interface::block::BlobExcessGasAndPrice,
@@ -64,6 +64,7 @@ impl Environment {
 
     /// Create a new [`AlloyDB`] for this environment using the given provider.
     pub fn alloy_db<N: Network, P: Provider<N>>(&self, provider: P) -> AlloyDB<N, P> {
+        debug!(?self.prev_header.number, "Creating AlloyDB for block number");
         AlloyDB::new(provider, self.prev_header.number.into())
     }
 }
@@ -139,7 +140,7 @@ impl SimEnv {
     ///
     /// This function will panic if not called within a Tokio runtime.
     pub fn rollup_db(&self, provider: RuProvider) -> RollupAlloyDatabaseProvider {
-        WrapDatabaseAsync::new(self.rollup.alloy_db(providerber)xpect("in tokio runtime")
+        WrapDatabaseAsync::new(self.rollup.alloy_db(provider)).expect("in tokio runtime")
     }
 
     /// Create an [`AlloyDB`] for the host environment using the given provider.
