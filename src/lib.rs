@@ -18,6 +18,9 @@ mod macros;
 /// Configuration for the Builder binary.
 pub mod config;
 
+/// Centralized metrics definitions.
+pub mod metrics;
+
 /// Quincey client for signing requests.
 pub mod quincey;
 

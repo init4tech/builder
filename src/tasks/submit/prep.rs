@@ -1,5 +1,6 @@
 use crate::{
     config::{BuilderConfig, HostProvider},
+    metrics,
     quincey::Quincey,
     utils,
 };
@@ -11,11 +12,11 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
-use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
-use tracing::{Instrument, debug};
+use std::time::Instant;
+use tracing::{Instrument, debug, debug_span};
 
 /// Preparation logic for transactions issued to the host chain by the
 /// [`SubmitTask`].
@@ -76,12 +77,20 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp
             .get_or_try_init(|| async {
                 let sig_request = self.sig_request();
+                let start = Instant::now();
                 self.quincey
                     .get_signature(sig_request)
+                    .instrument(debug_span!("quincey_signature"))
                     .await
-                    .inspect(|_| counter!("signet.builder.quincey_signatures").increment(1))
+                    .inspect(|_| {
+                        metrics::quincey_signature_duration_ms()
+                            .record(start.elapsed().as_millis() as f64);
+                        metrics::quincey_signatures().increment(1);
+                    })
                     .inspect_err(|_| {
-                        counter!("signet.builder.quincey_signature_failures").increment(1)
+                        metrics::quincey_signature_duration_ms()
+                            .record(start.elapsed().as_millis() as f64);
+                        metrics::quincey_signature_failures().increment(1);
                     })
             })
             .await
@@ -113,8 +122,17 @@ impl<'a> SubmitPrep<'a> {
     }
 
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
-        let nonce =
-            self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
+        let nonce = {
+            let start = Instant::now();
+            let nonce = self
+                .provider
+                .get_transaction_count(self.provider.default_signer_address())
+                .into_future()
+                .instrument(debug_span!("nonce_fetch"))
+                .await?;
+            metrics::nonce_fetch_duration_ms().record(start.elapsed().as_millis() as f64);
+            nonce
+        };
 
         debug!(nonce, "assigned nonce to rollup block transaction");
 
