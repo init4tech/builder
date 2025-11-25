@@ -14,7 +14,7 @@ use alloy::{
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{Instrument, debug, debug_span};
+use tracing::{Instrument, debug, debug_span, instrument};
 
 /// Handles preparation and submission of simulated rollup blocks to the
 /// Flashbots relay as MEV bundles.
@@ -98,6 +98,7 @@ impl FlashbotsTask {
     ///
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
     /// and signs it using the host provider.
+    #[instrument(skip(self), fields(sim_result_block_number = ?sim_result.block, sim_result_host_block_number = %sim_result.host_block_number()))]
     async fn prepare_signed_transaction(
         &self,
         sim_result: &SimResult,

@@ -14,7 +14,7 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, debug, info_span};
+use tracing::{Instrument, Span, info_span, instrument};
 use trevm::revm::{
     context::BlockEnv,
     context_interface::block::BlobExcessGasAndPrice,
@@ -64,7 +64,6 @@ impl Environment {
 
     /// Create a new [`AlloyDB`] for this environment using the given provider.
     pub fn alloy_db<N: Network, P: Provider<N>>(&self, provider: P) -> AlloyDB<N, P> {
-        debug!(?self.prev_header.number, "Creating AlloyDB for block number");
         AlloyDB::new(provider, self.prev_header.number.into())
     }
 }
@@ -139,6 +138,7 @@ impl SimEnv {
     /// # Panics
     ///
     /// This function will panic if not called within a Tokio runtime.
+    #[instrument(skip(self, provider), fields(rollup_block_number = %self.prev_rollup_block_number()))]
     pub fn rollup_db(&self, provider: RuProvider) -> RollupAlloyDatabaseProvider {
         WrapDatabaseAsync::new(self.rollup.alloy_db(provider)).expect("in tokio runtime")
     }
@@ -148,6 +148,7 @@ impl SimEnv {
     /// # Panics
     ///
     /// This function will panic if not called within a Tokio runtime.
+    #[instrument(skip(self, provider), fields(host_block_number = %self.prev_host_block_number()))]
     pub fn host_db(&self, provider: HostProvider) -> HostAlloyDatabaseProvider {
         WrapDatabaseAsync::new(self.host.alloy_db(provider)).expect("in tokio runtime")
     }
@@ -213,6 +214,7 @@ impl EnvTask {
     }
 
     /// Construct a [`BlockEnv`] for the next host block from the previous host header.
+    #[instrument(skip(self, previous), fields(previous_number = %previous.number))]
     fn construct_host_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
@@ -234,6 +236,7 @@ impl EnvTask {
     }
 
     /// Construct a [`BlockEnv`] for the next rollup block from the previous block header.
+    #[instrument(skip(self, previous), fields(previous_number = %previous.number))]
     fn construct_rollup_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
