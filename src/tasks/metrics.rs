@@ -17,8 +17,11 @@ pub struct MetricsTask {
 
 impl MetricsTask {
     /// Create a new MetricsTask with the given provider
-    pub const fn new(host_provider: HostProvider) -> Self {
-        Self { host_provider }
+    pub async fn new() -> eyre::Result<Self> {
+        let config = crate::config();
+        let host_provider = config.connect_host_provider().await?;
+
+        Ok(Self { host_provider })
     }
 
     /// Given a transaction hash, record metrics on the result of the
