@@ -223,14 +223,10 @@ impl BuilderConfig {
     }
 
     /// Connect to a Flashbots bundle provider.
-    pub async fn connect_flashbots(
-        &self,
-        config: &BuilderConfig,
-    ) -> Result<FlashbotsProvider, eyre::Error> {
-        let signer = config.connect_builder_signer().await?;
-        let flashbots: FlashbotsProvider =
-            ProviderBuilder::new().wallet(signer).connect_http(config.flashbots_endpoint.clone());
-        Ok(flashbots)
+    pub async fn connect_flashbots(&self) -> Result<FlashbotsProvider, eyre::Error> {
+        self.connect_builder_signer().await.map(|signer| {
+            ProviderBuilder::new().wallet(signer).connect_http(self.flashbots_endpoint.clone())
+        })
     }
 
     /// Connect to the Zenith instance, using the specified provider.

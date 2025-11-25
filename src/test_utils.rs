@@ -19,45 +19,46 @@ use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
-/// Sets up a block builder with test values
-pub fn setup_test_config() -> Result<BuilderConfig> {
-    let config = BuilderConfig {
-        // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
-        host_rpc: "ws://host-rpc.pecorino.signet.sh"
-            .parse::<BuiltInConnectionString>()
-            .map(ProviderConfig::new)
-            .unwrap(),
-        ru_rpc: "ws://rpc.pecorino.signet.sh"
-            .parse::<BuiltInConnectionString>()
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
-        quincey_url: "http://localhost:8080".into(),
-        sequencer_key: None,
-        builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
-            .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
-        builder_port: 8080,
-        builder_rewards_address: Address::default(),
-        rollup_block_gas_limit: 3_000_000_000,
-        tx_pool_url: "http://localhost:9000/".parse().unwrap(),
-        oauth: OAuthConfig {
-            oauth_client_id: "some_client_id".into(),
-            oauth_client_secret: "some_client_secret".into(),
-            oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
-            oauth_token_url: "http://localhost:8080".parse().unwrap(),
-            oauth_token_refresh_interval: 300, // 5 minutes
-        },
-        concurrency_limit: None, // NB: Defaults to available parallelism
-        slot_calculator: SlotCalculator::new(
-            1740681556, // pecorino start timestamp as sane default
-            0, 1,
-        ),
-        block_query_cutoff_buffer: 3000,
-        max_host_gas_coefficient: Some(80),
-        constants: SignetSystemConstants::pecorino(),
-    };
-    Ok(config)
+/// Set up a block builder with test values
+pub fn setup_test_config() -> &'static BuilderConfig {
+    crate::CONFIG.get_or_init(|| {
+        BuilderConfig {
+            // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
+            host_rpc: "ws://host-rpc.pecorino.signet.sh"
+                .parse::<BuiltInConnectionString>()
+                .map(ProviderConfig::new)
+                .unwrap(),
+            ru_rpc: "ws://rpc.pecorino.signet.sh"
+                .parse::<BuiltInConnectionString>()
+                .unwrap()
+                .try_into()
+                .unwrap(),
+            flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
+            quincey_url: "http://localhost:8080".into(),
+            sequencer_key: None,
+            builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+                .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
+            builder_port: 8080,
+            block_query_cutoff_buffer: 3000,
+            builder_rewards_address: Address::default(),
+            rollup_block_gas_limit: 3_000_000_000,
+            tx_pool_url: "http://localhost:9000/".parse().unwrap(),
+            oauth: OAuthConfig {
+                oauth_client_id: "some_client_id".into(),
+                oauth_client_secret: "some_client_secret".into(),
+                oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
+                oauth_token_url: "http://localhost:8080".parse().unwrap(),
+                oauth_token_refresh_interval: 300, // 5 minutes
+            },
+            concurrency_limit: None, // NB: Defaults to available parallelism
+            slot_calculator: SlotCalculator::new(
+                1740681556, // pecorino start timestamp as sane default
+                0, 1,
+            ),
+            max_host_gas_coefficient: Some(80),
+            constants: SignetSystemConstants::pecorino(),
+        }
+    })
 }
 
 /// Returns a new signed test transaction with the provided nonce, value, and mpfpg.
@@ -92,12 +93,8 @@ pub fn setup_logging() {
 
 /// Returns a Pecorino block environment for simulation with the timestamp set to `finish_by`,
 /// the block number set to latest + 1, system gas configs, and a beneficiary address.
-pub fn test_block_env(
-    config: BuilderConfig,
-    number: u64,
-    basefee: u64,
-    timestamp: u64,
-) -> BlockEnv {
+pub fn test_block_env(number: u64, basefee: u64, timestamp: u64) -> BlockEnv {
+    let config = setup_test_config();
     BlockEnv {
         number: U256::from(number),
         beneficiary: Address::repeat_byte(1),

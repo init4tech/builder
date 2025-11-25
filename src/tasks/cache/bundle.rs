@@ -17,34 +17,33 @@ const POLL_INTERVAL_MS: u64 = 1000;
 #[derive(Debug)]
 pub struct BundlePoller {
     /// The builder configuration values.
-    pub config: BuilderConfig,
+    config: &'static BuilderConfig,
     /// Authentication module that periodically fetches and stores auth tokens.
-    pub token: SharedToken,
+    token: SharedToken,
     /// Holds a Reqwest client
-    pub client: Client,
+    client: Client,
     /// Defines the interval at which the bundler polls the tx-pool for bundles.
-    pub poll_interval_ms: u64,
+    poll_interval_ms: u64,
+}
+
+impl Default for BundlePoller {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Implements a poller for the block builder to pull bundles from the tx-pool.
 impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config.
-    pub fn new(config: &BuilderConfig, token: SharedToken) -> Self {
-        Self {
-            config: config.clone(),
-            token,
-            client: Client::new(),
-            poll_interval_ms: POLL_INTERVAL_MS,
-        }
+    pub fn new() -> Self {
+        Self::new_with_poll_interval_ms(POLL_INTERVAL_MS)
     }
 
     /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.
-    pub fn new_with_poll_interval_ms(
-        config: &BuilderConfig,
-        token: SharedToken,
-        poll_interval_ms: u64,
-    ) -> Self {
-        Self { config: config.clone(), token, client: Client::new(), poll_interval_ms }
+    pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
+        let config = crate::config();
+        let token = config.oauth_token();
+        Self { config, token, client: Client::new(), poll_interval_ms }
     }
 
     /// Fetches bundles from the transaction cache and returns them.
