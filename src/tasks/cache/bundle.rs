@@ -1,5 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
+use alloy::{consensus::TxEnvelope, eips::eip2718::Decodable2718};
 use init4_bin_base::perms::SharedToken;
 use reqwest::{Client, Url};
 use signet_tx_cache::types::{TxCacheBundle, TxCacheBundlesResponse};
@@ -94,6 +95,9 @@ impl BundlePoller {
                 let _guard = span.entered();
                 debug!(count = ?bundles.len(), "found bundles");
                 for bundle in bundles.into_iter() {
+
+                    decode_and_log_host_transactions(&bundle);
+
                     if let Err(err) = outbound.send(bundle) {
                         error!(err = ?err, "Failed to send bundle - channel is dropped");
                         break;
@@ -112,5 +116,31 @@ impl BundlePoller {
         let jh = tokio::spawn(self.task_future(outbound));
 
         (inbound, jh)
+    }
+}
+
+fn decode_and_log_host_transactions(bundle: &TxCacheBundle) {
+    for (idx, bz) in bundle.bundle().host_txs.iter().enumerate() {
+        // Best-effort decode so we can surface the transaction type in logs.
+        let mut raw = bz.as_ref();
+        match TxEnvelope::decode_2718(&mut raw) {
+            Ok(envelope) => {
+                trace!(
+                    bundle_id = %bundle.id(),
+                    host_tx_idx = idx,
+                    tx_type = ?envelope.tx_type(),
+                    leftover_bytes = raw.len(),
+                    "decoded host transaction as eip-2718"
+                );
+            }
+            Err(err) => {
+                debug!(
+                    bundle_id = %bundle.id(),
+                    host_tx_idx = idx,
+                    err = %err,
+                    "failed to decode host transaction as eip-2718"
+                );
+            }
+        }
     }
 }

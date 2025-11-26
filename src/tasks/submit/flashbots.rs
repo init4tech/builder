@@ -95,7 +95,7 @@ impl FlashbotsTask {
     ///
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
     /// and signs it using the host provider.
-    #[instrument(skip(self), fields(sim_result_block_number = ?sim_result.block, sim_result_host_block_number = %sim_result.host_block_number()))]
+    #[instrument(skip(self, sim_result), fields(sim_result_block_number = ?sim_result.block, sim_result_host_block_number = %sim_result.host_block_number()))]
     async fn prepare_signed_transaction(
         &self,
         sim_result: &SimResult,
