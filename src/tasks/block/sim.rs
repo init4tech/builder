@@ -237,20 +237,19 @@ impl SimulatorTask {
         // Get the current number of milliseconds into the slot.
         let timepoint_ms =
             self.slot_calculator().current_point_within_slot_ms().expect("host chain has started");
-        let slot_duration = Duration::from_secs(self.slot_calculator().slot_duration()).as_millis();
-        let elapsed_in_slot = Duration::from_millis(timepoint_ms);
-        let query_cutoff_buffer = Duration::from_millis(self.config.block_query_cutoff_buffer);
+
+        let slot_duration = self.slot_calculator().slot_duration() * 1000; // convert to milliseconds
+        let query_cutoff_buffer = self.config.block_query_cutoff_buffer;
 
         // To find the remaining slot time, subtract the timepoint from the slot duration.
         // Then subtract the block query cutoff buffer from the slot duration to account for
         // the sequencer stopping signing.
-        let remaining = slot_duration
-            .saturating_sub(elapsed_in_slot.as_millis())
-            .saturating_sub(query_cutoff_buffer.as_millis());
+        let remaining =
+            slot_duration.saturating_sub(timepoint_ms).saturating_sub(query_cutoff_buffer);
 
         // The deadline is then calculated by adding the remaining time from this instant.
         // NB: Downcast is okay because u64 will work for 500 million+ years.
-        let deadline = Instant::now() + Duration::from_millis(remaining as u64);
+        let deadline = Instant::now() + Duration::from_millis(remaining);
         deadline.max(Instant::now())
     }
 }
