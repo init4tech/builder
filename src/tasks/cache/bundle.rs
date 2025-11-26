@@ -1,6 +1,13 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
-use crate::config::BuilderConfig;
-use alloy::{consensus::TxEnvelope, eips::eip2718::Decodable2718};
+use crate::config::{BuilderConfig, HostProvider};
+use alloy::{
+    consensus::{
+        TxEnvelope,
+        transaction::{SignerRecoverable, Transaction},
+    },
+    eips::eip2718::Decodable2718,
+    providers::Provider,
+};
 use init4_bin_base::perms::SharedToken;
 use reqwest::{Client, Url};
 use signet_tx_cache::types::{TxCacheBundle, TxCacheBundlesResponse};
@@ -9,7 +16,7 @@ use tokio::{
     task::JoinHandle,
     time::{self, Duration},
 };
-use tracing::{Instrument, debug, debug_span, error, trace};
+use tracing::{Instrument, debug, debug_span, error, trace, warn};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -71,6 +78,8 @@ impl BundlePoller {
     }
 
     async fn task_future(mut self, outbound: UnboundedSender<TxCacheBundle>) {
+        let host_provider = self.config.connect_host_provider().await.expect("host provider");
+
         loop {
             let span = debug_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
 
@@ -92,11 +101,9 @@ impl BundlePoller {
                 .await
                 .inspect_err(|err| debug!(%err, "Error fetching bundles"))
             {
-                let _guard = span.entered();
-                debug!(count = ?bundles.len(), "found bundles");
+                span.in_scope(|| debug!(count = ?bundles.len(), "found bundles"));
                 for bundle in bundles.into_iter() {
-
-                    decode_and_log_host_transactions(&bundle);
+                    decode_and_validate(&bundle, &host_provider).instrument(span.clone()).await;
 
                     if let Err(err) = outbound.send(bundle) {
                         error!(err = ?err, "Failed to send bundle - channel is dropped");
@@ -119,19 +126,57 @@ impl BundlePoller {
     }
 }
 
-fn decode_and_log_host_transactions(bundle: &TxCacheBundle) {
+async fn decode_and_validate(bundle: &TxCacheBundle, host_provider: &HostProvider) {
+    if bundle.bundle().host_txs.is_empty() {
+        return;
+    }
+
     for (idx, bz) in bundle.bundle().host_txs.iter().enumerate() {
         // Best-effort decode so we can surface the transaction type in logs.
         let mut raw = bz.as_ref();
         match TxEnvelope::decode_2718(&mut raw) {
             Ok(envelope) => {
+                let tx_nonce = envelope.nonce();
                 trace!(
                     bundle_id = %bundle.id(),
                     host_tx_idx = idx,
-                    tx_type = ?envelope.tx_type(),
-                    leftover_bytes = raw.len(),
+                    ?tx_nonce,
                     "decoded host transaction as eip-2718"
                 );
+
+                match envelope.recover_signer() {
+                    Ok(signer) => {
+                        let result = host_provider.get_transaction_count(signer).await;
+                        if let Ok(result) = result {
+                            if tx_nonce < result {
+                                warn!(
+                                    bundle_id = %bundle.id(),
+                                    host_tx_idx = idx,
+                                    signer = %signer,
+                                    tx_nonce = ?tx_nonce,
+                                    current_nonce = ?result,
+                                    "host transaction nonce is lower than current account nonce; transaction will be rejected"
+                                );
+                            }
+                        } else {
+                            debug!(
+                                bundle_id = %bundle.id(),
+                                host_tx_idx = idx,
+                                signer = %signer,
+                                err = %result.err().unwrap(),
+                                "failed to fetch current nonce for host transaction signer; skipping nonce check"
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        debug!(
+                            bundle_id = %bundle.id(),
+                            host_tx_idx = idx,
+                            err = %err,
+                            "failed to recover host transaction signer; skipping nonce check"
+                        );
+                    }
+                }
             }
             Err(err) => {
                 debug!(
