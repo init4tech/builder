@@ -9,7 +9,7 @@ use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
-use tracing::{Instrument, debug, debug_span, info_span, trace};
+use tracing::{Instrument, debug, debug_span, trace};
 
 /// Poll interval for the transaction poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -63,7 +63,7 @@ impl TxPoller {
     // it to the cachetask via the outbound channel.
     fn spawn_check_nonce(&self, tx: TxEnvelope, outbound: mpsc::UnboundedSender<TxEnvelope>) {
         tokio::spawn(async move {
-            let span = info_span!("check_nonce", tx_id = %tx.tx_hash());
+            let span = debug_span!("check_nonce", tx_id = %tx.tx_hash());
 
             let Ok(ru_provider) =
                 crate::config().connect_ru_provider().instrument(span.clone()).await
