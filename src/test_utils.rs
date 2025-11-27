@@ -64,12 +64,13 @@ pub fn setup_test_config() -> &'static BuilderConfig {
 /// Returns a new signed test transaction with the provided nonce, value, and mpfpg.
 pub fn new_signed_tx(
     wallet: &PrivateKeySigner,
+    chain_id: u64,
     nonce: u64,
     value: U256,
     mpfpg: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
-        chain_id: 11155111,
+        chain_id,
         nonce,
         max_fee_per_gas: 10_000_000,
         max_priority_fee_per_gas: mpfpg,
@@ -91,8 +92,7 @@ pub fn setup_logging() {
     let _ = registry.try_init();
 }
 
-/// Returns a Pecorino block environment for simulation with the timestamp set to `finish_by`,
-/// the block number set to latest + 1, system gas configs, and a beneficiary address.
+/// Create a test BlockEnv with the provided parameters
 pub fn test_block_env(number: u64, basefee: u64, timestamp: u64) -> BlockEnv {
     let config = setup_test_config();
     BlockEnv {
