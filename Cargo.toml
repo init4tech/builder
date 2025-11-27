@@ -26,12 +26,14 @@ init4-bin-base = { git = "https://github.com/init4tech/bin-base.git", branch = "
 # signet-constants = { version = "0.15.0" }
 # signet-sim = { version = "0.15.0" }
 # signet-tx-cache = { version = "0.15.0" }
+# signet-bundle = { version = "0.15.0" }
 # signet-types = { version = "0.15.0" }
 # signet-zenith = { version = "0.15.0" }
 
 signet-constants = { git = "https://github.com/init4tech/signet-sdk.git", branch = "dylan/logs-sim-env-errors" }
 signet-sim = { git = "https://github.com/init4tech/signet-sdk.git", branch = "dylan/logs-sim-env-errors" }
 signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk.git", branch = "dylan/logs-sim-env-errors" }
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk.git", branch = "dylan/logs-sim-env-errors" }
 signet-types = { git = "https://github.com/init4tech/signet-sdk.git", branch = "dylan/logs-sim-env-errors" }
 signet-zenith = { git = "https://github.com/init4tech/signet-sdk.git", branch = "dylan/logs-sim-env-errors" }
 

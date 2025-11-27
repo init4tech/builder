@@ -220,7 +220,6 @@ impl SimulatorTask {
             else {
                 continue;
             };
-
             span_debug!(span, tx_count = block.transactions().len(), "built simulated block");
             let _ = submit_sender.send(SimResult { block, sim_env });
         }

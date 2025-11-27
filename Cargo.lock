@@ -1929,6 +1929,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "signet-bundle",
  "signet-constants",
  "signet-sim",
  "signet-tx-cache",
