@@ -1,9 +1,16 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
 
 use alloy_chains::NamedChain;
+use reth_chainspec::ChainSpec;
 use signet_block_processor::revm_spec;
 use signet_constants::pecorino;
+use signet_genesis::PECORINO_GENESIS;
+use std::sync::LazyLock;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
+
+/// The RU Pecorino [`ChainSpec`].
+static PECORINO_SPEC: LazyLock<ChainSpec> =
+    LazyLock::new(|| ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()));
 
 /// [`SignetCfgEnv`] holds network-level configuration values.
 #[derive(Debug, Clone, Copy)]
@@ -23,12 +30,9 @@ impl SignetCfgEnv {
     fn spec_id(&self) -> SpecId {
         match self.chain_id {
             // Pecorino
-            pecorino::HOST_CHAIN_ID | pecorino::RU_CHAIN_ID => revm_spec(
-                &reth_chainspec::ChainSpec::from_genesis(
-                    signet_genesis::PECORINO_GENESIS.to_owned(),
-                ),
-                self.timestamp,
-            ),
+            pecorino::HOST_CHAIN_ID | pecorino::RU_CHAIN_ID => {
+                revm_spec(&PECORINO_SPEC, self.timestamp)
+            }
             // Host Mainnet
             id if id == NamedChain::Mainnet as u64 => {
                 revm_spec(&reth_chainspec::MAINNET, self.timestamp)
