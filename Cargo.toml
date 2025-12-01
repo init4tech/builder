@@ -41,6 +41,8 @@ alloy = { version = "1.0.35", features = [
     "getrandom",
     "provider-mev-api",
 ] }
+alloy-hardforks = "0.4.0"
+alloy-chains = "0.2"
 
 axum = "0.7.5"
 eyre = "0.6.12"
