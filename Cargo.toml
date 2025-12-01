@@ -18,17 +18,19 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.16.0", features = ["perms", "aws"] }
+init4-bin-base = { version = "0.17.0", features = ["perms", "aws"] }
 
-signet-constants = { version = "0.13.0" }
-signet-sim = { version = "0.13.0" }
-signet-tx-cache = { version = "0.13.0" }
-signet-types = { version = "0.13.0" }
-signet-zenith = { version = "0.13.0" }
+signet-constants = { version = "0.14.0" }
+signet-sim = { version = "0.14.0" }
+signet-tx-cache = { version = "0.14.0" }
+signet-types = { version = "0.14.0" }
+signet-zenith = { version = "0.14.0" }
+signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.14.2" }
+signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.14.2" }
 
-trevm = { version = "0.29", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.31.0", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "1.0.35", features = [
+alloy = { version = "=1.0.35", features = [
     "full",
     "json-rpc",
     "signer-aws",
@@ -41,8 +43,9 @@ alloy = { version = "1.0.35", features = [
     "getrandom",
     "provider-mev-api",
 ] }
-alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
+
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 
 axum = "0.7.5"
 eyre = "0.6.12"
@@ -54,6 +57,9 @@ tracing = "0.1.41"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
 url = "2.5.4"
+
+[dev-dependencies]
+alloy-hardforks = "0.4.0"
 
 # comment / uncomment for local dev
 # [patch.crates-io]

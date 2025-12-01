@@ -1,7 +1,7 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
 
 use alloy_chains::NamedChain;
-use alloy_hardforks::mainnet::MAINNET_OSAKA_TIMESTAMP;
+use signet_block_processor::revm_spec;
 use signet_constants::pecorino;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
 
@@ -20,16 +20,21 @@ impl SignetCfgEnv {
         Self { chain_id, timestamp }
     }
 
-    const fn spec_id(&self) -> SpecId {
+    fn spec_id(&self) -> SpecId {
         match self.chain_id {
-            pecorino::HOST_CHAIN_ID | pecorino::RU_CHAIN_ID => SpecId::PRAGUE,
-            id if id == NamedChain::Mainnet as u64 => self.mainnet_spec(),
-            _ => SpecId::PRAGUE,
+            // Pecorino
+            pecorino::HOST_CHAIN_ID | pecorino::RU_CHAIN_ID => revm_spec(
+                &reth_chainspec::ChainSpec::from_genesis(
+                    signet_genesis::PECORINO_GENESIS.to_owned(),
+                ),
+                self.timestamp,
+            ),
+            // Host Mainnet
+            id if id == NamedChain::Mainnet as u64 => {
+                revm_spec(&reth_chainspec::MAINNET, self.timestamp)
+            }
+            _ => unimplemented!("Unknown chain ID: {}", self.chain_id),
         }
-    }
-
-    const fn mainnet_spec(&self) -> SpecId {
-        if self.timestamp >= MAINNET_OSAKA_TIMESTAMP { SpecId::OSAKA } else { SpecId::PRAGUE }
     }
 }
 
@@ -43,6 +48,7 @@ impl trevm::Cfg for SignetCfgEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_hardforks::mainnet::MAINNET_OSAKA_TIMESTAMP;
 
     #[test]
     fn pecorino_cfg_env() {
@@ -60,11 +66,5 @@ mod tests {
 
         let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
-    }
-
-    #[test]
-    fn unknown_chain_cfg_env() {
-        let cfg = SignetCfgEnv::new(999999, 0);
-        assert_eq!(cfg.spec_id(), SpecId::PRAGUE);
     }
 }
