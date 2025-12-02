@@ -14,7 +14,7 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, info_span};
+use tracing::{Instrument, Span, info_span, instrument};
 use trevm::revm::{
     context::BlockEnv,
     context_interface::block::BlobExcessGasAndPrice,
@@ -215,7 +215,8 @@ impl EnvTask {
     }
 
     /// Construct a [`BlockEnv`] for the next host block from the previous host header.
-    fn construct_host_env(&self, previous: Header) -> Environment {
+    #[instrument(skip(self, previous), fields(previous_number = %previous.number))]
+    pub fn construct_host_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
@@ -236,7 +237,8 @@ impl EnvTask {
     }
 
     /// Construct a [`BlockEnv`] for the next rollup block from the previous block header.
-    fn construct_rollup_env(&self, previous: Header) -> Environment {
+    #[instrument(skip(self, previous), fields(previous_number = %previous.number))]
+    pub fn construct_rollup_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,

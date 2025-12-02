@@ -1,12 +1,10 @@
 //! Tests for the block building task.
 
 use alloy::{
-    consensus::BlockHeader,
     eips::{BlockId, Encodable2718},
-    network::EthereumWallet,
     node_bindings::Anvil,
-    primitives::{Address, B256, Bytes, U256},
-    providers::{Provider, ProviderBuilder},
+    primitives::U256,
+    providers::Provider,
     rpc::types::mev::EthSendBundle,
     signers::local::PrivateKeySigner,
 };
@@ -22,7 +20,6 @@ use signet_bundle::SignetEthBundle;
 use signet_constants::pecorino::RU_CHAIN_ID;
 use signet_sim::SimCache;
 use tokio::sync::{mpsc::unbounded_channel, watch::channel};
-use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 use std::{
     str::FromStr,
@@ -89,129 +86,79 @@ async fn test_handle_build() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_bundle_host_txns() {
     setup_logging();
+    setup_test_config();
+    
+    let constants = builder::config().constants.clone();
 
-    let _config = setup_test_config();
-
-    let host_anvil_instance = Anvil::new().fork("ws://host-rpc.pecorino.signet.sh").spawn();
-    let host_provider =
-        ProviderBuilder::new().connect_http(host_anvil_instance.endpoint().parse().unwrap());
-    let host_chain_id = host_anvil_instance.chain_id();
-
-    // TODO: Send the built block to Flashbots and then assert on what comes out of it - a MEV Send Bundle type
-    // All of those values need to match up correctly
-    // And the bundle is currently using the rollup block number, not the host block number, that's showing up in my
-    // tests right now, and my setup logic is sound as far as I can tell.
-    //
-    // SOOOOOOO I think the issue is in the Flashbots task conversion logic or the simulation setup logic.
-    let (flashbots_tx, flashbots_rx) = unbounded_channel();
-    let flashbots_task =
-        builder::tasks::submit::flashbots::FlashbotsTask::new(flashbots_tx).await.unwrap();
+    // Setup a host and rollup provider from the test config
+    let host_provider = builder::config().connect_host_provider().await.unwrap();
+    let host_chain_id = host_provider.get_chain_id().await.expect("gets host chain id");
+    assert!(host_chain_id == constants.host_chain_id());
+    
 
     let ru_provider = builder::config().connect_ru_provider().await.unwrap();
     let ru_chain_id = ru_provider.get_chain_id().await.expect("gets ru chain id");
-    dbg!(&host_anvil_instance.endpoint());
-
-    // let keys = host_anvil_instance.keys();
+    assert!(ru_chain_id == constants.ru_chain_id());
 
     let priv_key =
         std::env::var("SIGNET_WALLET_TEST_PK").expect("SIGNET_WALLET_TEST_PK env var to be set");
-
     let test_key = PrivateKeySigner::from_str(&priv_key).expect("valid private key");
 
-    let host_test_key_0 =
-        PrivateKeySigner::from_bytes(&test_key.clone().to_bytes()).expect("test key 0 to be set");
-    let host_test_key_1 =
-        PrivateKeySigner::from_bytes(&test_key.clone().to_bytes()).expect("test key 1 to be set");
+    // NB: Test uses the same key for both host and rollup for simplicity.
+    let test_key =
+        PrivateKeySigner::from_bytes(&test_key.to_bytes()).expect("test key 0 to be set");
 
-    let host_header =
+    // Setup the simulation environments
+    let env = EnvTask::new().await.unwrap();
+    let host_previous =
         host_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let ru_previous = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let host_env = env.construct_host_env(host_previous);
+    let ru_env = env.construct_rollup_env(ru_previous);
 
-    let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let sim_env = SimEnv { host: host_env, rollup: ru_env, span: tracing::Span::none() };
+    let (sim_tx, sim_rx) = channel::<Option<SimEnv>>(None);
 
-    let (sim_env_tx, sim_env_rx) = channel::<Option<SimEnv>>(None);
-    let simulator_task = SimulatorTask::new(sim_env_rx).await.unwrap();
+    // Create a host and rollup transaction
+    let ru_txn = new_signed_tx(&test_key, ru_chain_id, 0, U256::from(1), 10_000)
+        .unwrap()
+        .encoded_2718()
+        .into();
 
-    let (submit_channel, submit_jh) = flashbots_task.spawn();
+    let host_txn = new_signed_tx(&test_key, host_chain_id, 1, U256::from(1), 10_000)
+        .unwrap()
+        .encoded_2718()
+        .into();
 
-    let sim_items = SimCache::new();
-
-    let simulator_task = simulator_task.spawn_simulator_task(sim_items, submit_channel);
-
-    let host_block_env = {
-        let number = host_header.number();
-        let timestamp = host_header.timestamp;
-        let config = setup_test_config();
-
-        BlockEnv {
-            number: U256::from(number),
-            beneficiary: Address::repeat_byte(1),
-            timestamp: U256::from(timestamp),
-            gas_limit: config.rollup_block_gas_limit,
-            basefee: 7,
-            difficulty: U256::ZERO,
-            prevrandao: Some(B256::random()),
-            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
-                excess_blob_gas: 0,
-                blob_gasprice: 0,
-            }),
-        }
-    };
-
-    let ru_block_env = {
-        let number = ru_header.number();
-        let timestamp = ru_header.timestamp;
-        let config = setup_test_config();
-
-        BlockEnv {
-            number: U256::from(number),
-            beneficiary: Address::repeat_byte(1),
-            timestamp: U256::from(timestamp),
-            gas_limit: config.rollup_block_gas_limit,
-            basefee: 7,
-            difficulty: U256::ZERO,
-            prevrandao: Some(B256::random()),
-            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
-                excess_blob_gas: 0,
-                blob_gasprice: 0,
-            }),
-        }
-    };
-
-    let sim_env = SimEnv {
-        host: Environment::new(host_block_env.clone(), host_header.clone()),
-        rollup: Environment::new(ru_block_env.clone(), ru_header),
-        span: tracing::Span::none(),
-    };
-
-    sim_env_tx.send(Some(sim_env.clone())).unwrap();
-
-    let ru_tx = new_signed_tx(&host_test_key_1, ru_chain_id, 1, U256::from(1), 10_000).unwrap();
-    let ru_txn_buf: Bytes = ru_tx.encoded_2718().into();
-
-    let host_txn =
-        new_signed_tx(&host_test_key_0, host_chain_id, 1, U256::from(1), 10_000).unwrap();
-    let host_txn_buf: Bytes = host_txn.encoded_2718().into();
-
-    // Target rollup block number
-    let block_number = sim_env.rollup_block_number();
-
-    assert!(block_number == host_header.number() + 1);
-    dbg!("BUILDING FOR HOST BLOCK NUMBER: ", &block_number);
-
+    // Make a bundle out of them
     let bundle = SignetEthBundle {
         bundle: EthSendBundle {
             replacement_uuid: Some("test-replacement-uuid".to_string()),
-            txs: vec![ru_txn_buf],
-            block_number,
+            txs: vec![ru_txn],
+            block_number: sim_env.rollup_block_number(),
             ..Default::default()
         },
-        host_txs: vec![host_txn_buf],
+        host_txs: vec![host_txn],
     };
 
-    sim_items.add_bundle(bundle, 7).expect("adds bundle to the sim cache");
+    // Add it to the sim cache
+    let sim_items = SimCache::new();
+    sim_items.add_bundle(bundle, 7).expect("adds bundle");
 
-    let finish_by = Instant::now() + Duration::from_secs(3);
+    // Setup the simulator environment
+    let (submit_channel, mut submit_receiver) = unbounded_channel();
+    let simulator_task = SimulatorTask::new(sim_rx).await.unwrap();
+    let simulator_jh = simulator_task.spawn_simulator_task(sim_items, submit_channel);
 
-    dbg!(built.clone());
-    let got_block_number = built.block_number();
+    // Send a new environment to tick the block builder simulation loop off
+    sim_tx.send(Some(sim_env)).unwrap();
+
+    // Wait for a result and assert on it
+    let got = submit_receiver.recv().await.expect("built block");
+    dbg!(&got.block);
+    assert_eq!(got.block.transactions().len(), 1);
+    assert_eq!(got.block.host_transactions().len(), 1);
+
+    // Cleanup
+    simulator_jh.abort();
 }
