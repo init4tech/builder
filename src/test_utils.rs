@@ -36,7 +36,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
             flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
             quincey_url: "http://localhost:8080".into(),
             sequencer_key: None,
-            builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+            builder_key: env::var("BUILDER_KEY")
                 .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
             builder_port: 8080,
             builder_rewards_address: Address::default(),
@@ -52,7 +52,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
             concurrency_limit: None, // NB: Defaults to available parallelism
             slot_calculator: SlotCalculator::new(
                 1740681556, // pecorino start timestamp as sane default
-                0, 1,
+                0, 12,
             ),
             block_query_cutoff_buffer: 3000,
             max_host_gas_coefficient: Some(80),
