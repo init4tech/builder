@@ -36,7 +36,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
             flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
             quincey_url: "http://localhost:8080".into(),
             sequencer_key: None,
-            builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+            builder_key: env::var("BUILDER_KEY")
                 .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
             builder_port: 8080,
             builder_rewards_address: Address::default(),
@@ -52,7 +52,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
             concurrency_limit: None, // NB: Defaults to available parallelism
             slot_calculator: SlotCalculator::new(
                 1740681556, // pecorino start timestamp as sane default
-                0, 1,
+                0, 12,
             ),
             block_query_cutoff_buffer: 3000,
             max_host_gas_coefficient: Some(80),
@@ -64,14 +64,15 @@ pub fn setup_test_config() -> &'static BuilderConfig {
 /// Returns a new signed test transaction with the provided nonce, value, and mpfpg.
 pub fn new_signed_tx(
     wallet: &PrivateKeySigner,
+    chain_id: u64,
     nonce: u64,
     value: U256,
     mpfpg: u128,
 ) -> Result<TxEnvelope> {
     let tx = TxEip1559 {
-        chain_id: 11155111,
+        chain_id,
         nonce,
-        max_fee_per_gas: 10_000_000,
+        max_fee_per_gas: 50_000_000_000,
         max_priority_fee_per_gas: mpfpg,
         to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value,
@@ -91,8 +92,7 @@ pub fn setup_logging() {
     let _ = registry.try_init();
 }
 
-/// Returns a Pecorino block environment for simulation with the timestamp set to `finish_by`,
-/// the block number set to latest + 1, system gas configs, and a beneficiary address.
+/// Create a test BlockEnv with the provided parameters
 pub fn test_block_env(number: u64, basefee: u64, timestamp: u64) -> BlockEnv {
     let config = setup_test_config();
     BlockEnv {

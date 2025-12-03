@@ -14,7 +14,7 @@ use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, info_span};
+use tracing::{Instrument, Span, info_span, instrument};
 use trevm::revm::{
     context::BlockEnv,
     context_interface::block::BlobExcessGasAndPrice,
@@ -202,20 +202,18 @@ pub struct EnvTask {
 
 impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
-    pub async fn new() -> eyre::Result<Self> {
+    pub async fn new(
+        host_provider: HostProvider,
+        ru_provider: RuProvider,
+        quincey: Quincey,
+    ) -> eyre::Result<Self> {
         let config = crate::config();
-
-        let (host_provider, quincey, ru_provider) = tokio::try_join!(
-            config.connect_host_provider(),
-            config.connect_quincey(),
-            config.connect_ru_provider(),
-        )?;
-
         Ok(Self { config, host_provider, quincey, ru_provider })
     }
 
     /// Construct a [`BlockEnv`] for the next host block from the previous host header.
-    fn construct_host_env(&self, previous: Header) -> Environment {
+    #[instrument(skip(self, previous), fields(previous_number = %previous.number))]
+    pub fn construct_host_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,
@@ -236,7 +234,8 @@ impl EnvTask {
     }
 
     /// Construct a [`BlockEnv`] for the next rollup block from the previous block header.
-    fn construct_rollup_env(&self, previous: Header) -> Environment {
+    #[instrument(skip(self, previous), fields(previous_number = %previous.number))]
+    pub fn construct_rollup_env(&self, previous: Header) -> Environment {
         let env = BlockEnv {
             number: U256::from(previous.number + 1),
             beneficiary: self.config.builder_rewards_address,

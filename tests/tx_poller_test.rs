@@ -5,6 +5,7 @@ use builder::{
 };
 // Import the refactored function
 use eyre::{Ok, Result};
+use signet_constants::pecorino::RU_CHAIN_ID;
 
 #[ignore = "integration test"]
 #[tokio::test]
@@ -31,7 +32,7 @@ async fn post_tx() -> Result<()> {
     let client = reqwest::Client::new();
 
     let wallet = PrivateKeySigner::random();
-    let tx_envelope = new_signed_tx(&wallet, 1, U256::from(1), 10_000)?;
+    let tx_envelope = new_signed_tx(&wallet, RU_CHAIN_ID, 1, U256::from(1), 10_000)?;
 
     let url = format!("{}/transactions", builder::config().tx_pool_url);
     let response = client.post(&url).json(&tx_envelope).send().await?;
