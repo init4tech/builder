@@ -154,8 +154,7 @@ async fn latest_sim_env(
 ) -> SimEnv {
     let host_previous =
         host_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
-    let ru_previous =
-        ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let ru_previous = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
 
     let host_env = env_task.construct_host_env(host_previous);
     let ru_env = env_task.construct_rollup_env(ru_previous);
