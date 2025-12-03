@@ -202,15 +202,12 @@ pub struct EnvTask {
 
 impl EnvTask {
     /// Create a new [`EnvTask`] with the given config and providers.
-    pub async fn new() -> eyre::Result<Self> {
+    pub async fn new(
+        host_provider: HostProvider,
+        ru_provider: RuProvider,
+        quincey: Quincey,
+    ) -> eyre::Result<Self> {
         let config = crate::config();
-
-        let (host_provider, quincey, ru_provider) = tokio::try_join!(
-            config.connect_host_provider(),
-            config.connect_quincey(),
-            config.connect_ru_provider(),
-        )?;
-
         Ok(Self { config, host_provider, quincey, ru_provider })
     }
 

@@ -9,9 +9,15 @@ use std::time::Duration;
 #[tokio::test]
 async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     setup_logging();
-    setup_test_config();
+    let config = setup_test_config();
 
-    let (block_env, _jh) = EnvTask::new().await?.spawn();
+    let (host, rollup, quincey) = tokio::try_join!(
+        config.connect_host_provider(),
+        config.connect_ru_provider(),
+        config.connect_quincey(),
+    )?;
+
+    let (block_env, _jh) = EnvTask::new(host, rollup, quincey).await?.spawn();
     let cache_tasks = CacheTasks::new(block_env);
     let cache_system = cache_tasks.spawn();
 

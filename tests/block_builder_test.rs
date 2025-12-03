@@ -3,79 +3,94 @@
 use alloy::{
     eips::{BlockId, Encodable2718},
     node_bindings::Anvil,
-    primitives::U256,
-    providers::Provider,
+    primitives::{B256, U256},
+    providers::{
+        Provider, ProviderBuilder, RootProvider,
+        fillers::{BlobGasFiller, SimpleNonceManager},
+    },
     rpc::types::mev::EthSendBundle,
     signers::local::PrivateKeySigner,
 };
 use builder::{
+    constants,
     tasks::{
         block::sim::SimulatorTask,
-        env::{EnvTask, Environment, SimEnv},
+        env::{EnvTask, SimEnv},
     },
-    test_utils::{new_signed_tx, setup_logging, setup_test_config, test_block_env},
+    test_utils::{new_signed_tx, setup_logging, setup_test_config},
 };
 
 use signet_bundle::SignetEthBundle;
-use signet_constants::pecorino::RU_CHAIN_ID;
 use signet_sim::SimCache;
 use tokio::sync::{mpsc::unbounded_channel, watch::channel};
 
-use std::{
-    str::FromStr,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 /// Tests the `handle_build` method of the `SimulatorTask`.
 ///
 /// This test sets up a simulated environment using Anvil, creates a block builder,
 /// and verifies that the block builder can successfully build a block containing
 /// transactions from multiple senders.
-#[ignore = "integration test"]
+// #[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_handle_build() {
     setup_logging();
+    setup_test_config();
 
-    // Make a test config
-    let config = setup_test_config();
+    // Setup quincey
+    let quincey = builder::config().connect_quincey().await.unwrap();
 
-    // Create an anvil instance for testing
-    let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
+    // Setup host provider
+    let host_anvil = Anvil::new().chain_id(constants().host_chain_id()).spawn();
+    let host_anvil_key = host_anvil.keys()[0].clone();
+    PrivateKeySigner::from_bytes(&B256::from_slice(&host_anvil_key.to_bytes())).unwrap();
+    let host_wallet = host_anvil.wallet().expect("anvil wallet");
+    let host_provider = ProviderBuilder::new_with_network()
+        .disable_recommended_fillers()
+        .filler(BlobGasFiller)
+        .with_gas_estimation()
+        .with_nonce_management(SimpleNonceManager::default())
+        .fetch_chain_id()
+        .wallet(host_wallet)
+        .connect_http(host_anvil.endpoint_url());
 
-    // Create a wallet
-    let keys = anvil_instance.keys();
-    let test_key_0 = PrivateKeySigner::from_signing_key(keys[0].clone().into());
-    let test_key_1 = PrivateKeySigner::from_signing_key(keys[1].clone().into());
+    // Setup rollup provider
+    let ru_anvil = Anvil::new().chain_id(constants().ru_chain_id()).spawn();
+    let ru_anvil_key = ru_anvil.keys()[0].clone();
+    let ru_anvil_key_two = ru_anvil.keys()[1].clone();
+    let rollup_key =
+        PrivateKeySigner::from_bytes(&B256::from_slice(&ru_anvil_key.to_bytes())).unwrap();
+    let rollup_key_two =
+        PrivateKeySigner::from_bytes(&B256::from_slice(&ru_anvil_key_two.to_bytes())).unwrap();
+    let ru_provider = RootProvider::new_http(ru_anvil.endpoint_url());
 
-    let block_env = EnvTask::new().await.unwrap().spawn().0;
+    // Setup the env task and environments
+    let env_task = EnvTask::new(host_provider.clone(), ru_provider.clone(), quincey).await.unwrap();
 
-    let block_builder = SimulatorTask::new(block_env).await.unwrap();
+    let prev_host = host_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let host_env = env_task.construct_host_env(prev_host);
+    let prev_ru = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let rollup_env = env_task.construct_rollup_env(prev_ru);
+
+    let (block_env, _jh) = env_task.spawn();
+    let block_builder = SimulatorTask::new(block_env, host_provider, ru_provider);
 
     // Setup a sim cache
     let sim_items = SimCache::new();
 
     // Add two transactions from two senders to the sim cache
-    let tx_1 = new_signed_tx(&test_key_0, RU_CHAIN_ID, 0, U256::from(1_f64), 11_000).unwrap();
+    let tx_1 = new_signed_tx(&rollup_key, constants().ru_chain_id(), 0, U256::from(1_f64), 11_000)
+        .unwrap();
     sim_items.add_tx(tx_1, 0);
 
-    let tx_2 = new_signed_tx(&test_key_1, RU_CHAIN_ID, 0, U256::from(2_f64), 10_000).unwrap();
+    let tx_2 =
+        new_signed_tx(&rollup_key_two, constants().ru_chain_id(), 0, U256::from(2_f64), 10_000)
+            .unwrap();
     sim_items.add_tx(tx_2, 0);
 
-    // Setup the block envs
-    let finish_by = Instant::now() + Duration::from_secs(2);
-
-    let ru_provider = builder::config().connect_ru_provider().await.unwrap();
-    let ru_header = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
-    let number = ru_header.number + 1;
-    let timestamp = ru_header.timestamp + config.slot_calculator.slot_duration();
-    let block_env = test_block_env(number, 7, timestamp);
-
     // Spawn the block builder task
-    let sim_env = SimEnv {
-        host: Environment::for_testing(),
-        rollup: Environment::new(block_env, ru_header),
-        span: tracing::Span::none(),
-    };
+    let sim_env = SimEnv { host: host_env, rollup: rollup_env, span: tracing::Span::none() };
+    let finish_by = Instant::now() + Duration::from_secs(2);
     let got = block_builder.handle_build(sim_items, finish_by, &sim_env).await;
 
     // Assert on the built block
@@ -87,45 +102,55 @@ async fn test_handle_build() {
 async fn test_bundle_host_txns() {
     setup_logging();
     setup_test_config();
-    
-    let constants = builder::config().constants.clone();
 
-    // Setup a host and rollup provider from the test config
-    let host_provider = builder::config().connect_host_provider().await.unwrap();
+    // Setup host provider
+    let host_anvil = Anvil::new().chain_id(constants().host_chain_id()).spawn();
+    let host_anvil_key = host_anvil.keys()[0].clone();
+    let host_signer =
+        PrivateKeySigner::from_bytes(&B256::from_slice(&host_anvil_key.to_bytes())).unwrap();
+    let host_wallet = host_anvil.wallet().expect("anvil wallet");
+    let host_provider = ProviderBuilder::new_with_network()
+        .disable_recommended_fillers()
+        .filler(BlobGasFiller)
+        .with_gas_estimation()
+        .with_nonce_management(SimpleNonceManager::default())
+        .fetch_chain_id()
+        .wallet(host_wallet)
+        .connect_http(host_anvil.endpoint_url());
     let host_chain_id = host_provider.get_chain_id().await.expect("gets host chain id");
-    assert!(host_chain_id == constants.host_chain_id());
-    
+    assert_eq!(host_chain_id, constants().host_chain_id());
 
-    let ru_provider = builder::config().connect_ru_provider().await.unwrap();
+    // Setup rollup provider
+    let ru_anvil = Anvil::new().chain_id(constants().ru_chain_id()).spawn();
+    let ru_anvil_key = ru_anvil.keys()[0].clone();
+    let rollup_signer =
+        PrivateKeySigner::from_bytes(&B256::from_slice(&ru_anvil_key.to_bytes())).unwrap();
+    let ru_provider = RootProvider::new_http(ru_anvil.endpoint_url());
     let ru_chain_id = ru_provider.get_chain_id().await.expect("gets ru chain id");
-    assert!(ru_chain_id == constants.ru_chain_id());
+    assert_eq!(ru_chain_id, constants().ru_chain_id());
 
-    let priv_key =
-        std::env::var("SIGNET_WALLET_TEST_PK").expect("SIGNET_WALLET_TEST_PK env var to be set");
-    let test_key = PrivateKeySigner::from_str(&priv_key).expect("valid private key");
-
-    // NB: Test uses the same key for both host and rollup for simplicity.
-    let test_key =
-        PrivateKeySigner::from_bytes(&test_key.to_bytes()).expect("test key 0 to be set");
+    let quincey = builder::config().connect_quincey().await.unwrap();
 
     // Setup the simulation environments
-    let env = EnvTask::new().await.unwrap();
+    let env = EnvTask::new(host_provider.clone(), ru_provider.clone(), quincey).await.unwrap();
     let host_previous =
         host_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
-    let ru_previous = ru_provider.get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
+    let ru_previous =
+        ru_provider.clone().get_block(BlockId::latest()).await.unwrap().unwrap().header.inner;
     let host_env = env.construct_host_env(host_previous);
     let ru_env = env.construct_rollup_env(ru_previous);
 
+    // Create a simulation environment and plumbing
     let sim_env = SimEnv { host: host_env, rollup: ru_env, span: tracing::Span::none() };
     let (sim_tx, sim_rx) = channel::<Option<SimEnv>>(None);
 
     // Create a host and rollup transaction
-    let ru_txn = new_signed_tx(&test_key, ru_chain_id, 0, U256::from(1), 10_000)
+    let ru_txn = new_signed_tx(&rollup_signer, ru_chain_id, 0, U256::from(1), 10_000)
         .unwrap()
         .encoded_2718()
         .into();
 
-    let host_txn = new_signed_tx(&test_key, host_chain_id, 1, U256::from(1), 10_000)
+    let host_txn = new_signed_tx(&host_signer, host_chain_id, 0, U256::from(1), 10_000)
         .unwrap()
         .encoded_2718()
         .into();
@@ -146,15 +171,15 @@ async fn test_bundle_host_txns() {
     sim_items.add_bundle(bundle, 7).expect("adds bundle");
 
     // Setup the simulator environment
-    let (submit_channel, mut submit_receiver) = unbounded_channel();
-    let simulator_task = SimulatorTask::new(sim_rx).await.unwrap();
-    let simulator_jh = simulator_task.spawn_simulator_task(sim_items, submit_channel);
+    let (submit_tx, mut submit_rx) = unbounded_channel();
+    let simulator_task = SimulatorTask::new(sim_rx, host_provider, ru_provider);
+    let simulator_jh = simulator_task.spawn_simulator_task(sim_items, submit_tx);
 
     // Send a new environment to tick the block builder simulation loop off
     sim_tx.send(Some(sim_env)).unwrap();
 
     // Wait for a result and assert on it
-    let got = submit_receiver.recv().await.expect("built block");
+    let got = submit_rx.recv().await.expect("built block");
     dbg!(&got.block);
     assert_eq!(got.block.transactions().len(), 1);
     assert_eq!(got.block.host_transactions().len(), 1);
