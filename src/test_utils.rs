@@ -72,7 +72,7 @@ pub fn new_signed_tx(
     let tx = TxEip1559 {
         chain_id,
         nonce,
-        max_fee_per_gas: 10_000_000,
+        max_fee_per_gas: 50_000_000_000,
         max_priority_fee_per_gas: mpfpg,
         to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
         value,

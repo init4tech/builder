@@ -81,13 +81,13 @@ pub struct SimulatorTask {
 impl SimulatorTask {
     /// Create a new `SimulatorTask` instance. This task must be spawned to
     /// begin processing incoming block environments.
-    pub async fn new(envs: watch::Receiver<Option<SimEnv>>) -> eyre::Result<Self> {
+    pub fn new(
+        envs: watch::Receiver<Option<SimEnv>>,
+        host_provider: HostProvider,
+        ru_provider: RuProvider,
+    ) -> Self {
         let config = crate::config();
-
-        let (host_provider, ru_provider) =
-            tokio::try_join!(config.connect_host_provider(), config.connect_ru_provider())?;
-
-        Ok(Self { config, host_provider, ru_provider, envs })
+        Self { config, host_provider, ru_provider, envs }
     }
 
     /// Get the slot calculator.

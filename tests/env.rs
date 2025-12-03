@@ -9,7 +9,12 @@ async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     setup_logging();
     let _ = setup_test_config();
 
-    let (mut env_watcher, _jh) = EnvTask::new().await?.spawn();
+    let (host, rollup, quincey) = tokio::try_join!(
+        builder::config().connect_host_provider(),
+        builder::config().connect_ru_provider(),
+        builder::config().connect_quincey(),
+    )?;
+    let (mut env_watcher, _jh) = EnvTask::new(host, rollup, quincey).await?.spawn();
 
     env_watcher.changed().await.unwrap();
     let env = env_watcher.borrow_and_update();
