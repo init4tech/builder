@@ -33,8 +33,8 @@ pub fn setup_test_config() -> &'static BuilderConfig {
                 .unwrap()
                 .try_into()
                 .unwrap(),
-            flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
-            quincey_url: "http://localhost:8080".into(),
+            flashbots_endpoint: "http://localhost:8545".parse().unwrap(),
+            quincey_url: "http://sequencer.pecorino.signet.sh/signBlock".into(),
             sequencer_key: None,
             builder_key: env::var("BUILDER_KEY")
                 .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),

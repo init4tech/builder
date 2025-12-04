@@ -16,15 +16,17 @@ async fn main() -> eyre::Result<()> {
     let init_span_guard = info_span!("builder initialization");
     let config = builder::config_from_env();
 
-    let (host_provider, ru_provider, quincey) = tokio::try_join!(
+    let (host_provider, ru_provider, quincey, flashbots, builder_key) = tokio::try_join!(
         config.connect_host_provider(),
         config.connect_ru_provider(),
         config.connect_quincey(),
+        config.connect_flashbots(),
+        config.connect_builder_signer(),
     )?;
 
     // Set up env and metrics tasks
     let (env_task, metrics_task) = tokio::try_join!(
-        EnvTask::new(host_provider.clone(), ru_provider.clone(), quincey),
+        EnvTask::new(host_provider.clone(), ru_provider.clone(), quincey.clone()),
         MetricsTask::new()
     )?;
 
@@ -34,7 +36,14 @@ async fn main() -> eyre::Result<()> {
 
     // Set up the cache, submit, and simulator tasks
     let cache_tasks = CacheTasks::new(block_env.clone());
-    let submit_task = FlashbotsTask::new(tx_channel.clone()).await?;
+    let submit_task = FlashbotsTask::new(
+        quincey,
+        host_provider.clone(),
+        flashbots,
+        builder_key,
+        tx_channel.clone(),
+    )
+    .await?;
     let simulator_task = SimulatorTask::new(block_env, host_provider.clone(), ru_provider.clone());
 
     // Spawn the cache, submit, and simulator tasks

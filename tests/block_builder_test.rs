@@ -1,14 +1,17 @@
 //! Tests for the block building task.
 
+use alloy::network::EthereumWallet;
+use alloy::rpc::types::mev::Inclusion;
 use alloy::{
     eips::{BlockId, Encodable2718},
     node_bindings::{Anvil, AnvilInstance},
     primitives::{B256, U256},
     providers::{
         Provider, ProviderBuilder, RootProvider,
+        ext::MevApi,
         fillers::{BlobGasFiller, SimpleNonceManager},
     },
-    rpc::types::mev::EthSendBundle,
+    rpc::types::mev::{EthSendBundle, MevSendBundle},
     signers::local::PrivateKeySigner,
 };
 use builder::{
@@ -17,6 +20,7 @@ use builder::{
     tasks::{
         block::sim::SimulatorTask,
         env::{EnvTask, SimEnv},
+        submit::FlashbotsTask,
     },
     test_utils::{new_signed_tx, setup_logging, setup_test_config},
 };
@@ -83,6 +87,9 @@ async fn test_bundle_host_txns() {
     setup_logging();
     setup_test_config();
 
+    let flashbots = builder::config().connect_flashbots().await.unwrap();
+    let builder_key = builder::config().connect_builder_signer().await.unwrap();
+
     // Setup host provider
     let (_host_anvil, host_provider, host_signer) = spawn_host_anvil();
     let host_chain_id = host_provider.get_chain_id().await.expect("gets host chain id");
@@ -97,7 +104,8 @@ async fn test_bundle_host_txns() {
     let quincey = builder::config().connect_quincey().await.unwrap();
 
     // Setup the simulation environments
-    let env_task = EnvTask::new(host_provider.clone(), ru_provider.clone(), quincey).await.unwrap();
+    let env_task =
+        EnvTask::new(host_provider.clone(), ru_provider.clone(), quincey.clone()).await.unwrap();
     let sim_env = latest_sim_env(&env_task, &host_provider, &ru_provider).await;
 
     // Create a simulation environment and plumbing
@@ -117,7 +125,7 @@ async fn test_bundle_host_txns() {
     // Make a bundle out of them
     let bundle = SignetEthBundle {
         bundle: EthSendBundle {
-            replacement_uuid: Some("test-replacement-uuid".to_string()),
+            replacement_uuid: Some("test-replacement-uuid-123".to_string()),
             txs: vec![ru_txn],
             block_number: sim_env.rollup_block_number(),
             ..Default::default()
@@ -131,7 +139,7 @@ async fn test_bundle_host_txns() {
 
     // Setup the simulator environment
     let (submit_tx, mut submit_rx) = unbounded_channel();
-    let simulator_task = SimulatorTask::new(sim_rx, host_provider, ru_provider);
+    let simulator_task = SimulatorTask::new(sim_rx, host_provider.clone(), ru_provider);
     let simulator_jh = simulator_task.spawn_simulator_task(sim_items, submit_tx);
 
     // Send a new environment to tick the block builder simulation loop off
@@ -143,8 +151,62 @@ async fn test_bundle_host_txns() {
     assert_eq!(got.block.transactions().len(), 1);
     assert_eq!(got.block.host_transactions().len(), 1);
 
+    let (outbound_tx, mut outbound_rx) = unbounded_channel();
+    let flashbots =
+        FlashbotsTask::new(quincey, host_provider.clone(), flashbots, builder_key, outbound_tx)
+            .await
+            .expect("flashbots");
+
+    let mev_bundle = flashbots.prepare(&got).await.expect("prepare bundle");
+    dbg!(&mev_bundle);
+
+    // let hash = outbound_rx.recv().await.expect("receive bundle hash");
+    // debug!(?hash, "Received bundle hash from Flashbots");
+
+    // Send the result to Flashbots
+    // let _ = sim_result_sender.send(got);
+
     // Cleanup
     simulator_jh.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_bundle_submission() {
+    setup_logging();
+    setup_test_config();
+
+    let provider = ProviderBuilder::new().connect_http("http://localhost:8545".parse().unwrap());
+    let block_number = provider.get_block_number().await.unwrap() + 1;
+    let signer = PrivateKeySigner::from_bytes(&B256::repeat_byte(0x42)).unwrap();
+    let wallet = EthereumWallet::from(signer.clone());
+
+    let flashbots = ProviderBuilder::new()
+        .wallet(wallet)
+        .connect_http("http://localhost:8545".parse().unwrap());
+
+    // Sends a eth send bundle
+    let tx = new_signed_tx(&signer, constants().host_chain_id(), 0, U256::from(1), 10_000).unwrap();
+    let bundle = EthSendBundle {
+        replacement_uuid: Some("send-bundle-test-123".to_string()),
+        txs: vec![tx.encoded_2718().into()],
+        block_number,
+        ..Default::default()
+    };
+    let send_bundle_result = flashbots.send_bundle(bundle).await;
+    dbg!(&send_bundle_result);
+
+    // Sends a mev send bundle
+    let tx = new_signed_tx(&signer, constants().host_chain_id(), 0, U256::from(1), 10_000).unwrap();
+    let tx_bz = tx.encoded_2718().into();
+
+    let mev_bundle = MevSendBundle {
+        inclusion: Inclusion { block: block_number, max_block: Some(block_number) },
+        bundle_body: vec![alloy::rpc::types::mev::BundleItem::Tx { tx: tx_bz, can_revert: false }],
+        ..Default::default()
+    };
+
+    let mev_bundle_result = flashbots.send_mev_bundle(mev_bundle).await;
+    dbg!(&mev_bundle_result);
 }
 
 async fn latest_sim_env(

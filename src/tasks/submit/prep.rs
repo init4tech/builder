@@ -94,6 +94,7 @@ impl<'a> SubmitPrep<'a> {
 
     /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
     async fn build_blob_tx(&self) -> eyre::Result<TransactionRequest> {
+        dbg!("BUILDING BLOB TX");
         let (v, r, s) = self.quincey_signature().await?;
 
         let header = Zenith::BlockHeader {
@@ -113,9 +114,11 @@ impl<'a> SubmitPrep<'a> {
     }
 
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
+        dbg!("PREPARING NEW TX REQ");
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
 
+        dbg!(nonce, "fetched nonce for rollup block transaction");
         debug!(nonce, "assigned nonce to rollup block transaction");
 
         // Create a blob transaction with the blob header and signature values and return it
@@ -125,11 +128,13 @@ impl<'a> SubmitPrep<'a> {
             .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
 
+        dbg!("BUILT TX REQ");
         Ok(tx)
     }
 
     /// Prepares a transaction for submission to the host chain.
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
+        dbg!("PREPARING TX");
         let req = self.new_tx_request().in_current_span().await?;
         Ok(Bumpable::new(req, prev_host))
     }

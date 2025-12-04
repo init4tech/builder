@@ -37,15 +37,14 @@ pub struct FlashbotsTask {
 impl FlashbotsTask {
     /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
     /// channel and handles their preparation, submission to the Flashbots network.
-    pub async fn new(outbound: mpsc::UnboundedSender<TxHash>) -> eyre::Result<FlashbotsTask> {
+    pub async fn new(
+        quincey: Quincey,
+        host_provider: HostProvider,
+        flashbots: FlashbotsProvider,
+        builder_key: LocalOrAws,
+        outbound: mpsc::UnboundedSender<TxHash>,
+    ) -> eyre::Result<FlashbotsTask> {
         let config = crate::config();
-
-        let (quincey, host_provider, flashbots, builder_key) = tokio::try_join!(
-            config.connect_quincey(),
-            config.connect_host_provider(),
-            config.connect_flashbots(),
-            config.connect_builder_signer()
-        )?;
 
         let zenith = config.connect_zenith(host_provider);
 
@@ -72,12 +71,14 @@ impl FlashbotsTask {
     async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
         // Prepare and sign the transaction
         let block_tx = self.prepare_signed_transaction(sim_result).await?;
+        dbg!("PREPARED SIGNED TX", block_tx.tx_hash());
 
         // Track the outbound transaction
         self.track_outbound_tx(&block_tx);
 
         // Encode the transaction
         let tx_bytes = block_tx.encoded_2718().into();
+        dbg!("ENCODED TX BYTES");
 
         // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
         let bundle_body = self.build_bundle_body(sim_result, tx_bytes);
@@ -99,6 +100,7 @@ impl FlashbotsTask {
         &self,
         sim_result: &SimResult,
     ) -> eyre::Result<alloy::consensus::TxEnvelope> {
+        dbg!("PREPARING SIGNED TX");
         let prep = SubmitPrep::new(
             &sim_result.block,
             self.host_provider(),
@@ -117,6 +119,7 @@ impl FlashbotsTask {
     /// Sends the transaction hash to the outbound channel for monitoring.
     /// Logs a debug message if the channel is closed.
     fn track_outbound_tx(&self, envelope: &alloy::consensus::TxEnvelope) {
+        dbg!("tracking outbound tx");
         counter!("signet.builder.flashbots.").increment(1);
         let hash = *envelope.tx_hash();
         if self.outbound.send(hash).is_err() {
@@ -151,13 +154,15 @@ impl FlashbotsTask {
     /// them to the Flashbots relay. Skips empty blocks and continues processing on errors.
     async fn task_future(self, mut inbound: mpsc::UnboundedReceiver<SimResult>) {
         debug!("starting flashbots task");
-
+        dbg!("GOT HERE");
         loop {
             // Wait for a sim result to come in
             let Some(sim_result) = inbound.recv().await else {
                 debug!("upstream task gone - exiting flashbots task");
                 break;
             };
+
+            dbg!("FLASHBOTS TASK GOT SIM RESULT", sim_result.host_block_number(), sim_result.block.block_number());
 
             let span = sim_result.sim_env.clone_span();
 
@@ -176,7 +181,10 @@ impl FlashbotsTask {
                     span_debug!(span, %error, "bundle preparation failed");
                 });
             let bundle = match result {
-                Ok(bundle) => bundle,
+                Ok(bundle) => {
+                    debug!(?bundle, "prepared MEV bundle for submission to Flashbots");
+                    bundle
+                },
                 Err(_) => continue,
             };
 
