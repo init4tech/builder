@@ -14,7 +14,7 @@ use alloy::{
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{Instrument, debug, debug_span};
+use tracing::{Instrument, debug, debug_span, error};
 
 /// Handles preparation and submission of simulated rollup blocks to the
 /// Flashbots relay as MEV bundles.
@@ -188,35 +188,36 @@ impl FlashbotsTask {
                 parent: &span,
                 "flashbots.submit",
             );
-            let submit_span_clone = submit_span.clone();
 
             // Send the bundle to Flashbots, instrumenting the send future so all
             // events inside the async send are attributed to the submit span.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
 
-            tokio::spawn(async move {
-                let response = flashbots
-                    .send_mev_bundle(bundle.clone())
-                    .with_auth(signer.clone())
-                    .into_future()
-                    .await;
+            tokio::spawn(
+                async move {
+                    let response = flashbots
+                        .send_mev_bundle(bundle.clone())
+                        .with_auth(signer.clone())
+                        .into_future()
+                        .await;
 
-                match response {
-                    Ok(resp) => {
-                        counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                        span_debug!(
-                            submit_span_clone,
-                            hash = resp.map(|r| r.bundle_hash.to_string()),
-                            "received bundle hash after submitted to flashbots"
-                        );
-                    }
-                    Err(err) => {
-                        counter!("signet.builder.flashbots.submission_failures").increment(1);
-                        span_error!(submit_span_clone, %err, "MEV bundle submission failed - error returned");
+                    match response {
+                        Ok(resp) => {
+                            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                            debug!(
+                                hash = resp.map(|r| r.bundle_hash.to_string()),
+                                "received bundle hash after submitted to flashbots"
+                            );
+                        }
+                        Err(err) => {
+                            counter!("signet.builder.flashbots.submission_failures").increment(1);
+                            error!(%err, "MEV bundle submission failed - error returned");
+                        }
                     }
                 }
-            }.instrument(submit_span.clone()));
+                .instrument(submit_span.clone()),
+            );
         }
     }
 
