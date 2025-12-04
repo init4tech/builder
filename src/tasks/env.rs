@@ -162,7 +162,8 @@ impl SimEnv {
         constants: &SignetSystemConstants,
         provider: RuProvider,
     ) -> SimRollupEnv {
-        let rollup_cfg = SignetCfgEnv { chain_id: constants.ru_chain_id() };
+        let timestamp = self.rollup_env().timestamp.to::<u64>();
+        let rollup_cfg = SignetCfgEnv::new(constants.ru_chain_id(), timestamp);
         RollupEnv::new(self.rollup_db(provider), constants.clone(), &rollup_cfg, self.rollup_env())
     }
 
@@ -177,7 +178,8 @@ impl SimEnv {
         constants: &SignetSystemConstants,
         provider: HostProvider,
     ) -> SimHostEnv {
-        let host_cfg = SignetCfgEnv { chain_id: constants.host_chain_id() };
+        let timestamp = self.host_env().timestamp.to::<u64>();
+        let host_cfg = SignetCfgEnv::new(constants.host_chain_id(), timestamp);
         HostEnv::new(self.host_db(provider), constants.clone(), &host_cfg, self.host_env())
     }
 }
