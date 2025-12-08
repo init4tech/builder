@@ -2,17 +2,15 @@
 use reth_chainspec::ChainSpec;
 use signet_block_processor::revm_spec;
 use signet_constants::{mainnet, pecorino};
-use signet_genesis::PECORINO_GENESIS;
-use std::sync::LazyLock;
+use signet_genesis::{MAINNET_GENESIS, PECORINO_GENESIS};
+use std::sync::OnceLock;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
 
-/// The RU Pecorino [`ChainSpec`].
-static PECORINO_SPEC: LazyLock<ChainSpec> =
-    LazyLock::new(|| ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()));
+/// The RU [`ChainSpec`].
+static RU_SPEC: OnceLock<SpecId> = OnceLock::new();
 
-/// The RU Mainnet [`ChainSpec`].
-static MAINNET_RU_SPEC: LazyLock<ChainSpec> =
-    LazyLock::new(|| ChainSpec::from_genesis(signet_genesis::MAINNET_GENESIS.to_owned()));
+/// The Host [`ChainSpec`].
+static HOST_SPEC: OnceLock<SpecId> = OnceLock::new();
 
 /// [`SignetCfgEnv`] holds network-level configuration values.
 #[derive(Debug, Clone, Copy)]
@@ -30,14 +28,13 @@ impl SignetCfgEnv {
     }
 
     fn spec_id(&self) -> SpecId {
-        match self.chain_id {
-            // Pecorino
-            pecorino::HOST_CHAIN_ID | pecorino::RU_CHAIN_ID => {
-                revm_spec(&PECORINO_SPEC, self.timestamp)
+        *match self.chain_id {
+            pecorino::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => {
+                RU_SPEC.get_or_init(|| initialize_ru_spec(self.chain_id, self.timestamp))
             }
-            // Mainnet RU
-            mainnet::RU_CHAIN_ID => revm_spec(&MAINNET_RU_SPEC, self.timestamp),
-            mainnet::HOST_CHAIN_ID => revm_spec(&reth_chainspec::MAINNET, self.timestamp),
+            pecorino::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => {
+                HOST_SPEC.get_or_init(|| initialize_host_spec(self.chain_id, self.timestamp))
+            }
             _ => unimplemented!("Unknown chain ID: {}", self.chain_id),
         }
     }
@@ -47,6 +44,28 @@ impl trevm::Cfg for SignetCfgEnv {
     fn fill_cfg_env(&self, cfg_env: &mut CfgEnv) {
         cfg_env.chain_id = self.chain_id;
         cfg_env.spec = self.spec_id();
+    }
+}
+
+fn initialize_ru_spec(chain_id: u64, timestamp: u64) -> SpecId {
+    match chain_id {
+        pecorino::RU_CHAIN_ID => {
+            revm_spec(&ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()), timestamp)
+        }
+        mainnet::RU_CHAIN_ID => {
+            revm_spec(&ChainSpec::from_genesis(MAINNET_GENESIS.to_owned()), timestamp)
+        }
+        _ => unimplemented!("Unknown chain ID: {}", chain_id),
+    }
+}
+
+fn initialize_host_spec(chain_id: u64, timestamp: u64) -> SpecId {
+    match chain_id {
+        pecorino::HOST_CHAIN_ID => {
+            revm_spec(&ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()), timestamp)
+        }
+        mainnet::HOST_CHAIN_ID => revm_spec(&reth_chainspec::MAINNET, timestamp),
+        _ => unimplemented!("Unknown chain ID: {}", chain_id),
     }
 }
 
