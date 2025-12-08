@@ -1,6 +1,4 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
-
-use alloy_chains::NamedChain;
 use reth_chainspec::ChainSpec;
 use signet_block_processor::revm_spec;
 use signet_constants::{mainnet, pecorino};
@@ -39,10 +37,7 @@ impl SignetCfgEnv {
             }
             // Mainnet RU
             mainnet::RU_CHAIN_ID => revm_spec(&MAINNET_RU_SPEC, self.timestamp),
-            // Mainnet Host
-            id if id == NamedChain::Mainnet as u64 => {
-                revm_spec(&reth_chainspec::MAINNET, self.timestamp)
-            }
+            mainnet::HOST_CHAIN_ID => revm_spec(&reth_chainspec::MAINNET, self.timestamp),
             _ => unimplemented!("Unknown chain ID: {}", self.chain_id),
         }
     }
@@ -58,6 +53,7 @@ impl trevm::Cfg for SignetCfgEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_chains::NamedChain;
     use alloy_hardforks::mainnet::MAINNET_OSAKA_TIMESTAMP;
 
     #[test]
