@@ -11001,8 +11001,8 @@ dependencies = [
 
 [[package]]
 name = "signet-blobber"
-version = "0.14.2"
-source = "git+https://github.com/init4tech/node-components?rev=921cdfe#921cdfecf4a9d6de5e033f82ada86cf5e9cf9ed1"
+version = "0.14.3"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
 dependencies = [
  "alloy",
  "foundry-blob-explorers",
@@ -11023,8 +11023,8 @@ dependencies = [
 
 [[package]]
 name = "signet-block-processor"
-version = "0.14.2"
-source = "git+https://github.com/init4tech/node-components?rev=921cdfe#921cdfecf4a9d6de5e033f82ada86cf5e9cf9ed1"
+version = "0.14.3"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
 dependencies = [
  "alloy",
  "eyre",
@@ -11087,8 +11087,8 @@ dependencies = [
 
 [[package]]
 name = "signet-db"
-version = "0.14.2"
-source = "git+https://github.com/init4tech/node-components?rev=921cdfe#921cdfecf4a9d6de5e033f82ada86cf5e9cf9ed1"
+version = "0.14.3"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
 dependencies = [
  "alloy",
  "auto_impl",
@@ -11166,8 +11166,8 @@ dependencies = [
 
 [[package]]
 name = "signet-genesis"
-version = "0.14.2"
-source = "git+https://github.com/init4tech/node-components?rev=921cdfe#921cdfecf4a9d6de5e033f82ada86cf5e9cf9ed1"
+version = "0.14.3"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
 dependencies = [
  "alloy",
  "init4-bin-base 0.17.0",
@@ -11203,8 +11203,8 @@ dependencies = [
 
 [[package]]
 name = "signet-node-types"
-version = "0.14.2"
-source = "git+https://github.com/init4tech/node-components?rev=921cdfe#921cdfecf4a9d6de5e033f82ada86cf5e9cf9ed1"
+version = "0.14.3"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
 dependencies = [
  "alloy",
  "reth",

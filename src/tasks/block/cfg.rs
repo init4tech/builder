@@ -57,7 +57,7 @@ fn initialize_ru_spec(chain_id: u64, timestamp: u64) -> SpecId {
         mainnet::RU_CHAIN_ID => {
             revm_spec(&ChainSpec::from_genesis(MAINNET_GENESIS.to_owned()), timestamp)
         }
-        _ => unimplemented!("Unknown chain ID: {}", chain_id),
+        _ => unimplemented!("Unknown rollup chain ID: {}", chain_id),
     }
 }
 
@@ -69,7 +69,7 @@ fn initialize_host_spec(chain_id: u64, timestamp: u64) -> SpecId {
         mainnet::HOST_CHAIN_ID => {
             revm_spec(&ChainSpec::from_genesis(MAINNET_HOST_GENESIS.to_owned()), timestamp)
         }
-        _ => unimplemented!("Unknown chain ID: {}", chain_id),
+        _ => unimplemented!("Unknown host chain ID: {}", chain_id),
     }
 }
 
