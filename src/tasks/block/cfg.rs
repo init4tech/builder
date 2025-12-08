@@ -76,20 +76,11 @@ mod tests {
     use alloy_hardforks::mainnet::MAINNET_OSAKA_TIMESTAMP;
 
     #[test]
-    fn pecorino_cfg_env() {
-        let cfg = SignetCfgEnv::new(pecorino::HOST_CHAIN_ID, 0);
-        assert_eq!(cfg.spec_id(), SpecId::PRAGUE);
-
-        let cfg = SignetCfgEnv::new(pecorino::RU_CHAIN_ID, 0);
-        assert_eq!(cfg.spec_id(), SpecId::PRAGUE);
-    }
-
-    #[test]
     fn mainnet_cfg_env() {
-        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP - 1);
-        assert_eq!(cfg.spec_id(), SpecId::PRAGUE);
-
         let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
+        assert_eq!(cfg.spec_id(), SpecId::OSAKA);
+
+        let cfg = SignetCfgEnv::new(mainnet::HOST_CHAIN_ID, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
     }
 }

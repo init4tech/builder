@@ -43,7 +43,6 @@ alloy = { version = "=1.0.35", features = [
     "getrandom",
     "provider-mev-api",
 ] }
-alloy-chains = "0.2"
 
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 
@@ -60,6 +59,7 @@ url = "2.5.4"
 
 [dev-dependencies]
 alloy-hardforks = "0.4.0"
+alloy-chains = "0.2"
 
 # comment / uncomment for local dev
 # [patch.crates-io]
