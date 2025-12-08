@@ -2,7 +2,9 @@
 use reth_chainspec::ChainSpec;
 use signet_block_processor::revm_spec;
 use signet_constants::{mainnet, pecorino};
-use signet_genesis::{MAINNET_GENESIS, PECORINO_GENESIS};
+use signet_genesis::{
+    MAINNET_GENESIS, MAINNET_HOST_GENESIS, PECORINO_GENESIS, PECORINO_HOST_GENESIS,
+};
 use std::sync::OnceLock;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
 
@@ -62,9 +64,11 @@ fn initialize_ru_spec(chain_id: u64, timestamp: u64) -> SpecId {
 fn initialize_host_spec(chain_id: u64, timestamp: u64) -> SpecId {
     match chain_id {
         pecorino::HOST_CHAIN_ID => {
-            revm_spec(&ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()), timestamp)
+            revm_spec(&ChainSpec::from_genesis(PECORINO_HOST_GENESIS.to_owned()), timestamp)
         }
-        mainnet::HOST_CHAIN_ID => revm_spec(&reth_chainspec::MAINNET, timestamp),
+        mainnet::HOST_CHAIN_ID => {
+            revm_spec(&ChainSpec::from_genesis(MAINNET_HOST_GENESIS.to_owned()), timestamp)
+        }
         _ => unimplemented!("Unknown chain ID: {}", chain_id),
     }
 }

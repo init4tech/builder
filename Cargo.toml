@@ -25,8 +25,8 @@ signet-sim = { version = "0.16.0-rc.0" }
 signet-tx-cache = { version = "0.16.0-rc.0" }
 signet-types = { version = "0.16.0-rc.0" }
 signet-zenith = { version = "0.16.0-rc.0" }
-signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.14.2" }
-signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.14.2" }
+signet-block-processor = { git = "https://github.com/init4tech/node-components", rev = "921cdfe" }
+signet-genesis = { git = "https://github.com/init4tech/node-components", rev = "921cdfe" }
 
 trevm = { version = "0.31.0", features = ["concurrent-db", "test-utils"] }
 
