@@ -9,10 +9,10 @@ use std::sync::OnceLock;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
 
 /// The RU [`ChainSpec`].
-static RU_SPEC: OnceLock<SpecId> = OnceLock::new();
+static RU_CHAINSPEC: OnceLock<ChainSpec> = OnceLock::new();
 
 /// The Host [`ChainSpec`].
-static HOST_SPEC: OnceLock<SpecId> = OnceLock::new();
+static HOST_CHAINSPEC: OnceLock<ChainSpec> = OnceLock::new();
 
 /// [`SignetCfgEnv`] holds network-level configuration values.
 #[derive(Debug, Clone, Copy)]
@@ -30,13 +30,15 @@ impl SignetCfgEnv {
     }
 
     fn spec_id(&self) -> SpecId {
-        *match self.chain_id {
-            pecorino::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => {
-                RU_SPEC.get_or_init(|| initialize_ru_spec(self.chain_id, self.timestamp))
-            }
-            pecorino::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => {
-                HOST_SPEC.get_or_init(|| initialize_host_spec(self.chain_id, self.timestamp))
-            }
+        match self.chain_id {
+            pecorino::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => revm_spec(
+                RU_CHAINSPEC.get_or_init(|| initialize_ru_chainspec(self.chain_id)),
+                self.timestamp,
+            ),
+            pecorino::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => revm_spec(
+                HOST_CHAINSPEC.get_or_init(|| initialize_host_chainspec(self.chain_id)),
+                self.timestamp,
+            ),
             _ => unimplemented!("Unknown chain ID: {}", self.chain_id),
         }
     }
@@ -49,26 +51,18 @@ impl trevm::Cfg for SignetCfgEnv {
     }
 }
 
-fn initialize_ru_spec(chain_id: u64, timestamp: u64) -> SpecId {
+fn initialize_ru_chainspec(chain_id: u64) -> ChainSpec {
     match chain_id {
-        pecorino::RU_CHAIN_ID => {
-            revm_spec(&ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()), timestamp)
-        }
-        mainnet::RU_CHAIN_ID => {
-            revm_spec(&ChainSpec::from_genesis(MAINNET_GENESIS.to_owned()), timestamp)
-        }
+        pecorino::RU_CHAIN_ID => ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()),
+        mainnet::RU_CHAIN_ID => ChainSpec::from_genesis(MAINNET_GENESIS.to_owned()),
         _ => unimplemented!("Unknown rollup chain ID: {}", chain_id),
     }
 }
 
-fn initialize_host_spec(chain_id: u64, timestamp: u64) -> SpecId {
+fn initialize_host_chainspec(chain_id: u64) -> ChainSpec {
     match chain_id {
-        pecorino::HOST_CHAIN_ID => {
-            revm_spec(&ChainSpec::from_genesis(PECORINO_HOST_GENESIS.to_owned()), timestamp)
-        }
-        mainnet::HOST_CHAIN_ID => {
-            revm_spec(&ChainSpec::from_genesis(MAINNET_HOST_GENESIS.to_owned()), timestamp)
-        }
+        pecorino::HOST_CHAIN_ID => ChainSpec::from_genesis(PECORINO_HOST_GENESIS.to_owned()),
+        mainnet::HOST_CHAIN_ID => ChainSpec::from_genesis(MAINNET_HOST_GENESIS.to_owned()),
         _ => unimplemented!("Unknown host chain ID: {}", chain_id),
     }
 }
@@ -81,10 +75,10 @@ mod tests {
 
     #[test]
     fn mainnet_cfg_env() {
-        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
-        assert_eq!(cfg.spec_id(), SpecId::OSAKA);
+        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP - 1);
+        assert_eq!(cfg.spec_id(), SpecId::PRAGUE);
 
-        let cfg = SignetCfgEnv::new(mainnet::RU_CHAIN_ID, MAINNET_OSAKA_TIMESTAMP);
+        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
     }
 }
