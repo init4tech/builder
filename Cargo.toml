@@ -19,13 +19,17 @@ path = "bin/builder.rs"
 
 [dependencies]
 init4-bin-base = { version = "0.18.0-rc.0", features = ["perms", "aws"] }
+# init4-bin-base = { git = "https://github.com/init4tech/bin-base.git", branch = "main", features = [
+#     "perms",
+#     "aws",
+# ] }
 
-signet-constants = { version = "0.16.0-rc.0" }
-signet-sim = { version = "0.16.0-rc.0" }
-signet-tx-cache = { version = "0.16.0-rc.0" }
-signet-types = { version = "0.16.0-rc.0" }
-signet-bundle = { version = "0.16.0-rc.0" }
-signet-zenith = { version = "0.16.0-rc.0" }
+signet-constants = { version = "0.16.0-rc.1" }
+signet-sim = { version = "0.16.0-rc.1" }
+signet-tx-cache = { version = "0.16.0-rc.1" }
+signet-types = { version = "0.16.0-rc.1" }
+signet-bundle = { version = "0.16.0-rc.1" }
+signet-zenith = { version = "0.16.0-rc.1" }
 signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.2" }
 signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.2" }
 
