@@ -11001,8 +11001,8 @@ dependencies = [
 
 [[package]]
 name = "signet-blobber"
-version = "0.14.3"
-source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
+version = "0.14.4"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.4#a839db866eb8b7cc2d69cf1a7cd4f7d29a23ecc1"
 dependencies = [
  "alloy",
  "foundry-blob-explorers",
@@ -11023,8 +11023,8 @@ dependencies = [
 
 [[package]]
 name = "signet-block-processor"
-version = "0.14.3"
-source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
+version = "0.14.4"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.4#a839db866eb8b7cc2d69cf1a7cd4f7d29a23ecc1"
 dependencies = [
  "alloy",
  "eyre",
@@ -11087,8 +11087,8 @@ dependencies = [
 
 [[package]]
 name = "signet-db"
-version = "0.14.3"
-source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
+version = "0.14.4"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.4#a839db866eb8b7cc2d69cf1a7cd4f7d29a23ecc1"
 dependencies = [
  "alloy",
  "auto_impl",
@@ -11166,8 +11166,8 @@ dependencies = [
 
 [[package]]
 name = "signet-genesis"
-version = "0.14.3"
-source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
+version = "0.14.4"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.4#a839db866eb8b7cc2d69cf1a7cd4f7d29a23ecc1"
 dependencies = [
  "alloy",
  "init4-bin-base 0.17.0",
@@ -11203,8 +11203,8 @@ dependencies = [
 
 [[package]]
 name = "signet-node-types"
-version = "0.14.3"
-source = "git+https://github.com/init4tech/node-components?tag=v0.14.3#f81d394d193b72d349190ba46d668d5561cedd31"
+version = "0.14.4"
+source = "git+https://github.com/init4tech/node-components?tag=v0.14.4#a839db866eb8b7cc2d69cf1a7cd4f7d29a23ecc1"
 dependencies = [
  "alloy",
  "reth",
@@ -12280,9 +12280,9 @@ dependencies = [
 
 [[package]]
 name = "trevm"
-version = "0.31.1"
+version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31e160a23de6ec6d0722bebbea6340a8dc98bb097e5b3d9940d4ad6814461550"
+checksum = "1ada7f4c9c859cb56bd9ec82ed7db9dec6b9e0d27a2ce6984e2084e4d1a0cd9f"
 dependencies = [
  "alloy",
  "dashmap 6.1.0",

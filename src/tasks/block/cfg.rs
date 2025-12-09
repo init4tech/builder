@@ -84,7 +84,7 @@ mod tests {
         let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
 
-        let cfg = SignetCfgEnv::new(mainnet::HOST_CHAIN_ID, MAINNET_OSAKA_TIMESTAMP);
+        let cfg = SignetCfgEnv::new(mainnet::RU_CHAIN_ID, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
     }
 }
