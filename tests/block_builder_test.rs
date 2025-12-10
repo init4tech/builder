@@ -28,7 +28,7 @@ async fn test_handle_build() {
     let config = setup_test_config();
 
     // Create an anvil instance for testing
-    let anvil_instance = Anvil::new().chain_id(signet_constants::pecorino::RU_CHAIN_ID).spawn();
+    let anvil_instance = Anvil::new().chain_id(signet_constants::parmigiana::RU_CHAIN_ID).spawn();
 
     // Create a wallet
     let keys = anvil_instance.keys();

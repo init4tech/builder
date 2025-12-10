@@ -1,9 +1,9 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
 use reth_chainspec::ChainSpec;
 use signet_block_processor::revm_spec;
-use signet_constants::{mainnet, pecorino};
+use signet_constants::{mainnet, parmigiana};
 use signet_genesis::{
-    MAINNET_GENESIS, MAINNET_HOST_GENESIS, PECORINO_GENESIS, PECORINO_HOST_GENESIS,
+    MAINNET_GENESIS, MAINNET_HOST_GENESIS, PARMIGIANA_GENESIS, PARMIGIANA_HOST_GENESIS,
 };
 use std::sync::OnceLock;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
@@ -31,11 +31,11 @@ impl SignetCfgEnv {
 
     fn spec_id(&self) -> SpecId {
         match self.chain_id {
-            pecorino::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => revm_spec(
+            parmigiana::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => revm_spec(
                 RU_CHAINSPEC.get_or_init(|| initialize_ru_chainspec(self.chain_id)),
                 self.timestamp,
             ),
-            pecorino::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => revm_spec(
+            parmigiana::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => revm_spec(
                 HOST_CHAINSPEC.get_or_init(|| initialize_host_chainspec(self.chain_id)),
                 self.timestamp,
             ),
@@ -53,7 +53,7 @@ impl trevm::Cfg for SignetCfgEnv {
 
 fn initialize_ru_chainspec(chain_id: u64) -> ChainSpec {
     match chain_id {
-        pecorino::RU_CHAIN_ID => ChainSpec::from_genesis(PECORINO_GENESIS.to_owned()),
+        parmigiana::RU_CHAIN_ID => ChainSpec::from_genesis(PARMIGIANA_GENESIS.to_owned()),
         mainnet::RU_CHAIN_ID => ChainSpec::from_genesis(MAINNET_GENESIS.to_owned()),
         _ => unimplemented!("Unknown rollup chain ID: {}", chain_id),
     }
@@ -61,7 +61,7 @@ fn initialize_ru_chainspec(chain_id: u64) -> ChainSpec {
 
 fn initialize_host_chainspec(chain_id: u64) -> ChainSpec {
     match chain_id {
-        pecorino::HOST_CHAIN_ID => ChainSpec::from_genesis(PECORINO_HOST_GENESIS.to_owned()),
+        parmigiana::HOST_CHAIN_ID => ChainSpec::from_genesis(PARMIGIANA_HOST_GENESIS.to_owned()),
         mainnet::HOST_CHAIN_ID => ChainSpec::from_genesis(MAINNET_HOST_GENESIS.to_owned()),
         _ => unimplemented!("Unknown host chain ID: {}", chain_id),
     }

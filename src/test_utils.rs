@@ -55,7 +55,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
                 0, 1,
             ),
             max_host_gas_coefficient: Some(80),
-            constants: SignetSystemConstants::pecorino(),
+            constants: SignetSystemConstants::parmigiana(),
         }
     })
 }
