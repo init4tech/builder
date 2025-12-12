@@ -19,10 +19,6 @@ path = "bin/builder.rs"
 
 [dependencies]
 init4-bin-base = { version = "0.18.0-rc.0", features = ["perms", "aws"] }
-# init4-bin-base = { git = "https://github.com/init4tech/bin-base.git", branch = "main", features = [
-#     "perms",
-#     "aws",
-# ] }
 
 signet-constants = { version = "0.16.0-rc.1" }
 signet-sim = { version = "0.16.0-rc.1" }
