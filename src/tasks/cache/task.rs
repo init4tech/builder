@@ -45,18 +45,25 @@ impl CacheTask {
                     }
 
                     if let Some(env) = self.envs.borrow_and_update().as_ref() {
+                        let _guard = env.span().enter();
                         let sim_env = env.rollup_env();
 
                         basefee = sim_env.basefee;
-                        info!(basefee, block_env_number = sim_env.number.to::<u64>(), block_env_timestamp = sim_env.timestamp.to::<u64>(), "rollup block env changed, clearing cache");
+                        info!(
+                            basefee,
+                            block_env_number = sim_env.number.to::<u64>(), block_env_timestamp = sim_env.timestamp.to::<u64>(),
+                            "rollup block env changed, clearing cache"
+                        );
                         cache.clean(
                             sim_env.number.to(), sim_env.timestamp.to()
                         );
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
-
-                    let env_block = self.envs.borrow().as_ref().map(|e| e.rollup_env().number.to::<u64>()).unwrap_or_default();
+                    let env_block = self.envs.borrow()
+                        .as_ref()
+                        .map(|e| e.rollup_env().number.to::<u64>())
+                        .unwrap_or_default();
                     let bundle_block = bundle.bundle.block_number();
 
                     // Don't insert bundles for past blocks
