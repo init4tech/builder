@@ -322,16 +322,16 @@ impl EnvTask {
             let rollup_env = self.construct_rollup_env(rollup_header.into());
             let host_env = self.construct_host_env(host_header);
 
-            span_debug!(
+            span_info!(
                 span,
                 rollup_env_number = rollup_env.block_env.number.to::<u64>(),
                 rollup_env_basefee = rollup_env.block_env.basefee,
-                "constructed block env"
+                "constructed block env, initiating build process"
             );
 
             if sender.send(Some(SimEnv { span, rollup: rollup_env, host: host_env })).is_err() {
                 // The receiver has been dropped, so we can stop the task.
-                tracing::debug!("receiver dropped, stopping task");
+                span_debug!("receiver dropped, stopping task");
                 break;
             }
         }
