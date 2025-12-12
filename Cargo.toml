@@ -24,7 +24,6 @@ signet-constants = { version = "0.16.0-rc.1" }
 signet-sim = { version = "0.16.0-rc.1" }
 signet-tx-cache = { version = "0.16.0-rc.1" }
 signet-types = { version = "0.16.0-rc.1" }
-signet-bundle = { version = "0.16.0-rc.1" }
 signet-zenith = { version = "0.16.0-rc.1" }
 signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.2" }
 signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.2" }
