@@ -36,8 +36,8 @@ pub mod test_utils;
 use init4_bin_base::utils::from_env::FromEnv;
 // Anonymous import suppresses warnings about unused imports.
 use openssl as _;
-use signet_constants::SignetSystemConstants;
 use signet_bundle as _;
+use signet_constants::SignetSystemConstants;
 use std::sync::OnceLock;
 
 /// Global static configuration for the Builder binary.
