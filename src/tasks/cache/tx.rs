@@ -134,7 +134,7 @@ impl TxPoller {
                 })
             {
                 let _guard = span.entered();
-                debug!(count = ?transactions.len(), "found transactions");
+                trace!(count = ?transactions.len(), "found transactions");
                 for tx in transactions.into_iter() {
                     self.spawn_check_nonce(tx, outbound.clone());
                 }
