@@ -14,7 +14,10 @@ use tokio::select;
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
     let init_span_guard = info_span!("builder initialization");
-    builder::config_from_env();
+    let config = builder::config_from_env();
+
+    // Authenticate to eager-load OAuth token before proceeding
+    config.oauth.authenticator().authenticate().await?;
 
     // Set up env and metrics tasks
     let (env_task, metrics_task) = tokio::try_join!(EnvTask::new(), MetricsTask::new())?;

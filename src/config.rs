@@ -246,8 +246,6 @@ impl BuilderConfig {
             return Ok(Quincey::new_owned(signer));
         }
 
-        self.oauth.authenticator().authenticate().await?;
-
         let client = reqwest::Client::new();
         let url = url::Url::parse(&self.quincey_url)?;
         let token = self.oauth_token();
