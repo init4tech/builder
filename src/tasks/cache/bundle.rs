@@ -8,7 +8,7 @@ use tokio::{
     task::JoinHandle,
     time::{self, Duration},
 };
-use tracing::{Instrument, debug, debug_span, error, trace};
+use tracing::{Instrument, debug, error, trace, trace_span};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -71,7 +71,7 @@ impl BundlePoller {
 
     async fn task_future(mut self, outbound: UnboundedSender<TxCacheBundle>) {
         loop {
-            let span = debug_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
+            let span = trace_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
 
             // Enter the span for the next check.
             let _guard = span.enter();
@@ -92,7 +92,7 @@ impl BundlePoller {
                 .inspect_err(|err| debug!(%err, "Error fetching bundles"))
             {
                 let _guard = span.entered();
-                debug!(count = ?bundles.len(), "found bundles");
+                trace!(count = ?bundles.len(), "found bundles");
                 for bundle in bundles.into_iter() {
                     if let Err(err) = outbound.send(bundle) {
                         error!(err = ?err, "Failed to send bundle - channel is dropped");
