@@ -10,6 +10,9 @@ use alloy::{
     primitives::{B256, U256},
     providers::{Provider, network::Network},
 };
+use init4_bin_base::deps::{
+    opentelemetry::trace::TraceContextExt, tracing_opentelemetry::OpenTelemetrySpanExt,
+};
 use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
@@ -275,10 +278,12 @@ impl EnvTask {
 
         // This span will be updated at the end of each loop iteration.
         let mut span = info_span!(
+            parent: None,
             "SimEnv",
             host_block.number = "initial",
             rollup_header.number = "initial",
             rollup_header.hash = "initial",
+            trace_id = tracing::field::Empty,
         );
 
         while let Some(rollup_header) = rollup_headers
@@ -286,6 +291,9 @@ impl EnvTask {
             .instrument(info_span!(parent: &span, "waiting_for_notification"))
             .await
         {
+            // Ensure that we record the OpenTelemetry trace ID in the span.
+            span.record("trace_id", span.context().span().span_context().trace_id().to_string());
+
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
             let rollup_block_number = rollup_header.number;
@@ -299,12 +307,10 @@ impl EnvTask {
                 self.host_provider
                     .get_block_by_number(host_block_number.into())
                     .into_future()
-                    .instrument(
-                        debug_span!(parent: &span, "EnvTask::fetch_host_block", %host_block_number)
-                    ),
+                    .instrument(debug_span!(parent: &span, "EnvTask::fetch_host_block")),
                 // We want to check that we're able to sign for the block we're gonna start building.
                 // If not, we just want to skip all the work.
-                self.quincey.preflight_check(host_block_number + 1),
+                self.quincey.preflight_check(host_block_number + 1).in_current_span(),
             );
 
             res_unwrap_or_continue!(
@@ -360,6 +366,7 @@ impl EnvTask {
                 host_block.number = host_block_number + 1,
                 rollup_header.number = rollup_block_number + 1,
                 rollup_header.hash = tracing::field::Empty,
+                trace_id = tracing::field::Empty,
             );
         }
     }
