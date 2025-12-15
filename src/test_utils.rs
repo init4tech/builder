@@ -24,11 +24,12 @@ pub fn setup_test_config() -> &'static BuilderConfig {
     crate::CONFIG.get_or_init(|| {
         BuilderConfig {
             // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
-            host_rpc: "ws://host-rpc.pecorino.signet.sh"
+            // host_rpc: "http://host-rpc.parmigiana.signet.sh"
+            host_rpc: "https://host-rpc.parmigiana.signet.sh"
                 .parse::<BuiltInConnectionString>()
                 .map(ProviderConfig::new)
                 .unwrap(),
-            ru_rpc: "ws://rpc.pecorino.signet.sh"
+            ru_rpc: "ws://rpc.parmigiana.signet.sh"
                 .parse::<BuiltInConnectionString>()
                 .unwrap()
                 .try_into()

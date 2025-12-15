@@ -260,6 +260,7 @@ impl EnvTask {
 
     /// Returns a sender that sends [`SimEnv`] for communicating the next block environment.
     async fn task_fut(self, sender: watch::Sender<Option<SimEnv>>) {
+        println!("Starting EnvTask");
         let span = info_span!("EnvTask::task_fut::init");
 
         let mut rollup_headers = match self.ru_provider.subscribe_blocks().await {
@@ -279,6 +280,11 @@ impl EnvTask {
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
 
+            // NB: This is the last log line I see
+            println!(
+                "0 - EnvTask received rollup block {}, corresponding host block {}",
+                rollup_header.number, host_block_number
+            );
             let span = info_span!("SimEnv", %host_block_number, %rollup_header.hash, %rollup_header.number);
 
             let (host_block_res, quincey_res) = tokio::join!(
@@ -287,18 +293,21 @@ impl EnvTask {
                 // If not, we just want to skip all the work.
                 self.quincey.preflight_check(host_block_number + 1)
             );
+            println!("1- fetched host block and checked quincey");
 
             res_unwrap_or_continue!(
                 quincey_res,
                 span,
                 error!("error checking quincey slot - skipping block submission"),
             );
+            println!("2- checked quincey");
 
             let host_block_opt = res_unwrap_or_continue!(
                 host_block_res,
                 span,
                 error!("error fetching previous host block - skipping block submission")
             );
+            print!("3- fetched host block {:?}", host_block_opt.clone().unwrap());
 
             let host_header = opt_unwrap_or_continue!(
                 host_block_opt,
