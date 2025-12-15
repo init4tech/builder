@@ -116,8 +116,7 @@ impl SimulatorTask {
     ///
     /// A `Result` containing the built block or an error.
     #[instrument(skip_all, fields(
-        tx_count = sim_items.len(),
-        millis_to_deadline = finish_by.duration_since(Instant::now()).as_millis()
+        starting_cache_size = sim_items.len()
     ))]
     pub async fn handle_build(
         &self,

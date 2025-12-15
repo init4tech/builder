@@ -9,7 +9,7 @@ use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
-use tracing::{Instrument, debug, debug_span, trace};
+use tracing::{Instrument, debug, debug_span, trace, trace_span};
 
 /// Poll interval for the transaction poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -114,10 +114,7 @@ impl TxPoller {
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
         loop {
-            let span = debug_span!("TxPoller::loop", url = %self.config.tx_pool_url);
-
-            // Enter the span for the next check.
-            let _guard = span.enter();
+            let span = trace_span!("TxPoller::loop", url = %self.config.tx_pool_url);
 
             // Check this here to avoid making the web request if we know
             // we don't need the results.
@@ -125,8 +122,6 @@ impl TxPoller {
                 trace!("No receivers left, shutting down");
                 break;
             }
-            // exit the span after the check.
-            drop(_guard);
 
             if let Ok(transactions) =
                 self.check_tx_cache().instrument(span.clone()).await.inspect_err(|err| {

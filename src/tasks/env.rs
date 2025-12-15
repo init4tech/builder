@@ -307,7 +307,9 @@ impl EnvTask {
                 self.host_provider
                     .get_block_by_number(host_block_number.into())
                     .into_future()
-                    .instrument(debug_span!(parent: &span, "EnvTask::fetch_host_block")),
+                    .instrument(
+                        debug_span!(parent: &span, "EnvTask::fetch_host_block").or_current()
+                    ),
                 // We want to check that we're able to sign for the block we're gonna start building.
                 // If not, we just want to skip all the work.
                 self.quincey.preflight_check(host_block_number + 1).in_current_span(),
