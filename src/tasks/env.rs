@@ -10,11 +10,14 @@ use alloy::{
     primitives::{B256, U256},
     providers::{Provider, network::Network},
 };
+use init4_bin_base::deps::{
+    opentelemetry::trace::TraceContextExt, tracing_opentelemetry::OpenTelemetrySpanExt,
+};
 use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_stream::StreamExt;
-use tracing::{Instrument, Span, info_span};
+use tracing::{Instrument, Span, debug_span, info_span};
 use trevm::revm::{
     context::BlockEnv,
     context_interface::block::BlobExcessGasAndPrice,
@@ -273,19 +276,41 @@ impl EnvTask {
 
         drop(span);
 
-        while let Some(rollup_header) =
-            rollup_headers.next().instrument(info_span!("EnvTask::task_fut::stream")).await
+        // This span will be updated at the end of each loop iteration.
+        let mut span = info_span!(
+            parent: None,
+            "SimEnv",
+            host_block.number = "initial",
+            rollup_header.number = "initial",
+            rollup_header.hash = "initial",
+            trace_id = tracing::field::Empty,
+        );
+
+        while let Some(rollup_header) = rollup_headers
+            .next()
+            .instrument(info_span!(parent: &span, "waiting_for_notification"))
+            .await
         {
+            // Ensure that we record the OpenTelemetry trace ID in the span.
+            span.record("trace_id", span.context().span().span_context().trace_id().to_string());
+
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
+            let rollup_block_number = rollup_header.number;
 
-            let span = info_span!("SimEnv", %host_block_number, %rollup_header.hash, %rollup_header.number);
+            // Populate span fields.
+            span.record("host_block.number", host_block_number);
+            span.record("rollup_header.number", rollup_block_number);
+            span.record("rollup_header.hash", rollup_header.hash.to_string());
 
             let (host_block_res, quincey_res) = tokio::join!(
-                self.host_provider.get_block_by_number(host_block_number.into()),
+                self.host_provider
+                    .get_block_by_number(host_block_number.into())
+                    .into_future()
+                    .instrument(debug_span!(parent: &span, "EnvTask::fetch_host_block")),
                 // We want to check that we're able to sign for the block we're gonna start building.
                 // If not, we just want to skip all the work.
-                self.quincey.preflight_check(host_block_number + 1)
+                self.quincey.preflight_check(host_block_number + 1).in_current_span(),
             );
 
             res_unwrap_or_continue!(
@@ -322,11 +347,11 @@ impl EnvTask {
             let rollup_env = self.construct_rollup_env(rollup_header.into());
             let host_env = self.construct_host_env(host_header);
 
-            span_debug!(
+            span_info!(
                 span,
                 rollup_env_number = rollup_env.block_env.number.to::<u64>(),
                 rollup_env_basefee = rollup_env.block_env.basefee,
-                "constructed block env"
+                "constructed block env, dispatching to build process"
             );
 
             if sender.send(Some(SimEnv { span, rollup: rollup_env, host: host_env })).is_err() {
@@ -334,6 +359,15 @@ impl EnvTask {
                 tracing::debug!("receiver dropped, stopping task");
                 break;
             }
+
+            // Create a new span for the next iteration.
+            span = info_span!(
+                "SimEnv",
+                host_block.number = host_block_number + 1,
+                rollup_header.number = rollup_block_number + 1,
+                rollup_header.hash = tracing::field::Empty,
+                trace_id = tracing::field::Empty,
+            );
         }
     }
 
