@@ -209,7 +209,7 @@ impl FlashbotsTask {
                             counter!("signet.builder.flashbots.bundles_submitted").increment(1);
                             debug!(
                                 hash = resp.map(|r| r.bundle_hash.to_string()),
-                                "received bundle hash after submitted to flashbots"
+                                "Submitted MEV bundle to Flashbots, received OK response"
                             );
                         }
                         Err(err) => {

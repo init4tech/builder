@@ -280,9 +280,11 @@ impl EnvTask {
         let mut span = info_span!(
             parent: None,
             "SimEnv",
-            host_block.number = "initial",
-            rollup_header.number = "initial",
-            rollup_header.hash = "initial",
+            confirmed_host.number = "initial",
+            confirmed_ru.number = "initial",
+            confirmed_ru.hash = "initial",
+            sim_host.number = "initial",
+            sim_ru.number = "initial",
             trace_id = tracing::field::Empty,
         );
 
@@ -299,9 +301,11 @@ impl EnvTask {
             let rollup_block_number = rollup_header.number;
 
             // Populate span fields.
-            span.record("host_block.number", host_block_number);
-            span.record("rollup_header.number", rollup_block_number);
-            span.record("rollup_header.hash", rollup_header.hash.to_string());
+            span.record("confirmed_host.number", host_block_number);
+            span.record("confirmed_ru.number", rollup_block_number);
+            span.record("confirmed_ru.hash", rollup_header.hash.to_string());
+            span.record("sim_host.number", host_block_number + 1);
+            span.record("sim_ru.number", rollup_block_number + 1);
 
             let (host_block_res, quincey_res) = tokio::join!(
                 self.host_provider
@@ -365,9 +369,11 @@ impl EnvTask {
             // Create a new span for the next iteration.
             span = info_span!(
                 "SimEnv",
-                host_block.number = host_block_number + 1,
-                rollup_header.number = rollup_block_number + 1,
-                rollup_header.hash = tracing::field::Empty,
+                confirmed_host.number = host_block_number + 1,
+                confirmed_ru.number = rollup_block_number + 1,
+                confirmed_ru.hash = tracing::field::Empty,
+                sim_host.number = host_block_number + 2,
+                sim_ru.number = rollup_block_number + 2,
                 trace_id = tracing::field::Empty,
             );
         }
