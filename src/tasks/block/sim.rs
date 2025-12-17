@@ -204,7 +204,7 @@ impl SimulatorTask {
             let Some(sim_env) = self.envs.borrow_and_update().clone() else { return };
 
             let span = sim_env.span();
-            span_info!(span, "new block environment received");
+            span_info!(span, "Starting simulator iteration for new block environment");
 
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,

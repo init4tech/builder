@@ -215,7 +215,7 @@ impl BuilderConfig {
     }
 
     /// Connect to a Flashbots bundle provider.
-    pub async fn connect_flashbots(&self) -> Result<FlashbotsProvider, eyre::Error> {
+    pub async fn connect_flashbots(&self) -> Result<FlashbotsProvider> {
         self.connect_builder_signer().await.map(|signer| {
             ProviderBuilder::new().wallet(signer).connect_http(self.flashbots_endpoint.clone())
         })
