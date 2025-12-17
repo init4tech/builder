@@ -9,7 +9,7 @@ use alloy::{
     eips::Encodable2718,
     primitives::TxHash,
     providers::ext::MevApi,
-    rpc::types::mev::{BundleItem, EthSendBundle},
+    rpc::types::mev::{BundleItem, EthSendBundle, MevSendBundle, ProtocolVersion::V0_1},
 };
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
@@ -62,7 +62,7 @@ impl FlashbotsTask {
         self.prepare_bundle(sim_result).await
     }
 
-    /// Prepares a MEV bundle containing the host transactions and the rollup block.
+    /// Prepares a [`EthSendBundle`] containing the host transactions and the rollup block.
     ///
     /// This method orchestrates the bundle preparation by:
     /// 1. Preparing and signing the submission transaction
@@ -95,8 +95,28 @@ impl FlashbotsTask {
             txs: bundle_bz,
             ..Default::default()
         };
+
         debug!(txn_count = bundle.txs.len(), ?bundle.block_number, bundle_hash = ?bundle.bundle_hash(), "prepared eth send bundle");
 
+        Ok(bundle)
+    }
+
+    async fn prepare_mev_bundle(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
+        // Prepare and sign the transaction
+        let block_tx = self.prepare_signed_transaction(sim_result).await?;
+        // Track the outbound transaction
+        self.track_outbound_tx(&block_tx);
+        // Encode the transaction
+        let tx_bytes = block_tx.encoded_2718().into();
+        // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
+        let bundle_body = self.build_bundle_body(sim_result, tx_bytes);
+        let bundle = MevSendBundle::new(
+            sim_result.host_block_number(),
+            Some(sim_result.host_block_number()),
+            V0_1,
+            bundle_body.clone(),
+        );
+        debug!(txn_count = bundle_body.len(), block_number = ?sim_result.host_block_number(), "prepared mev send bundle");
         Ok(bundle)
     }
 
@@ -187,9 +207,17 @@ impl FlashbotsTask {
                     span_debug!(span, %error, "bundle preparation failed");
                 });
 
-            let bundle = match result {
+            let eth_send_bundle = match result {
                 Ok(bundle) => bundle,
                 Err(_) => continue,
+            };
+
+            let mev_send_bundle = match self.prepare_mev_bundle(&sim_result).await {
+                Err(error) => {
+                    error!(%error, "failed to prepare mev send bundle");
+                    continue;
+                }
+                Ok(bundle) => bundle,
             };
 
             // Make a child span to cover submission, or use the current span
@@ -209,8 +237,10 @@ impl FlashbotsTask {
 
             tokio::spawn(
                 async move {
+                    preflight_mev_bundle(mev_send_bundle, &flashbots, &signer).await;
+
                     let response = flashbots
-                        .send_bundle(bundle.clone())
+                        .send_bundle(eth_send_bundle.clone())
                         .with_auth(signer.clone())
                         .into_future()
                         .await;
@@ -251,5 +281,28 @@ impl FlashbotsTask {
         let (sender, inbound) = mpsc::unbounded_channel::<SimResult>();
         let handle = tokio::spawn(self.task_future(inbound));
         (sender, handle)
+    }
+}
+
+async fn preflight_mev_bundle(
+    mev_send_bundle: MevSendBundle,
+    flashbots: &FlashbotsProvider,
+    signer: &LocalOrAws,
+) {
+    let mev_bundle_resp =
+        flashbots.send_mev_bundle(mev_send_bundle).with_auth(signer.clone()).into_future().await;
+
+    match mev_bundle_resp {
+        Ok(resp) => {
+            if let Some(hash) = resp {
+                debug!(
+                    ?hash,
+                    "Submitted MEV bundle to Flashbots via mev_sendBundle, received OK response"
+                );
+            } else {
+                debug!("MEV bundle submission via mev_sendBundle returned no bundle hash");
+            }
+        }
+        Err(_) => todo!(),
     }
 }

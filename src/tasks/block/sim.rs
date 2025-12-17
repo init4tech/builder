@@ -127,7 +127,6 @@ impl SimulatorTask {
         let concurrency_limit = self.config.concurrency_limit();
 
         let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
-
         let host_env = sim_env.sim_host_env(self.constants(), self.host_provider.clone());
 
         let block_build = BlockBuild::new(
@@ -205,6 +204,8 @@ impl SimulatorTask {
 
             let span = sim_env.span();
             span_info!(span, "Starting simulator iteration for new block environment");
+            
+            let sim_cache = cache.clone();
 
             // Calculate the deadline for this block simulation.
             // NB: This must happen _after_ taking a reference to the sim cache,
