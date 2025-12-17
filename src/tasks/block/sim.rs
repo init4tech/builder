@@ -210,7 +210,6 @@ impl SimulatorTask {
             // NB: This must happen _after_ taking a reference to the sim cache,
             // waiting for a new block, and checking current slot authorization.
             let finish_by = self.calculate_deadline();
-            let sim_cache = cache.clone();
 
             let Ok(block) = self
                 .handle_build(sim_cache, finish_by, &sim_env)

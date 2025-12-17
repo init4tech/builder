@@ -296,6 +296,7 @@ impl EnvTask {
             // Ensure that we record the OpenTelemetry trace ID in the span.
             span.record("trace_id", span.context().span().span_context().trace_id().to_string());
 
+            // Fetch the host block corresponding to the rollup block.
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
             let rollup_block_number = rollup_header.number;
