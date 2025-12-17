@@ -175,19 +175,24 @@ impl FlashbotsTask {
                     counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
                     span_debug!(span, %error, "bundle preparation failed");
                 });
+
             let bundle = match result {
                 Ok(bundle) => bundle,
                 Err(_) => continue,
             };
 
-            // Make a child span to cover submission
+            // Make a child span to cover submission, or use the current span
+            // if debug is not enabled.
+            let _guard = span.enter();
             let submit_span = debug_span!(
                 parent: &span,
                 "flashbots.submit",
-            );
+            )
+            .or_current();
 
-            // Send the bundle to Flashbots, instrumenting the send future so all
-            // events inside the async send are attributed to the submit span.
+            // Send the bundle to Flashbots, instrumenting the send future so
+            // all events inside the async send are attributed to the submit
+            // span.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
 
