@@ -289,6 +289,7 @@ async fn preflight_mev_bundle(
     flashbots: &FlashbotsProvider,
     signer: &LocalOrAws,
 ) {
+    debug!(target_block_number = ?mev_send_bundle.inclusion.block_number(), "Starting preflight check for MEV bundle via mev_sendBundle");
     let mev_bundle_resp =
         flashbots.send_mev_bundle(mev_send_bundle).with_auth(signer.clone()).into_future().await;
 
@@ -303,6 +304,8 @@ async fn preflight_mev_bundle(
                 debug!("MEV bundle submission via mev_sendBundle returned no bundle hash");
             }
         }
-        Err(_) => todo!(),
+        Err(err) => {
+            error!(%err, "MEV bundle submission via mev_sendBundle failed - error returned")
+        },
     }
 }
