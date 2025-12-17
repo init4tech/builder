@@ -95,6 +95,7 @@ impl FlashbotsTask {
             txs: bundle_bz,
             ..Default::default()
         };
+        debug!(txn_count = bundle.txs.len(), ?bundle.block_number, bundle_hash = ?bundle.bundle_hash(), "prepared eth send bundle");
 
         Ok(bundle)
     }
@@ -107,6 +108,8 @@ impl FlashbotsTask {
         &self,
         sim_result: &SimResult,
     ) -> eyre::Result<alloy::consensus::TxEnvelope> {
+        debug!(block_number = ?sim_result.block.block_number(), "preparing signed transaction for flashbots bundle");
+
         let prep = SubmitPrep::new(
             &sim_result.block,
             self.host_provider(),

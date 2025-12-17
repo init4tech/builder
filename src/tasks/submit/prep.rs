@@ -60,6 +60,8 @@ impl<'a> SubmitPrep<'a> {
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(self.block.block_number());
 
+            debug!(?host_block_number, "signature request for host block");
+
             SignRequest {
                 host_block_number: U256::from(host_block_number),
                 host_chain_id: U256::from(self.config.constants.host_chain_id()),
@@ -106,6 +108,7 @@ impl<'a> SubmitPrep<'a> {
         debug!(?header.hostBlockNumber, "built zenith block header");
 
         let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
+        debug!(header.hostBlockNumber = ?header.hostBlockNumber, "encoded rollup block submission call for host block");
 
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
