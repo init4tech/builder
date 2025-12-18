@@ -11,6 +11,7 @@ use alloy::{
     providers::ext::MevApi,
     rpc::types::mev::{BundleItem, EthCallBundle, EthSendBundle},
 };
+use uuid::Uuid;
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -91,6 +92,7 @@ impl FlashbotsTask {
             .collect();
 
         let bundle = EthSendBundle {
+            replacement_uuid: Some(Uuid::new_v4().to_string()), 
             block_number: sim_result.host_block_number(),
             txs: bundle_bz,
             ..Default::default()
