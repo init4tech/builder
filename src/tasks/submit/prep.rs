@@ -4,7 +4,7 @@ use crate::{
     utils,
 };
 use alloy::{
-    consensus::{Header, SimpleCoder},
+    consensus::{BlobTransactionSidecar, Header, SimpleCoder},
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{B256, Bytes, U256},
     providers::{Provider, WalletProvider},
@@ -92,8 +92,8 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
-    async fn build_blob_tx(&self) -> eyre::Result<TransactionRequest> {
+    /// Build the sidecar and input data for the transaction.
+    async fn build_sidecar_and_data(&self) -> eyre::Result<(BlobTransactionSidecar, Vec<u8>)> {
         let (v, r, s) = self.quincey_signature().await?;
 
         let header = Zenith::BlockHeader {
@@ -106,22 +106,23 @@ impl<'a> SubmitPrep<'a> {
         debug!(?header.hostBlockNumber, "built zenith block header");
 
         let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
-
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
-        Ok(TransactionRequest::default().with_blob_sidecar(sidecar).with_input(data))
+        Ok((sidecar, data))
     }
 
+    /// Create a new transaction request for the host chain.
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
 
         debug!(nonce, "assigned nonce to rollup block transaction");
 
-        // Create a blob transaction with the blob header and signature values and return it
-        let tx = self
-            .build_blob_tx()
-            .await?
+        let (sidecar, data) = self.build_sidecar_and_data().await?;
+
+        let tx = TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_input(data)
             .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
 
