@@ -116,8 +116,15 @@ impl FlashbotsTask {
             .fill(tx.into_request())
             .instrument(tracing::debug_span!("fill_tx").or_current())
             .await?;
+        debug!(?sendable, "prepared signed rollup block transaction");
 
-        sendable.try_into_envelope()?.try_into_7594().map_err(|e| eyre::eyre!(format!("{e:?}")))
+        let tx_envelope = sendable
+            .try_into_envelope()?
+            .try_into_7594()
+            .map_err(|e| eyre::eyre!(format!("{e:?}")))?;
+        debug!(?tx_envelope, "prepared signed rollup block transaction envelope");
+
+        Ok(tx_envelope)
     }
 
     /// Tracks the outbound transaction hash and increments submission metrics.
