@@ -30,7 +30,7 @@ signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "
 
 trevm = { version = "0.31.2", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "=1.0.35", features = [
+alloy = { version = "1.0.40", features = [
     "full",
     "json-rpc",
     "signer-aws",
