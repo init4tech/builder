@@ -12,7 +12,6 @@ use alloy::{
     sol_types::SolCall,
 };
 use init4_bin_base::deps::metrics::counter;
-use serde::de;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
