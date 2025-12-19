@@ -15,7 +15,7 @@ use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
-use tracing::{Instrument, debug};
+use tracing::{Instrument, debug, instrument};
 
 /// Preparation logic for transactions issued to the host chain by the
 /// [`SubmitTask`].
@@ -129,6 +129,7 @@ impl<'a> SubmitPrep<'a> {
     }
 
     /// Prepares a transaction for submission to the host chain.
+    #[instrument(skip_all, level = "debug")]
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
         let req = self.new_tx_request().in_current_span().await?;
         Ok(Bumpable::new(req, prev_host))

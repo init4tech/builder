@@ -14,7 +14,7 @@ use alloy::{
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{Instrument, debug, debug_span, error};
+use tracing::{Instrument, debug, debug_span, error, instrument};
 
 /// Handles preparation and submission of simulated rollup blocks to the
 /// Flashbots relay as MEV bundles.
@@ -69,6 +69,7 @@ impl FlashbotsTask {
     /// 2. Tracking the transaction hash for monitoring
     /// 3. Encoding the transaction for bundle inclusion
     /// 4. Constructing the complete bundle body
+    #[instrument(skip_all, level = "debug")]
     async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
         // Prepare and sign the transaction
         let block_tx = self.prepare_signed_transaction(sim_result).await?;
@@ -95,6 +96,7 @@ impl FlashbotsTask {
     ///
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
     /// and signs it using the host provider.
+    #[instrument(skip_all, level = "debug")]
     async fn prepare_signed_transaction(
         &self,
         sim_result: &SimResult,
@@ -107,7 +109,11 @@ impl FlashbotsTask {
         );
 
         let tx = prep.prep_transaction(sim_result.prev_host()).await?;
-        let sendable = self.host_provider().fill(tx.into_request()).await?;
+        let sendable = self
+            .host_provider()
+            .fill(tx.into_request())
+            .instrument(tracing::debug_span!("fill_tx").or_current())
+            .await?;
 
         sendable.as_envelope().ok_or_eyre("failed to get envelope from filled tx").cloned()
     }
@@ -159,7 +165,7 @@ impl FlashbotsTask {
                 break;
             };
 
-            let span = sim_result.sim_env.clone_span();
+            let span = sim_result.clone_span();
 
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
