@@ -121,7 +121,7 @@ impl FlashbotsTask {
         let tx_envelope = sendable
             .try_into_envelope()?
             .try_into_7594()
-            .map_err(|e| eyre::eyre!(format!("{e:?}")))?;
+            .map_err(|e| eyre::eyre!("failed to map 4844 to 7594: {e:?}"))?;
         debug!(?tx_envelope, "prepared signed rollup block transaction envelope");
 
         Ok(tx_envelope)
