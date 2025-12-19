@@ -7,9 +7,9 @@ use crate::{
 };
 use alloy::{
     eips::Encodable2718,
-    primitives::TxHash,
+    primitives::{Bytes, TxHash},
     providers::ext::MevApi,
-    rpc::types::mev::{BundleItem, MevSendBundle, ProtocolVersion},
+    rpc::types::mev::EthSendBundle,
 };
 use eyre::OptionExt;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
@@ -56,7 +56,7 @@ impl FlashbotsTask {
     ///
     /// This function serves as an entry point for bundle preparation and is left
     /// for forward compatibility when adding different bundle preparation methods.
-    pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
+    pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
         // This function is left for forwards compatibility when we want to add
         // different bundle preparation methods in the future.
         self.prepare_bundle(sim_result).await
@@ -70,7 +70,7 @@ impl FlashbotsTask {
     /// 3. Encoding the transaction for bundle inclusion
     /// 4. Constructing the complete bundle body
     #[instrument(skip_all, level = "debug")]
-    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<MevSendBundle> {
+    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
         // Prepare and sign the transaction
         let block_tx = self.prepare_signed_transaction(sim_result).await?;
 
@@ -81,15 +81,15 @@ impl FlashbotsTask {
         let tx_bytes = block_tx.encoded_2718().into();
 
         // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
-        let bundle_body = self.build_bundle_body(sim_result, tx_bytes);
+        let txs = self.build_bundle_body(sim_result, tx_bytes);
 
         // Create the MEV bundle (valid only in the specific host block)
-        Ok(MevSendBundle::new(
-            sim_result.host_block_number(),
-            Some(sim_result.host_block_number()),
-            ProtocolVersion::V0_1,
-            bundle_body,
-        ))
+
+        Ok(EthSendBundle {
+            txs,
+            block_number: sim_result.host_block_number(),
+            ..Default::default()
+        })
     }
 
     /// Prepares and signs the submission transaction for the rollup block.
@@ -140,14 +140,13 @@ impl FlashbotsTask {
         &self,
         sim_result: &SimResult,
         tx_bytes: alloy::primitives::Bytes,
-    ) -> Vec<BundleItem> {
+    ) -> Vec<Bytes> {
         sim_result
             .block
             .host_transactions()
             .iter()
             .cloned()
             .chain(std::iter::once(tx_bytes))
-            .map(|tx| BundleItem::Tx { tx, can_revert: false })
             .collect()
     }
 
@@ -176,25 +175,21 @@ impl FlashbotsTask {
             span_debug!(span, "flashbots task received block");
 
             // Prepare a MEV bundle with the configured call type from the sim result
-            let result =
-                self.prepare(&sim_result).instrument(span.clone()).await.inspect_err(|error| {
-                    counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
-                    span_debug!(span, %error, "bundle preparation failed");
-                });
+            let result = self.prepare(&sim_result).instrument(span.clone()).await;
 
             let bundle = match result {
                 Ok(bundle) => bundle,
-                Err(_) => continue,
+                Err(error) => {
+                    counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
+                    span_debug!(span, %error, "bundle preparation failed");
+                    continue;
+                }
             };
 
             // Make a child span to cover submission, or use the current span
             // if debug is not enabled.
             let _guard = span.enter();
-            let submit_span = debug_span!(
-                parent: &span,
-                "flashbots.submit",
-            )
-            .or_current();
+            let submit_span = debug_span!("flashbots.submit",).or_current();
 
             // Send the bundle to Flashbots, instrumenting the send future so
             // all events inside the async send are attributed to the submit
@@ -204,11 +199,8 @@ impl FlashbotsTask {
 
             tokio::spawn(
                 async move {
-                    let response = flashbots
-                        .send_mev_bundle(bundle.clone())
-                        .with_auth(signer.clone())
-                        .into_future()
-                        .await;
+                    let response =
+                        flashbots.send_bundle(bundle).with_auth(signer.clone()).into_future().await;
 
                     match response {
                         Ok(resp) => {
