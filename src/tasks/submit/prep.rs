@@ -12,6 +12,7 @@ use alloy::{
     sol_types::SolCall,
 };
 use init4_bin_base::deps::metrics::counter;
+use serde::de;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
@@ -115,16 +116,15 @@ impl<'a> SubmitPrep<'a> {
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
-
         debug!(nonce, "assigned nonce to rollup block transaction");
 
         let (sidecar, data) = self.build_sidecar_and_data().await?;
-
         let tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
             .with_input(data)
             .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
+        debug!(?tx, "constructed rollup block transaction request");
 
         Ok(tx)
     }
