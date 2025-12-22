@@ -92,12 +92,14 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Build the sidecar and input data for the transaction.
+    /// Encodes the rollup block into a sidecar.
     async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecar> {
         let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
         Ok(sidecar)
     }
+
+    /// Build a signature and header input for the host chain transaction.
     async fn build_input(&self) -> eyre::Result<Vec<u8>> {
         let (v, r, s) = self.quincey_signature().await?;
 
