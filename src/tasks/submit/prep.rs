@@ -102,7 +102,12 @@ impl<'a> SubmitPrep<'a> {
     }
 
     /// Build the sidecar and input data for the transaction.
-    async fn build_sidecar_and_data(&self) -> eyre::Result<(BlobTransactionSidecar, Vec<u8>)> {
+    async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecar> {
+        let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
+
+        Ok(sidecar)
+    }
+    async fn build_input(&self) -> eyre::Result<Vec<u8>> {
         let (v, r, s) = self.quincey_signature().await?;
 
         let header = Zenith::BlockHeader {
@@ -115,24 +120,22 @@ impl<'a> SubmitPrep<'a> {
         debug!(?header.hostBlockNumber, "built zenith block header");
 
         let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
-        let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
 
-        Ok((sidecar, data))
+        Ok(data)
     }
 
     /// Create a new transaction request for the host chain.
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
-        debug!(nonce, "assigned nonce to rollup block transaction");
+        let sidecar = self.build_sidecar().await?;
+        let input = self.build_input().await?;
 
-        let (sidecar, data) = self.build_sidecar_and_data().await?;
         let tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
-            .with_input(data)
+            .with_input(input)
             .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
-        debug!(?tx, "constructed rollup block transaction request");
 
         Ok(tx)
     }
