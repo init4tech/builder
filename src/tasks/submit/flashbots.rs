@@ -12,6 +12,7 @@ use alloy::{
     providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
 };
+use eyre::Context;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, debug_span, error, instrument};
@@ -116,13 +117,10 @@ impl FlashbotsTask {
             .fill(tx.into_request())
             .instrument(tracing::debug_span!("fill_tx").or_current())
             .await?;
-        debug!(?sendable, "prepared signed rollup block transaction");
 
-        let tx_envelope = sendable
-            .try_into_envelope()?
-            .try_into_7594()
-            .map_err(|e| eyre::eyre!("failed to map 4844 to 7594: {e:?}"))?;
-        debug!(?tx_envelope, "prepared signed rollup block transaction envelope");
+        let tx_envelope =
+            sendable.try_into_envelope()?.try_into_7594().wrap_err("failed to map 4844 to 7594")?;
+        debug!(tx_hash = ?tx_envelope.hash(), "prepared signed rollup block transaction envelope");
 
         Ok(tx_envelope)
     }
