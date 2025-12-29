@@ -287,7 +287,7 @@ impl EnvTask {
             confirmed.slot = 0,
             sim.host.number = "initial",
             sim.ru.number = "initial",
-            sim_slot = 0,
+            sim.slot = 0,
             trace_id = tracing::field::Empty,
         );
 
@@ -309,14 +309,14 @@ impl EnvTask {
             // Populate span fields.
             // Ensure that we record the OpenTelemetry trace ID in the span.
             span.record("trace_id", span.context().span().span_context().trace_id().to_string());
-            span.record("confirmed_host.number", host_block_number);
-            span.record("confirmed_ru.number", rollup_block_number);
-            span.record("confirmed_ru.hash", rollup_header.hash.to_string());
+            span.record("confirmed.host.number", host_block_number);
+            span.record("confirmed.ru.number", rollup_block_number);
+            span.record("confirmed.ru.hash", rollup_header.hash.to_string());
             span.record("confirmed.timestamp", rollup_header.timestamp);
             span.record("confirmed.slot", confirmed_slot);
             span.record("sim.slot", sim_slot);
-            span.record("sim_host.number", host_block_number + 1);
-            span.record("sim_ru.number", rollup_block_number + 1);
+            span.record("sim.host.number", host_block_number + 1);
+            span.record("sim.ru.number", rollup_block_number + 1);
 
             let (host_block_res, quincey_res) = tokio::join!(
                 self.host_provider
