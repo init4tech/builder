@@ -4,7 +4,7 @@ use crate::{
     utils,
 };
 use alloy::{
-    consensus::{Header, SimpleCoder},
+    consensus::{BlobTransactionSidecar, Header, SimpleCoder},
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{B256, Bytes, U256},
     providers::{Provider, WalletProvider},
@@ -15,6 +15,7 @@ use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
+use tokio::try_join;
 use tracing::{Instrument, debug, error, instrument, warn};
 
 /// Preparation logic for transactions issued to the host chain by the
@@ -101,8 +102,15 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Encodes the sidecar and then builds the 4844 blob transaction from the provided header and signature values.
-    async fn build_blob_tx(&self) -> eyre::Result<TransactionRequest> {
+    /// Encodes the rollup block into a sidecar.
+    async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecar> {
+        let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
+
+        Ok(sidecar)
+    }
+
+    /// Build a signature and header input for the host chain transaction.
+    async fn build_input(&self) -> eyre::Result<Vec<u8>> {
         let (v, r, s) = self.quincey_signature().await?;
 
         let header = Zenith::BlockHeader {
@@ -116,21 +124,19 @@ impl<'a> SubmitPrep<'a> {
 
         let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
 
-        let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
-
-        Ok(TransactionRequest::default().with_blob_sidecar(sidecar).with_input(data))
+        Ok(data)
     }
 
+    /// Create a new transaction request for the host chain.
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
         let nonce =
             self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
 
-        debug!(nonce, "assigned nonce to rollup block transaction");
+        let (sidecar, input) = try_join!(self.build_sidecar(), self.build_input())?;
 
-        // Create a blob transaction with the blob header and signature values and return it
-        let tx = self
-            .build_blob_tx()
-            .await?
+        let tx = TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_input(input)
             .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
 
