@@ -276,26 +276,7 @@ impl EnvTask {
 
         drop(span);
 
-        // This span will be updated at the end of each loop iteration.
-        let mut span = info_span!(
-            parent: None,
-            "SimEnv",
-            confirmed.host.number = "initial",
-            confirmed.ru.number = "initial",
-            confirmed.ru.hash = "initial",
-            confirmed.timestamp = 0,
-            confirmed.slot = 0,
-            sim.host.number = "initial",
-            sim.ru.number = "initial",
-            sim.slot = 0,
-            trace_id = tracing::field::Empty,
-        );
-
-        while let Some(rollup_header) = rollup_headers
-            .next()
-            .instrument(info_span!(parent: &span, "waiting_for_notification"))
-            .await
-        {
+        while let Some(rollup_header) = rollup_headers.next().await {
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
             let rollup_block_number = rollup_header.number;
@@ -306,17 +287,23 @@ impl EnvTask {
                 .expect("valid timestamp");
             let sim_slot = self.config.slot_calculator.current_slot().expect("chain has started");
 
-            // Populate span fields.
+            // Create a `SimEnv` span
+            let span = info_span!(
+                parent: None,
+                "SimEnv",
+                confirmed.host.number = host_block_number,
+                confirmed.host.hash = tracing::field::Empty,
+                confirmed.ru.number = rollup_block_number,
+                confirmed.ru.hash = %rollup_header.hash,
+                confirmed.timestamp = rollup_header.timestamp,
+                confirmed.slot = confirmed_slot,
+                sim.host.number = host_block_number + 1,
+                sim.ru.number = rollup_block_number + 1,
+                sim.slot = sim_slot,
+                trace_id = tracing::field::Empty,
+            );
             // Ensure that we record the OpenTelemetry trace ID in the span.
             span.record("trace_id", span.context().span().span_context().trace_id().to_string());
-            span.record("confirmed.host.number", host_block_number);
-            span.record("confirmed.ru.number", rollup_block_number);
-            span.record("confirmed.ru.hash", rollup_header.hash.to_string());
-            span.record("confirmed.timestamp", rollup_header.timestamp);
-            span.record("confirmed.slot", confirmed_slot);
-            span.record("sim.slot", sim_slot);
-            span.record("sim.host.number", host_block_number + 1);
-            span.record("sim.ru.number", rollup_block_number + 1);
 
             let (host_block_res, quincey_res) = tokio::join!(
                 self.host_provider
@@ -389,20 +376,6 @@ impl EnvTask {
                 tracing::debug!("receiver dropped, stopping task");
                 break;
             }
-
-            // Create a new span for the next iteration.
-            span = info_span!(
-                "SimEnv",
-                confirmed.host.number = host_block_number + 1,
-                confirmed.ru.number = rollup_block_number + 1,
-                confirmed.ru.hash = tracing::field::Empty,
-                confirmed.timestamp = tracing::field::Empty,
-                confirmed.slot = tracing::field::Empty,
-                sim.host.number = host_block_number + 2,
-                sim.ru.number = rollup_block_number + 2,
-                sim.slot = tracing::field::Empty,
-                trace_id = tracing::field::Empty,
-            );
         }
     }
 
