@@ -13,7 +13,8 @@ use tokio::select;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
-    let init_span_guard = info_span!("builder initialization");
+    let init_span_guard = info_span!("builder initialization").entered();
+
     builder::config_from_env();
 
     // Set up env and metrics tasks

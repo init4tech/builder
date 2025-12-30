@@ -4942,9 +4942,9 @@ dependencies = [
 
 [[package]]
 name = "init4-bin-base"
-version = "0.18.0-rc.1"
+version = "0.18.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7024fa2e5ac11f6c6230f37fbb527264896653e5b7804695b08d8ffb4f2712f5"
+checksum = "e854bc4e02dc08a6ae5a10282f8ac5cc2433449027bfa7f772860ae81a8b3602"
 dependencies = [
  "alloy",
  "async-trait",
@@ -4952,7 +4952,6 @@ dependencies = [
  "aws-sdk-kms",
  "axum 0.8.8",
  "chrono",
- "eyre",
  "init4-from-env-derive",
  "metrics",
  "metrics-exporter-prometheus 0.18.1",
@@ -11001,9 +11000,9 @@ dependencies = [
 
 [[package]]
 name = "signet-bundle"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "798ab2a1c26956850724cc634a5c2d4b7cad26357e0c04fd8fb14550a9a7925d"
+checksum = "ee7441b4a14a8223444fc7095cb2076b99da955b3f6a0aef8c1cd322744b42e3"
 dependencies = [
  "alloy",
  "serde",
@@ -11016,9 +11015,9 @@ dependencies = [
 
 [[package]]
 name = "signet-constants"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8bca806e04425b23a9be93d67b0e77c7b0f1651e5e606608670e2949ecaf7ac"
+checksum = "3be087eaa5bb90faf4daaf707441061a09bfc6ca24f1eb3cc0886d46186f19a7"
 dependencies = [
  "alloy",
  "serde",
@@ -11051,9 +11050,9 @@ dependencies = [
 
 [[package]]
 name = "signet-evm"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e25ebd544a36b448fcff1dac4423aeaf418ed6915c80a3e7fdbda55dc1224b2d"
+checksum = "f519eb8ef2764735884a2ad3e408b4f04da9af5d8f2d12d0c7ce9a783bae1c8f"
 dependencies = [
  "alloy",
  "signet-extract",
@@ -11067,9 +11066,9 @@ dependencies = [
 
 [[package]]
 name = "signet-extract"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7633b8197dbc66bd5ccedaffff64b8b30ee674ecc2dca99bf267e5e6853a7d94"
+checksum = "f4d2c3c2b7f6f5f4ac1784b5717ed38189210fe9d5d1dc707d129dbd976f56e5"
 dependencies = [
  "alloy",
  "signet-types",
@@ -11092,9 +11091,9 @@ dependencies = [
 
 [[package]]
 name = "signet-journal"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d660692d92ba4e5da457506e5db70a3682c0bb9bc7bae009e9d2ecaa63ba5b17"
+checksum = "ebe8679f251b3d7e351e84eedd59e4cf7ba69efec8db5c0368ab1bbb0372dbb5"
 dependencies = [
  "alloy",
  "futures-util",
@@ -11120,9 +11119,9 @@ dependencies = [
 
 [[package]]
 name = "signet-sim"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d3e51af0d15d43cc44960ccdb90074231001f8ca17f53f2160ab9bcf9102f2"
+checksum = "6e60b93af24681df12d01f2b93c9f38ff22fb6478328fdd9ec223dd8cfeae5fa"
 dependencies = [
  "alloy",
  "parking_lot",
@@ -11138,26 +11137,27 @@ dependencies = [
 
 [[package]]
 name = "signet-tx-cache"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97edbbb9cbdc0a6dec53ff152070044772634465801688edec1703abbc5ed150"
+checksum = "da1c4994a2ec8c7a9bcd7e5e010c3c77768dbe70df55f4bbea4cecbf582291a8"
 dependencies = [
  "alloy",
- "eyre",
  "reqwest",
  "serde",
  "signet-bundle",
  "signet-constants",
  "signet-types",
+ "thiserror 2.0.17",
  "tracing",
+ "url",
  "uuid",
 ]
 
 [[package]]
 name = "signet-types"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afecc04b772c6383df1867789c0feb542c7628043a131ddd51462fcb283ad70c"
+checksum = "69f6a76ac7bde250d179f33809da995ad48ae7c680de9e8072ec250d4c719498"
 dependencies = [
  "alloy",
  "chrono",
@@ -11169,9 +11169,9 @@ dependencies = [
 
 [[package]]
 name = "signet-zenith"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e67c6142536277fbf00375269eed8b764cc00d4c87551afe57921745b5dc6e3a"
+checksum = "33e3a21eb4c250ca9ed6c5512da17f6024a12054ae291bc1b73ba8bfc5ad05c7"
 dependencies = [
  "alloy",
  "alloy-core",
