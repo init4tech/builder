@@ -7,7 +7,7 @@ async fn test_bundle_poller_roundtrip() -> Result<()> {
     setup_logging();
     setup_test_config();
 
-    let mut bundle_poller = builder::tasks::cache::BundlePoller::new();
+    let bundle_poller = builder::tasks::cache::BundlePoller::new();
 
     let _ = bundle_poller.check_bundle_cache().await?;
 

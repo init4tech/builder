@@ -287,10 +287,10 @@ impl EnvTask {
                 .expect("valid timestamp");
             let sim_slot = self.config.slot_calculator.current_slot().expect("chain has started");
 
-            // Create a `SimEnv` span
+            // Create a `BlockConstruction` span
             let span = info_span!(
                 parent: None,
-                "SimEnv",
+                "BlockConstruction",
                 confirmed.host.number = host_block_number,
                 confirmed.host.hash = tracing::field::Empty,
                 confirmed.ru.number = rollup_block_number,
@@ -321,7 +321,7 @@ impl EnvTask {
                 Err(QuinceyError::NotOurSlot) => {
                     span_debug!(
                         span,
-                        "not our slot according to quincey - skipping block submission"
+                        "not our slot according to quincey - skipping block construction"
                     );
                     continue;
                 }
@@ -329,7 +329,7 @@ impl EnvTask {
                     span_error!(
                         span,
                         %err,
-                        "error during quincey preflight check - skipping block submission"
+                        "error during quincey preflight check - skipping block construction"
                     );
                     continue;
                 }
@@ -339,13 +339,13 @@ impl EnvTask {
             let host_block_opt = res_unwrap_or_continue!(
                 host_block_res,
                 span,
-                error!("error fetching previous host block - skipping block submission")
+                error!("error fetching previous host block - skipping block construction")
             );
 
             let host_header = opt_unwrap_or_continue!(
                 host_block_opt,
                 span,
-                warn!("previous host block not found - skipping block submission")
+                warn!("previous host block not found - skipping block construction")
             )
             .header
             .inner;
