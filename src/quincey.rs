@@ -2,11 +2,35 @@ use alloy::{
     primitives::{Address, B256, U256},
     signers::Signer,
 };
-use eyre::bail;
 use init4_bin_base::{perms::SharedToken, utils::signer::LocalOrAws};
 use reqwest::Client;
 use signet_types::{SignRequest, SignResponse};
-use tracing::{debug, info, instrument, trace};
+use tracing::{info, instrument};
+
+type Result<T> = core::result::Result<T, QuinceyError>;
+
+/// Errors that can occur when interacting with the Quincey API.
+#[derive(thiserror::Error, Debug)]
+pub enum QuinceyError {
+    /// Error indicating that the auth token is not available.
+    #[error("Auth token not available")]
+    Auth(#[from] tokio::sync::watch::error::RecvError),
+
+    /// Error indicating that the request occurered during a slot is not
+    /// assigned to this builder.
+    #[error(
+        "Quincey returned a 403 error, indicating that the request occurered during a slot is not assigned to this builder"
+    )]
+    NotOurSlot,
+
+    /// Error contacting the remote quincey API.
+    #[error("Error contacting quincey API: {0}")]
+    Remote(#[from] reqwest::Error),
+
+    /// Error with the owned signet.
+    #[error("Error with owned signet: {0}")]
+    Owned(#[from] eyre::Report),
+}
 
 /// A quincey client for making requests to the Quincey API.
 #[derive(Debug, Clone)]
@@ -49,7 +73,7 @@ impl Quincey {
     }
 
     async fn sup_owned(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
-        let Self::Owned(signer) = &self else { eyre::bail!("not an owned client") };
+        let Self::Owned(signer) = &self else { panic!("not an owned client") };
 
         info!("signing with owned quincey");
         signer
@@ -59,34 +83,37 @@ impl Quincey {
             .map(|sig| SignResponse { sig, req: *sig_request })
     }
 
-    async fn sup_remote(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
-        let Self::Remote { client, url, token } = &self else { bail!("not a remote client") };
+    #[instrument(skip_all)]
+    async fn sup_remote(&self, sig_request: &SignRequest) -> Result<SignResponse> {
+        let Self::Remote { client, url, token } = &self else { panic!("not a remote client") };
 
-        let token =
-            token.secret().await.map_err(|e| eyre::eyre!("failed to retrieve token: {e}"))?;
+        let token = token.secret().await?;
 
-        let resp: reqwest::Response = client
+        let resp = client
             .post(url.clone())
             .json(sig_request)
             .bearer_auth(token)
             .send()
-            .await?
-            .error_for_status()?;
+            .await
+            .map_err(QuinceyError::Remote)?;
 
-        let body = resp.bytes().await?;
+        if resp.status() == reqwest::StatusCode::FORBIDDEN {
+            return Err(QuinceyError::NotOurSlot);
+        }
 
-        debug!(bytes = body.len(), "retrieved response body");
-        trace!(body = %String::from_utf8_lossy(&body), "response body");
-
-        serde_json::from_slice(&body).map_err(Into::into)
+        resp.error_for_status()
+            .map_err(QuinceyError::Remote)?
+            .json::<SignResponse>()
+            .await
+            .map_err(QuinceyError::Remote)
     }
 
     /// Get a signature for the provided request, by either using the owned
     /// or remote client.
     #[instrument(skip(self))]
-    pub async fn get_signature(&self, sig_request: &SignRequest) -> eyre::Result<SignResponse> {
+    pub async fn get_signature(&self, sig_request: &SignRequest) -> Result<SignResponse> {
         match self {
-            Self::Owned(_) => self.sup_owned(sig_request).await,
+            Self::Owned(_) => self.sup_owned(sig_request).await.map_err(Into::into),
             Self::Remote { .. } => self.sup_remote(sig_request).await,
         }
     }
@@ -95,7 +122,7 @@ impl Quincey {
     /// be able to sign a request with the provided parameters at this
     /// point in time.
     #[instrument(skip(self))]
-    pub async fn preflight_check(&self, host_block_number: u64) -> eyre::Result<()> {
+    pub async fn preflight_check(&self, host_block_number: u64) -> Result<()> {
         if self.is_local() {
             return Ok(());
         }
