@@ -2447,6 +2447,7 @@ dependencies = [
  "alloy-hardforks 0.4.5",
  "axum 0.7.9",
  "eyre",
+ "futures-util",
  "init4-bin-base",
  "openssl",
  "reqwest",

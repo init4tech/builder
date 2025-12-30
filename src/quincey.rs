@@ -25,11 +25,21 @@ pub enum QuinceyError {
 
     /// Error contacting the remote quincey API.
     #[error("Error contacting quincey API: {0}")]
-    Remote(#[from] reqwest::Error),
+    Remote(reqwest::Error),
 
     /// Error with the owned signet.
     #[error("Error with owned signet: {0}")]
     Owned(#[from] eyre::Report),
+}
+
+impl From<reqwest::Error> for QuinceyError {
+    fn from(err: reqwest::Error) -> Self {
+        if err.status() == Some(reqwest::StatusCode::FORBIDDEN) {
+            QuinceyError::NotOurSlot
+        } else {
+            QuinceyError::Remote(err)
+        }
+    }
 }
 
 /// A quincey client for making requests to the Quincey API.
@@ -89,23 +99,9 @@ impl Quincey {
 
         let token = token.secret().await?;
 
-        let resp = client
-            .post(url.clone())
-            .json(sig_request)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(QuinceyError::Remote)?;
+        let resp = client.post(url.clone()).json(sig_request).bearer_auth(token).send().await?;
 
-        if resp.status() == reqwest::StatusCode::FORBIDDEN {
-            return Err(QuinceyError::NotOurSlot);
-        }
-
-        resp.error_for_status()
-            .map_err(QuinceyError::Remote)?
-            .json::<SignResponse>()
-            .await
-            .map_err(QuinceyError::Remote)
+        resp.error_for_status()?.json::<SignResponse>().await.map_err(QuinceyError::Remote)
     }
 
     /// Get a signature for the provided request, by either using the owned
