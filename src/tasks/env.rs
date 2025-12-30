@@ -1,6 +1,6 @@
 use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
-    quincey::Quincey,
+    quincey::{Quincey, QuinceyError},
     tasks::block::cfg::SignetCfgEnv,
 };
 use alloy::{
@@ -330,11 +330,24 @@ impl EnvTask {
                 self.quincey.preflight_check(host_block_number + 1).in_current_span(),
             );
 
-            res_unwrap_or_continue!(
-                quincey_res,
-                span,
-                error!("error checking quincey slot - skipping block submission"),
-            );
+            match quincey_res {
+                Err(QuinceyError::NotOurSlot) => {
+                    span_debug!(
+                        span,
+                        "not our slot according to quincey - skipping block submission"
+                    );
+                    continue;
+                }
+                Err(err) => {
+                    span_error!(
+                        span,
+                        %err,
+                        "error during quincey preflight check - skipping block submission"
+                    );
+                    continue;
+                }
+                Ok(_) => {}
+            }
 
             let host_block_opt = res_unwrap_or_continue!(
                 host_block_res,

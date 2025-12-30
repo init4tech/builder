@@ -51,11 +51,11 @@ eyre = "0.6.12"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12.22", features = ["blocking", "json"] }
 serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.145"
 tracing = "0.1.41"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
 url = "2.5.4"
+thiserror = "2.0.17"
 
 [dev-dependencies]
 alloy-hardforks = "0.4.0"
