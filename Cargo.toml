@@ -56,6 +56,7 @@ tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
 url = "2.5.4"
 thiserror = "2.0.17"
+futures-util = "0.3.31"
 
 [dev-dependencies]
 alloy-hardforks = "0.4.0"

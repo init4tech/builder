@@ -11,6 +11,7 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
+use futures_util::FutureExt;
 use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
@@ -103,14 +104,13 @@ impl<'a> SubmitPrep<'a> {
     }
 
     /// Encodes the rollup block into a sidecar.
+    #[instrument(skip(self), level = "debug")]
     async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecar> {
-        let sidecar = self.block.encode_blob::<SimpleCoder>().build()?;
-
-        Ok(sidecar)
+        self.block.encode_blob::<SimpleCoder>().build().map_err(Into::into)
     }
 
     /// Build a signature and header input for the host chain transaction.
-    async fn build_input(&self) -> eyre::Result<Vec<u8>> {
+    async fn build_input(&self) -> eyre::Result<Bytes> {
         let (v, r, s) = self.quincey_signature().await?;
 
         let header = Zenith::BlockHeader {
@@ -120,19 +120,21 @@ impl<'a> SubmitPrep<'a> {
             rewardAddress: self.sig_request().ru_reward_address,
             blockDataHash: *self.block.contents_hash(),
         };
-        debug!(?header.hostBlockNumber, "built zenith block header");
+        let call = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() };
 
-        let data = Zenith::submitBlockCall { header, v, r, s, _4: Bytes::new() }.abi_encode();
-
-        Ok(data)
+        Ok(call.abi_encode().into())
     }
 
     /// Create a new transaction request for the host chain.
     async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
-        let nonce =
-            self.provider.get_transaction_count(self.provider.default_signer_address()).await?;
+        let nonce_fut = self
+            .provider
+            .get_transaction_count(self.provider.default_signer_address())
+            .into_future()
+            .map(|res| res.map_err(Into::into));
 
-        let (sidecar, input) = try_join!(self.build_sidecar(), self.build_input())?;
+        let (nonce, sidecar, input) =
+            try_join!(nonce_fut, self.build_sidecar(), self.build_input())?;
 
         let tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
@@ -144,7 +146,6 @@ impl<'a> SubmitPrep<'a> {
     }
 
     /// Prepares a transaction for submission to the host chain.
-    #[instrument(skip_all, level = "debug")]
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
         let req = self.new_tx_request().in_current_span().await?;
         Ok(Bumpable::new(req, prev_host))

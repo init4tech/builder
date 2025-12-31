@@ -112,6 +112,7 @@ impl FlashbotsTask {
         );
 
         let tx = prep.prep_transaction(sim_result.prev_host()).await?;
+
         let sendable = self
             .host_provider()
             .fill(tx.into_request())
