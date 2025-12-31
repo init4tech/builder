@@ -1,0 +1,2 @@
+# exclude changes from `git diff`
+Cargo.lock binary

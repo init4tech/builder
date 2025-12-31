@@ -17,6 +17,14 @@ async fn main() -> eyre::Result<()> {
 
     builder::config_from_env();
 
+    // Pre-load the KZG settings in a separate thread.
+    //
+    // This takes ~3 seconds, and we want to do it in parallel with the rest of
+    // the initialization.
+    std::thread::spawn(|| {
+        let _settings = alloy::eips::eip4844::env_settings::EnvKzgSettings::default().get();
+    });
+
     // Set up env and metrics tasks
     let (env_task, metrics_task) = tokio::try_join!(EnvTask::new(), MetricsTask::new())?;
 
