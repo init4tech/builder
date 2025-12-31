@@ -17,7 +17,7 @@ use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
 use tokio::try_join;
-use tracing::{Instrument, debug, error, instrument, warn};
+use tracing::{Instrument, debug, debug_span, error, instrument, warn};
 
 /// Preparation logic for transactions issued to the host chain by the
 /// [`SubmitTask`].
@@ -106,7 +106,12 @@ impl<'a> SubmitPrep<'a> {
     /// Encodes the rollup block into a sidecar.
     #[instrument(skip(self), level = "debug")]
     async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecar> {
-        self.block.encode_blob::<SimpleCoder>().build().map_err(Into::into)
+        let encoded =
+            debug_span!("encode_blob_sidecar").in_scope(|| self.block.encode_blob::<SimpleCoder>());
+
+        debug_span!("build_blob_sidecar").in_scope(|| encoded.build()).map_err(Into::into)
+
+        // self.block.encode_blob::<SimpleCoder>().build().map_err(Into::into)
     }
 
     /// Build a signature and header input for the host chain transaction.
