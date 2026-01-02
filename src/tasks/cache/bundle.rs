@@ -41,8 +41,7 @@ impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.
     pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
         let config = crate::config();
-        let cache = signet_tx_cache::TxCache::new(config.tx_pool_url.clone());
-        let tx_cache = BuilderTxCache::new(cache, config.oauth_token());
+        let tx_cache = BuilderTxCache::new(config.tx_pool_url.clone(), config.oauth_token());
         Self { config, tx_cache, poll_interval_ms }
     }
 
