@@ -155,6 +155,14 @@ pub struct BuilderConfig {
     )]
     pub max_host_gas_coefficient: Option<u8>,
 
+    /// Number of milliseconds before the end of the slot to stop querying for new blocks and start the block signing and submission process.
+    #[from_env(
+        var = "BLOCK_QUERY_CUTOFF_BUFFER",
+        desc = "Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process. Quincey will stop accepting signature requests 2000ms before the end of the slot, so this buffer should be no less than 2000ms to match.",
+        default = 3000
+    )]
+    pub block_query_cutoff_buffer: u64,
+
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 

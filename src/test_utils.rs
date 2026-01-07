@@ -23,7 +23,6 @@ use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndP
 pub fn setup_test_config() -> &'static BuilderConfig {
     crate::CONFIG.get_or_init(|| {
         BuilderConfig {
-            // host_chain_id: signet_constants::pecorino::HOST_CHAIN_ID,
             host_rpc: "ws://host-rpc.pecorino.signet.sh"
                 .parse::<BuiltInConnectionString>()
                 .map(ProviderConfig::new)
@@ -54,6 +53,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
                 1740681556, // pecorino start timestamp as sane default
                 0, 1,
             ),
+            block_query_cutoff_buffer: 3000,
             max_host_gas_coefficient: Some(80),
             constants: SignetSystemConstants::parmigiana(),
         }
