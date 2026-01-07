@@ -230,7 +230,7 @@ impl SimulatorTask {
     /// # Returns
     ///
     /// An `Instant` representing the simulation deadline as calculated by determining
-    /// the milliseconds  left in the current slot and adding that to the current
+    /// the milliseconds left in the current slot and adding that to the current
     /// timestamp in UNIX seconds.
     pub fn calculate_deadline(&self) -> Instant {
         // Get the current number of milliseconds into the slot.
