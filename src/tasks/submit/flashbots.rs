@@ -6,19 +6,15 @@ use crate::{
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
-    consensus::{EthereumTxEnvelope, TxEip4844Variant},
-    eips::{Encodable2718, eip7594::BlobTransactionSidecarEip7594},
+    consensus::TxEnvelope,
+    eips::Encodable2718,
     primitives::{Bytes, TxHash},
     providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
 };
-use eyre::Context;
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, debug_span, error, instrument};
-
-/// Type alias for a EIP 7594 compatible blob sidecar transaction envelope.
-type TxEnvelope7594 = EthereumTxEnvelope<TxEip4844Variant<BlobTransactionSidecarEip7594>>;
 
 /// Handles preparation and submission of simulated rollup blocks to the
 /// Flashbots relay as MEV bundles.
@@ -100,10 +96,7 @@ impl FlashbotsTask {
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
     /// and signs it using the host provider.
     #[instrument(skip_all, level = "debug")]
-    async fn prepare_signed_transaction(
-        &self,
-        sim_result: &SimResult,
-    ) -> eyre::Result<TxEnvelope7594> {
+    async fn prepare_signed_transaction(&self, sim_result: &SimResult) -> eyre::Result<TxEnvelope> {
         let prep = SubmitPrep::new(
             &sim_result.block,
             self.host_provider(),
@@ -119,8 +112,7 @@ impl FlashbotsTask {
             .instrument(tracing::debug_span!("fill_tx").or_current())
             .await?;
 
-        let tx_envelope =
-            sendable.try_into_envelope()?.try_into_7594().wrap_err("failed to map 4844 to 7594")?;
+        let tx_envelope = sendable.try_into_envelope()?;
         debug!(tx_hash = ?tx_envelope.hash(), "prepared signed rollup block transaction envelope");
 
         Ok(tx_envelope)
@@ -130,7 +122,7 @@ impl FlashbotsTask {
     ///
     /// Sends the transaction hash to the outbound channel for monitoring.
     /// Logs a debug message if the channel is closed.
-    fn track_outbound_tx(&self, envelope: &TxEnvelope7594) {
+    fn track_outbound_tx(&self, envelope: &TxEnvelope) {
         counter!("signet.builder.flashbots.").increment(1);
         let hash = *envelope.tx_hash();
         if self.outbound.send(hash).is_err() {
