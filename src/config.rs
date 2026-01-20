@@ -214,7 +214,7 @@ impl BuilderConfig {
 
         Ok(ProviderBuilder::new_with_network()
             .disable_recommended_fillers()
-            .filler(BlobGasFiller)
+            .filler(BlobGasFiller::default())
             .with_gas_estimation()
             .with_nonce_management(SimpleNonceManager::default())
             .fetch_chain_id()

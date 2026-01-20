@@ -4,8 +4,9 @@ use crate::{
     utils,
 };
 use alloy::{
-    consensus::{BlobTransactionSidecar, Header, SimpleCoder},
-    network::{TransactionBuilder, TransactionBuilder4844},
+    consensus::{Header, SimpleCoder},
+    eips::eip7594::BlobTransactionSidecarEip7594,
+    network::{TransactionBuilder, TransactionBuilder7594},
     primitives::{B256, Bytes, U256},
     providers::{Provider, WalletProvider},
     rpc::types::TransactionRequest,
@@ -103,10 +104,10 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Encodes the rollup block into a sidecar.
+    /// Encodes the rollup block into an EIP-7594 sidecar.
     #[instrument(skip(self), level = "debug")]
-    async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecar> {
-        self.block.encode_blob::<SimpleCoder>().build().map_err(Into::into)
+    async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecarEip7594> {
+        self.block.encode_blob::<SimpleCoder>().build_7594().map_err(Into::into)
     }
 
     /// Build a signature and header input for the host chain transaction.
