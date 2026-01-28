@@ -14,7 +14,7 @@ pub struct CacheTasks {
 }
 
 impl CacheTasks {
-    /// Create a new [`CacheSystem`] with the given components.
+    /// Create a new `CacheTasks`.
     pub const fn new(block_env: watch::Receiver<Option<SimEnv>>) -> Self {
         Self { block_env }
     }
@@ -39,7 +39,8 @@ impl CacheTasks {
 }
 
 /// The tasks that the cache system spawns.
-////// This struct contains the cache and the task handles for the
+///
+/// This struct contains the cache and the task handles for the
 /// [`CacheTask`], [`TxPoller`], and [`BundlePoller`].
 #[derive(Debug)]
 pub struct CacheSystem {

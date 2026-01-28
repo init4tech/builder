@@ -28,7 +28,7 @@ use tokio::join;
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
 
-/// A [`Zenith`] contract instance using [`Provider`] as the provider.
+/// A [`Zenith`] contract instance using [`HostProvider`] as the default provider.
 pub type ZenithInstance<P = HostProvider> = Zenith::ZenithInstance<P, alloy::network::Ethereum>;
 
 /// Type alias for the provider used to build and submit blocks to the host.
