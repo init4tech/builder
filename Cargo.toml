@@ -1,6 +1,6 @@
 [package]
 name = "builder"
-version = "1.0.0-rc.2"
+version = "1.0.0-rc.3"
 description = "signet builder example"
 
 edition = "2024"
@@ -20,17 +20,17 @@ path = "bin/builder.rs"
 [dependencies]
 init4-bin-base = { version = "0.18.0-rc.0", features = ["perms", "aws"] }
 
-signet-constants = { version = "0.16.0-rc.0" }
-signet-sim = { version = "0.16.0-rc.0" }
-signet-tx-cache = { version = "0.16.0-rc.0" }
-signet-types = { version = "0.16.0-rc.0" }
-signet-zenith = { version = "0.16.0-rc.0" }
-signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.2" }
-signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.2" }
+signet-constants = { version = "0.16.0-rc.8" }
+signet-sim = { version = "0.16.0-rc.8" }
+signet-tx-cache = { version = "0.16.0-rc.8" }
+signet-types = { version = "0.16.0-rc.8" }
+signet-zenith = { version = "0.16.0-rc.8" }
+signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.6" }
+signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.6" }
 
-trevm = { version = "0.31.2", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils"] }
 
-alloy = { version = "1.0.40", features = [
+alloy = { version = "1.4.0", features = [
     "full",
     "json-rpc",
     "signer-aws",
@@ -44,7 +44,7 @@ alloy = { version = "1.0.40", features = [
     "provider-mev-api",
 ] }
 
-reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.10.2" }
 
 axum = "0.7.5"
 eyre = "0.6.12"

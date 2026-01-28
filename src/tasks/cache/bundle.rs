@@ -52,12 +52,12 @@ impl BundlePoller {
 
     /// Checks the bundle cache for new bundles.
     pub async fn check_bundle_cache(&self) -> Result<Vec<TxCacheBundle>, TxCacheError> {
-        let res = self.tx_cache.get_bundles().await;
+        let res = self.tx_cache.get_bundles(None).await;
 
         match res {
             Ok(bundles) => {
-                trace!(count = ?bundles.len(), "found bundles");
-                Ok(bundles)
+                trace!(count = ?bundles.bundles.len(), "found bundles");
+                Ok(bundles.bundles)
             }
             Err(TxCacheError::NotOurSlot) => {
                 trace!("Not our slot to fetch bundles");

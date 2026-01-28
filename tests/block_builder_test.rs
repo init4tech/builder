@@ -1,8 +1,8 @@
 //! Tests for the block building task.
 
 use alloy::{
-    eips::BlockId, node_bindings::Anvil, primitives::U256, providers::Provider,
-    signers::local::PrivateKeySigner,
+    consensus::transaction::SignerRecoverable, eips::BlockId, node_bindings::Anvil,
+    primitives::U256, providers::Provider, signers::local::PrivateKeySigner,
 };
 use builder::{
     tasks::{
@@ -44,10 +44,12 @@ async fn test_handle_build() {
 
     // Add two transactions from two senders to the sim cache
     let tx_1 = new_signed_tx(&test_key_0, 0, U256::from(1_f64), 11_000).unwrap();
-    sim_items.add_tx(tx_1, 0);
+    let recovered_tx_1 = tx_1.try_into_recovered().unwrap();
+    sim_items.add_tx(recovered_tx_1, 0);
 
     let tx_2 = new_signed_tx(&test_key_1, 0, U256::from(2_f64), 10_000).unwrap();
-    sim_items.add_tx(tx_2, 0);
+    let recovered_tx_2 = tx_2.try_into_recovered().unwrap();
+    sim_items.add_tx(recovered_tx_2, 0);
 
     // Setup the block envs
     let finish_by = Instant::now() + Duration::from_secs(2);
