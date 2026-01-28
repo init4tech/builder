@@ -8,4 +8,4 @@ mod bundle;
 pub use bundle::BundlePoller;
 
 mod system;
-pub use system::CacheTasks;
+pub use system::{CacheSystem, CacheTasks};
