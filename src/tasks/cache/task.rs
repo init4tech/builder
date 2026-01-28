@@ -1,5 +1,5 @@
 use crate::tasks::env::SimEnv;
-use alloy::consensus::TxEnvelope;
+use alloy::consensus::{TxEnvelope, transaction::SignerRecoverable};
 use signet_sim::SimCache;
 use signet_tx_cache::types::TxCacheBundle;
 use tokio::{
@@ -80,7 +80,10 @@ impl CacheTask {
                     }
                 }
                 Some(txn) = self.txns.recv() => {
-                    cache.add_tx(txn, basefee);
+                    match txn.try_into_recovered() {
+                        Ok(recovered_tx) => cache.add_tx(recovered_tx, basefee),
+                        Err(_) => debug!("Failed to recover transaction signature"),
+                    }
                 }
             }
         }

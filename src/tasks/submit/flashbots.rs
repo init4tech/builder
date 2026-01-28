@@ -145,7 +145,7 @@ impl FlashbotsTask {
             .block
             .host_transactions()
             .iter()
-            .cloned()
+            .map(|tx| tx.encoded_2718().into())
             .chain(std::iter::once(tx_bytes))
             .collect()
     }
