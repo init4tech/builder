@@ -12,7 +12,7 @@ use alloy::{
 };
 use eyre::Result;
 use init4_bin_base::{
-    perms::{Authenticator, OAuthConfig, SharedToken, pylon},
+    perms::{Authenticator, OAuthConfig, SharedToken},
     utils::{
         calc::SlotCalculator,
         from_env::FromEnv,
@@ -24,9 +24,6 @@ use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
 use tokio::join;
-
-/// Pylon client type for blob sidecar submission.
-pub type PylonClient = pylon::PylonClient;
 
 /// Type alias for the provider used to simulate against rollup state.
 pub type RuProvider = RootProvider<Ethereum>;
@@ -180,10 +177,6 @@ pub struct BuilderConfig {
 
     /// The signet system constants.
     pub constants: SignetSystemConstants,
-
-    /// URL for the Pylon blob server API.
-    #[from_env(var = "PYLON_URL", desc = "URL for the Pylon blob server API")]
-    pub pylon_url: url::Url,
 }
 
 impl BuilderConfig {
@@ -315,11 +308,6 @@ impl BuilderConfig {
         // Set max host gas to a percentage of the host block gas limit
         ((gas_limit as u128 * (self.max_host_gas_coefficient.unwrap_or(80) as u128)) / 100u128)
             as u64
-    }
-
-    /// Connect to the Pylon blob server.
-    pub fn connect_pylon(&self) -> PylonClient {
-        PylonClient::new(self.pylon_url.clone(), self.oauth_token())
     }
 }
 

@@ -57,7 +57,6 @@ pub fn setup_test_config() -> &'static BuilderConfig {
             submit_deadline_buffer: 500,
             max_host_gas_coefficient: Some(80),
             constants: SignetSystemConstants::parmigiana(),
-            pylon_url: "http://localhost:8081".parse().unwrap(),
         }
     })
 }

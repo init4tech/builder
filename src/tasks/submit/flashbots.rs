@@ -7,7 +7,7 @@ use crate::{
 };
 use alloy::{
     consensus::TxEnvelope,
-    eips::{Encodable2718, eip7594::BlobTransactionSidecarEip7594},
+    eips::Encodable2718,
     primitives::{Bytes, TxHash},
     providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
@@ -33,17 +33,12 @@ pub struct FlashbotsTask {
     signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
     outbound: mpsc::UnboundedSender<TxHash>,
-    /// Channel for sending sidecars to the Pylon task.
-    pylon_sender: mpsc::UnboundedSender<(TxHash, BlobTransactionSidecarEip7594)>,
 }
 
 impl FlashbotsTask {
     /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
     /// channel and handles their preparation, submission to the Flashbots network.
-    pub async fn new(
-        outbound: mpsc::UnboundedSender<TxHash>,
-        pylon_sender: mpsc::UnboundedSender<(TxHash, BlobTransactionSidecarEip7594)>,
-    ) -> eyre::Result<FlashbotsTask> {
+    pub async fn new(outbound: mpsc::UnboundedSender<TxHash>) -> eyre::Result<FlashbotsTask> {
         let config = crate::config();
 
         let (quincey, host_provider, flashbots, builder_key) = tokio::try_join!(
@@ -55,28 +50,54 @@ impl FlashbotsTask {
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound, pylon_sender })
+        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound })
     }
 
-    /// Builds a MEV bundle from a signed transaction envelope and simulation result.
-    fn build_bundle(&self, envelope: &TxEnvelope, sim_result: &SimResult) -> EthSendBundle {
-        let tx_bytes: Bytes = envelope.encoded_2718().into();
+    /// Prepares a MEV bundle from a simulation result.
+    ///
+    /// This function serves as an entry point for bundle preparation and is left
+    /// for forward compatibility when adding different bundle preparation methods.
+    pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
+        // This function is left for forwards compatibility when we want to add
+        // different bundle preparation methods in the future.
+        self.prepare_bundle(sim_result).await
+    }
+
+    /// Prepares a MEV bundle containing the host transactions and the rollup block.
+    ///
+    /// This method orchestrates the bundle preparation by:
+    /// 1. Preparing and signing the submission transaction
+    /// 2. Tracking the transaction hash for monitoring
+    /// 3. Encoding the transaction for bundle inclusion
+    /// 4. Constructing the complete bundle body
+    #[instrument(skip_all, level = "debug")]
+    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
+        // Prepare and sign the transaction
+        let block_tx = self.prepare_signed_transaction(sim_result).await?;
+
+        // Track the outbound transaction
+        self.track_outbound_tx(&block_tx);
+
+        // Encode the transaction
+        let tx_bytes = block_tx.encoded_2718().into();
+
+        // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
         let txs = self.build_bundle_body(sim_result, tx_bytes);
 
-        EthSendBundle { txs, block_number: sim_result.host_block_number(), ..Default::default() }
+        // Create the MEV bundle (valid only in the specific host block)
+        Ok(EthSendBundle {
+            txs,
+            block_number: sim_result.host_block_number(),
+            ..Default::default()
+        })
     }
 
     /// Prepares and signs the submission transaction for the rollup block.
     ///
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
     /// and signs it using the host provider.
-    ///
-    /// Returns the signed transaction envelope and the sidecar (for forwarding to Pylon).
     #[instrument(skip_all, level = "debug")]
-    async fn prepare_signed_transaction(
-        &self,
-        sim_result: &SimResult,
-    ) -> eyre::Result<(TxEnvelope, alloy::eips::eip7594::BlobTransactionSidecarEip7594)> {
+    async fn prepare_signed_transaction(&self, sim_result: &SimResult) -> eyre::Result<TxEnvelope> {
         let prep = SubmitPrep::new(
             &sim_result.block,
             self.host_provider(),
@@ -84,7 +105,7 @@ impl FlashbotsTask {
             self.config.clone(),
         );
 
-        let (tx, sidecar) = prep.prep_transaction(sim_result.prev_host()).await?;
+        let tx = prep.prep_transaction(sim_result.prev_host()).await?;
 
         let sendable = self
             .host_provider()
@@ -95,7 +116,7 @@ impl FlashbotsTask {
         let tx_envelope = sendable.try_into_envelope()?;
         debug!(tx_hash = ?tx_envelope.hash(), "prepared signed rollup block transaction envelope");
 
-        Ok((tx_envelope, sidecar))
+        Ok(tx_envelope)
     }
 
     /// Tracks the outbound transaction hash and increments submission metrics.
@@ -157,23 +178,17 @@ impl FlashbotsTask {
             }
             span_debug!(span, "flashbots task received block");
 
-            // Prepare and sign the transaction
-            let (envelope, sidecar) =
-                match self.prepare_signed_transaction(&sim_result).instrument(span.clone()).await {
-                    Ok(result) => result,
-                    Err(error) => {
-                        counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
-                        span_debug!(span, %error, "bundle preparation failed");
-                        continue;
-                    }
-                };
+            // Prepare a MEV bundle with the configured call type from the sim result
+            let result = self.prepare(&sim_result).instrument(span.clone()).await;
 
-            // Extract tx_hash and track the outbound transaction
-            let tx_hash = *envelope.tx_hash();
-            self.track_outbound_tx(&envelope);
-
-            // Build the bundle
-            let bundle = self.build_bundle(&envelope, &sim_result);
+            let bundle = match result {
+                Ok(bundle) => bundle,
+                Err(error) => {
+                    counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
+                    span_debug!(span, %error, "bundle preparation failed");
+                    continue;
+                }
+            };
 
             // Make a child span to cover submission, or use the current span
             // if debug is not enabled.
@@ -182,10 +197,9 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so
             // all events inside the async send are attributed to the submit
-            // span. Only send sidecar to Pylon if Flashbots accepts.
+            // span.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
-            let pylon_sender = self.pylon_sender.clone();
 
             tokio::spawn(
                 async move {
@@ -203,11 +217,6 @@ impl FlashbotsTask {
                                 hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
                                 "Submitted MEV bundle to Flashbots within deadline"
                             );
-
-                            // Only send sidecar to Pylon after Flashbots accepts
-                            if let Err(e) = pylon_sender.send((tx_hash, sidecar)) {
-                                debug!("pylon channel closed: {}", e);
-                            }
                         }
                         (Ok(resp), false) => {
                             counter!("signet.builder.flashbots.bundles_submitted").increment(1);
@@ -228,7 +237,7 @@ impl FlashbotsTask {
                         }
                     }
                 }
-                .instrument(submit_span),
+                .instrument(submit_span.clone()),
             );
         }
     }
