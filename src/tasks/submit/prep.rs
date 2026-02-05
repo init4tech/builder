@@ -56,6 +56,12 @@ impl<'a> SubmitPrep<'a> {
         }
     }
 
+    /// Encodes the rollup block into an EIP-7594 sidecar.
+    #[instrument(skip(self), level = "debug")]
+    fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecarEip7594> {
+        self.block.encode_blob::<SimpleCoder>().build_7594().map_err(Into::into)
+    }
+
     /// Construct a quincey signature request for the block.
     fn sig_request(&self) -> &SignRequest {
         self.sig_request.get_or_init(|| {
@@ -103,12 +109,6 @@ impl<'a> SubmitPrep<'a> {
         self.quincey_resp().await.map(|resp| &resp.sig).map(utils::extract_signature_components)
     }
 
-    /// Encodes the rollup block into an EIP-7594 sidecar.
-    #[instrument(skip(self), level = "debug")]
-    async fn build_sidecar(&self) -> eyre::Result<BlobTransactionSidecarEip7594> {
-        self.block.encode_blob::<SimpleCoder>().build_7594().map_err(Into::into)
-    }
-
     /// Build a signature and header input for the host chain transaction.
     async fn build_input(&self) -> eyre::Result<Bytes> {
         let (v, r, s) = self.quincey_signature().await?;
@@ -125,30 +125,33 @@ impl<'a> SubmitPrep<'a> {
         Ok(call.abi_encode().into())
     }
 
-    /// Create a new transaction request for the host chain.
-    async fn new_tx_request(&self) -> eyre::Result<TransactionRequest> {
+    /// Prepares a transaction for submission to the host chain.
+    ///
+    /// Returns the bumpable transaction request and the sidecar, which can be
+    /// forwarded to other tasks (e.g., Pylon) for further processing.
+    pub async fn prep_transaction(
+        self,
+        prev_host: &Header,
+    ) -> eyre::Result<(Bumpable, BlobTransactionSidecarEip7594)> {
         let nonce_fut = self
             .provider
             .get_transaction_count(self.provider.default_signer_address())
             .into_future()
             .map(|res| res.map_err(Into::into));
 
-        let (nonce, sidecar, input) =
-            try_join!(nonce_fut, self.build_sidecar(), self.build_input())?;
+        let (nonce, input) = try_join!(nonce_fut, self.build_input())?;
 
-        let tx = TransactionRequest::default()
-            .with_blob_sidecar(sidecar)
+        // Build the sidecar once
+        let sidecar = self.build_sidecar()?;
+
+        // Clone for the transaction request, keep original for return
+        let req = TransactionRequest::default()
+            .with_blob_sidecar(sidecar.clone())
             .with_input(input)
             .with_to(self.config.constants.host_zenith())
             .with_nonce(nonce);
 
-        Ok(tx)
-    }
-
-    /// Prepares a transaction for submission to the host chain.
-    pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
-        let req = self.new_tx_request().in_current_span().await?;
-        Ok(Bumpable::new(req, prev_host))
+        Ok((Bumpable::new(req, prev_host), sidecar))
     }
 }
 
