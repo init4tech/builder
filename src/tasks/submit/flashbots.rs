@@ -1,13 +1,13 @@
 //! Flashbots Task receives simulated blocks from an upstream channel and
 //! submits them to the Flashbots relay as bundles.
 use crate::{
-    config::{BuilderConfig, FlashbotsProvider, HostProvider, ZenithInstance},
+    config::{BuilderConfig, FlashbotsProvider, HostProvider, PylonClient, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
     consensus::TxEnvelope,
-    eips::Encodable2718,
+    eips::{Encodable2718, eip7594::BlobTransactionSidecarEip7594},
     primitives::{Bytes, TxHash},
     providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
@@ -33,6 +33,8 @@ pub struct FlashbotsTask {
     signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
     outbound: mpsc::UnboundedSender<TxHash>,
+    /// Pylon client for blob sidecar submission.
+    pylon: PylonClient,
 }
 
 impl FlashbotsTask {
@@ -49,15 +51,21 @@ impl FlashbotsTask {
         )?;
 
         let zenith = config.connect_zenith(host_provider);
+        let pylon = config.connect_pylon();
 
-        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound })
+        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound, pylon })
     }
 
     /// Prepares a MEV bundle from a simulation result.
     ///
     /// This function serves as an entry point for bundle preparation and is left
     /// for forward compatibility when adding different bundle preparation methods.
-    pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
+    ///
+    /// Returns the bundle, tx hash, and the blob sidecar for Pylon submission.
+    pub async fn prepare(
+        &self,
+        sim_result: &SimResult,
+    ) -> eyre::Result<(EthSendBundle, TxHash, BlobTransactionSidecarEip7594)> {
         // This function is left for forwards compatibility when we want to add
         // different bundle preparation methods in the future.
         self.prepare_bundle(sim_result).await
@@ -70,13 +78,29 @@ impl FlashbotsTask {
     /// 2. Tracking the transaction hash for monitoring
     /// 3. Encoding the transaction for bundle inclusion
     /// 4. Constructing the complete bundle body
+    ///
+    /// Returns the bundle, tx hash, and the blob sidecar for Pylon submission.
     #[instrument(skip_all, level = "debug")]
-    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
+    async fn prepare_bundle(
+        &self,
+        sim_result: &SimResult,
+    ) -> eyre::Result<(EthSendBundle, TxHash, BlobTransactionSidecarEip7594)> {
         // Prepare and sign the transaction
         let block_tx = self.prepare_signed_transaction(sim_result).await?;
 
         // Track the outbound transaction
         self.track_outbound_tx(&block_tx);
+
+        // Get tx hash for Pylon submission
+        let tx_hash = *block_tx.tx_hash();
+
+        // Clone the sidecar from the envelope for Pylon submission
+        // We always build EIP-7594 sidecars, so this is guaranteed to exist
+        let sidecar = block_tx
+            .as_eip4844()
+            .and_then(|tx| tx.tx().sidecar())
+            .and_then(|s| s.clone().into_eip7594())
+            .expect("sidecar is guaranteed to exist for blob transactions");
 
         // Encode the transaction
         let tx_bytes = block_tx.encoded_2718().into();
@@ -85,11 +109,13 @@ impl FlashbotsTask {
         let txs = self.build_bundle_body(sim_result, tx_bytes);
 
         // Create the MEV bundle (valid only in the specific host block)
-        Ok(EthSendBundle {
+        let bundle = EthSendBundle {
             txs,
             block_number: sim_result.host_block_number(),
             ..Default::default()
-        })
+        };
+
+        Ok((bundle, tx_hash, sidecar))
     }
 
     /// Prepares and signs the submission transaction for the rollup block.
@@ -181,8 +207,8 @@ impl FlashbotsTask {
             // Prepare a MEV bundle with the configured call type from the sim result
             let result = self.prepare(&sim_result).instrument(span.clone()).await;
 
-            let bundle = match result {
-                Ok(bundle) => bundle,
+            let (bundle, tx_hash, sidecar) = match result {
+                Ok(result) => result,
                 Err(error) => {
                     counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
                     span_debug!(span, %error, "bundle preparation failed");
@@ -197,9 +223,10 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so
             // all events inside the async send are attributed to the submit
-            // span.
+            // span. If Flashbots accepts, submit sidecar to Pylon.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
+            let pylon = self.pylon.clone();
 
             tokio::spawn(
                 async move {
@@ -217,6 +244,18 @@ impl FlashbotsTask {
                                 hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
                                 "Submitted MEV bundle to Flashbots within deadline"
                             );
+
+                            // Fire and forget pylon submission
+                            match pylon.post_sidecar(tx_hash, sidecar).await {
+                                Ok(()) => {
+                                    counter!("signet.builder.pylon.posted").increment(1);
+                                    debug!(%tx_hash, "posted sidecar to pylon");
+                                }
+                                Err(err) => {
+                                    counter!("signet.builder.pylon.failures").increment(1);
+                                    error!(%tx_hash, %err, "pylon submission failed");
+                                }
+                            }
                         }
                         (Ok(resp), false) => {
                             counter!("signet.builder.flashbots.bundles_submitted").increment(1);
