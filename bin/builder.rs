@@ -1,8 +1,11 @@
 use builder::{
     service::serve_builder,
     tasks::{
-        block::sim::SimulatorTask, cache::CacheTasks, env::EnvTask, metrics::MetricsTask,
-        submit::FlashbotsTask,
+        block::sim::SimulatorTask,
+        cache::CacheTasks,
+        env::EnvTask,
+        metrics::MetricsTask,
+        submit::{FlashbotsTask, PylonTask},
     },
 };
 use init4_bin_base::deps::tracing::{info, info_span};
@@ -32,10 +35,17 @@ async fn main() -> eyre::Result<()> {
     let (block_env, env_jh) = env_task.spawn();
     let (tx_channel, metrics_jh) = metrics_task.spawn();
 
+    // Set up the pylon task
+    let pylon_client = builder::config().connect_pylon();
+    let pylon_task = PylonTask::new(pylon_client);
+    let (pylon_sender, pylon_jh) = pylon_task.spawn();
+
     // Set up the cache, submit, and simulator tasks
     let cache_tasks = CacheTasks::new(block_env.clone());
-    let (submit_task, simulator_task) =
-        tokio::try_join!(FlashbotsTask::new(tx_channel.clone()), SimulatorTask::new(block_env),)?;
+    let (submit_task, simulator_task) = tokio::try_join!(
+        FlashbotsTask::new(tx_channel.clone(), pylon_sender),
+        SimulatorTask::new(block_env),
+    )?;
 
     // Spawn the cache, submit, and simulator tasks
     let cache_system = cache_tasks.spawn();
@@ -64,6 +74,9 @@ async fn main() -> eyre::Result<()> {
         },
         _ = submit_jh => {
             info!("submit finished");
+        },
+        _ = pylon_jh => {
+            info!("pylon task finished");
         },
         _ = metrics_jh => {
             info!("metrics finished");
