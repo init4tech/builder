@@ -191,7 +191,7 @@ impl FlashbotsTask {
                 }
             };
 
-            // Due to the way the bundle is built, the block transaction is the last transaction in the bundle.
+            // Due to the way the bundle is built, the block transaction is the last transaction in the bundle, and will always exist.
             // We'll use this to forward the tx to pylon, which will preload the sidecar.
             let block_tx = bundle.txs.last().unwrap().clone();
 
