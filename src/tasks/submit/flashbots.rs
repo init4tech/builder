@@ -6,10 +6,7 @@ use crate::{
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
-    consensus::TxEnvelope,
-    eips::Encodable2718,
-    primitives::{Bytes, TxHash},
-    providers::ext::MevApi,
+    consensus::TxEnvelope, eips::Encodable2718, primitives::TxHash, providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
 };
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
@@ -85,7 +82,7 @@ impl FlashbotsTask {
         let tx_bytes = block_tx.encoded_2718().into();
 
         // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
-        let txs = self.build_bundle_body(sim_result, tx_bytes);
+        let txs = sim_result.build_bundle_body(tx_bytes);
 
         // Create the MEV bundle (valid only in the specific host block)
         Ok(EthSendBundle {
@@ -131,26 +128,6 @@ impl FlashbotsTask {
         if self.outbound.send(hash).is_err() {
             debug!("outbound channel closed, could not track tx hash");
         }
-    }
-
-    /// Constructs the MEV bundle body from host transactions and the submission transaction.
-    ///
-    /// Combines all host transactions from the rollup block with the prepared rollup block
-    /// submission transaction, wrapping each as a non-revertible bundle item.
-    ///
-    /// The rollup block transaction is placed last in the bundle.
-    fn build_bundle_body(
-        &self,
-        sim_result: &SimResult,
-        tx_bytes: alloy::primitives::Bytes,
-    ) -> Vec<Bytes> {
-        sim_result
-            .block
-            .host_transactions()
-            .iter()
-            .map(|tx| tx.encoded_2718().into())
-            .chain(std::iter::once(tx_bytes))
-            .collect()
     }
 
     /// Main task loop that processes simulation results and submits bundles to Flashbots.
