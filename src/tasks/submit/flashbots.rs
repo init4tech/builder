@@ -7,7 +7,7 @@ use crate::{
 };
 use alloy::{
     consensus::TxEnvelope,
-    eips::{Encodable2718, eip7594::BlobTransactionSidecarEip7594},
+    eips::Encodable2718,
     primitives::{Bytes, TxHash},
     providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
@@ -60,12 +60,7 @@ impl FlashbotsTask {
     ///
     /// This function serves as an entry point for bundle preparation and is left
     /// for forward compatibility when adding different bundle preparation methods.
-    ///
-    /// Returns the bundle, tx hash, and the blob sidecar for Pylon submission.
-    pub async fn prepare(
-        &self,
-        sim_result: &SimResult,
-    ) -> eyre::Result<(EthSendBundle, TxHash, BlobTransactionSidecarEip7594)> {
+    pub async fn prepare(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
         // This function is left for forwards compatibility when we want to add
         // different bundle preparation methods in the future.
         self.prepare_bundle(sim_result).await
@@ -78,29 +73,13 @@ impl FlashbotsTask {
     /// 2. Tracking the transaction hash for monitoring
     /// 3. Encoding the transaction for bundle inclusion
     /// 4. Constructing the complete bundle body
-    ///
-    /// Returns the bundle, tx hash, and the blob sidecar for Pylon submission.
     #[instrument(skip_all, level = "debug")]
-    async fn prepare_bundle(
-        &self,
-        sim_result: &SimResult,
-    ) -> eyre::Result<(EthSendBundle, TxHash, BlobTransactionSidecarEip7594)> {
+    async fn prepare_bundle(&self, sim_result: &SimResult) -> eyre::Result<EthSendBundle> {
         // Prepare and sign the transaction
         let block_tx = self.prepare_signed_transaction(sim_result).await?;
 
         // Track the outbound transaction
         self.track_outbound_tx(&block_tx);
-
-        // Get tx hash for Pylon submission
-        let tx_hash = *block_tx.tx_hash();
-
-        // Clone the sidecar from the envelope for Pylon submission
-        // We always build EIP-7594 sidecars, so this is guaranteed to exist
-        let sidecar = block_tx
-            .as_eip4844()
-            .and_then(|tx| tx.tx().sidecar())
-            .and_then(|s| s.clone().into_eip7594())
-            .expect("sidecar is guaranteed to exist for blob transactions");
 
         // Encode the transaction
         let tx_bytes = block_tx.encoded_2718().into();
@@ -109,15 +88,12 @@ impl FlashbotsTask {
         let txs = self.build_bundle_body(sim_result, tx_bytes);
 
         // Create the MEV bundle (valid only in the specific host block)
-        let bundle = EthSendBundle {
+        Ok(EthSendBundle {
             txs,
             block_number: sim_result.host_block_number(),
             ..Default::default()
-        };
-
-        Ok((bundle, tx_hash, sidecar))
+        })
     }
-
     /// Prepares and signs the submission transaction for the rollup block.
     ///
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
@@ -206,15 +182,18 @@ impl FlashbotsTask {
 
             // Prepare a MEV bundle with the configured call type from the sim result
             let result = self.prepare(&sim_result).instrument(span.clone()).await;
-
-            let (bundle, tx_hash, sidecar) = match result {
-                Ok(result) => result,
+            let bundle = match result {
+                Ok(bundle) => bundle,
                 Err(error) => {
                     counter!("signet.builder.flashbots.bundle_prep_failures").increment(1);
                     span_debug!(span, %error, "bundle preparation failed");
                     continue;
                 }
             };
+
+            // Due to the way the bundle is built, the block transaction is the last transaction in the bundle.
+            // We'll use this to forward the tx to pylon, which will preload the sidecar.
+            let block_tx = bundle.txs.last().unwrap().clone();
 
             // Make a child span to cover submission, or use the current span
             // if debug is not enabled.
@@ -223,7 +202,7 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so
             // all events inside the async send are attributed to the submit
-            // span. If Flashbots accepts, submit sidecar to Pylon.
+            // span. If Flashbots accepts, submit envelope to Pylon.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
             let pylon = self.pylon.clone();
@@ -245,15 +224,16 @@ impl FlashbotsTask {
                                 "Submitted MEV bundle to Flashbots within deadline"
                             );
 
-                            // Fire and forget pylon submission
-                            match pylon.post_sidecar(tx_hash, sidecar).await {
+                            match pylon.post_sidecar(block_tx).await {
                                 Ok(()) => {
-                                    counter!("signet.builder.pylon.posted").increment(1);
-                                    debug!(%tx_hash, "posted sidecar to pylon");
+                                    counter!("signet.builder.pylon.sidecars_submitted")
+                                        .increment(1);
+                                    debug!("posted sidecar to pylon");
                                 }
                                 Err(err) => {
-                                    counter!("signet.builder.pylon.failures").increment(1);
-                                    error!(%tx_hash, %err, "pylon submission failed");
+                                    counter!("signet.builder.pylon.submission_failures")
+                                        .increment(1);
+                                    error!(%err, "pylon submission failed");
                                 }
                             }
                         }
