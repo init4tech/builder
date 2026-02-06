@@ -18,15 +18,15 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.18.0-rc.0", features = ["perms", "aws"] }
+init4-bin-base = { version = "0.18.0-rc.8", features = ["perms", "aws"] }
 
 signet-constants = { version = "0.16.0-rc.8" }
 signet-sim = { version = "0.16.0-rc.8" }
 signet-tx-cache = { version = "0.16.0-rc.8" }
 signet-types = { version = "0.16.0-rc.8" }
 signet-zenith = { version = "0.16.0-rc.8" }
-signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.6" }
-signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.6" }
+signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.7" }
+signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.7" }
 
 trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils"] }
 
