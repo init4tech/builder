@@ -23,4 +23,5 @@ target/
 # VSCode debug launcher
 .vscode/launch.json
 
-.claude/
+.claude/*.local.*
+CLAUDE.local.md
