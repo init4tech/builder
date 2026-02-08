@@ -1439,9 +1439,9 @@ checksum = "155a5a185e42c6b77ac7b88a15143d930a9e9727a5b7b77eed417404ab15c247"
 
 [[package]]
 name = "async-compression"
-version = "0.4.38"
+version = "0.4.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82da0ea54ea533ec09d949717c6386a1c34f2d9b51c1fcc7eef8b9ce0b690a3e"
+checksum = "68650b7df54f0293fd061972a0fb05aaf4fc0879d3b3d21a638a182c5c543b9f"
 dependencies = [
  "compression-codecs",
  "compression-core",
@@ -5039,9 +5039,9 @@ dependencies = [
 
 [[package]]
 name = "interprocess"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b00d05442c2106c75b7410f820b152f61ec0edc7befcb9b381b673a20314753"
+checksum = "53bf2b0e0785c5394a7392f66d7c4fb9c653633c29b27a932280da3cb344c66a"
 dependencies = [
  "doctest-file",
  "futures-core",
