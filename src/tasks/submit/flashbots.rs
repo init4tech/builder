@@ -179,7 +179,7 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so
             // all events inside the async send are attributed to the submit
-            // span. If Flashbots accepts, submit envelope to Pylon.
+            // span. If Flashbots accepts it, submit the envelope to Pylon.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
             let pylon = self.pylon.clone();
