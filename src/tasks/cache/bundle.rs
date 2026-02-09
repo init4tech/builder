@@ -1,6 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use init4_bin_base::perms::tx_cache::BuilderTxCache;
+use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
 use signet_tx_cache::{TxCacheError, types::TxCacheBundle};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -51,7 +51,7 @@ impl BundlePoller {
     }
 
     /// Checks the bundle cache for new bundles.
-    pub async fn check_bundle_cache(&self) -> Result<Vec<TxCacheBundle>, TxCacheError> {
+    pub async fn check_bundle_cache(&self) -> Result<Vec<TxCacheBundle>, BuilderTxCacheError> {
         let res = self.tx_cache.get_bundles(None).await;
 
         match res {
@@ -59,12 +59,12 @@ impl BundlePoller {
                 trace!(count = ?bundles.bundles.len(), "found bundles");
                 Ok(bundles.bundles)
             }
-            Err(TxCacheError::NotOurSlot) => {
-                trace!("Not our slot to fetch bundles");
-                Err(TxCacheError::NotOurSlot)
-            }
             Err(err) => {
-                error!(?err, "Failed to fetch bundles from tx-cache");
+                if matches!(&err, BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot)) {
+                    trace!("Not our slot to fetch bundles");
+                } else {
+                    error!(?err, "Failed to fetch bundles from tx-cache");
+                }
                 Err(err)
             }
         }
