@@ -4950,7 +4950,9 @@ dependencies = [
 
 [[package]]
 name = "init4-bin-base"
-version = "0.18.0-rc.8"
+version = "0.18.0-rc.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fe89ed003118f165bd3a1a9dc49b25417766b7f52fd87c380d425b8ea0ff60f"
 dependencies = [
  "alloy",
  "async-trait",
@@ -4985,6 +4987,8 @@ dependencies = [
 [[package]]
 name = "init4-from-env-derive"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9c78527fcfeaecc9805e5736a7592a26ecad3b7845eb273c8c1710de0dbb0c"
 dependencies = [
  "proc-macro2",
  "quote",

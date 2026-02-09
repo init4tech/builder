@@ -193,7 +193,7 @@ impl FlashbotsTask {
                                 "Submitted MEV bundle to Flashbots, received OK response"
                             );
 
-                            match pylon.post_sidecar(block_tx).await {
+                            match pylon.post_blob_tx(block_tx).await {
                                 Ok(()) => {
                                     counter!("signet.builder.pylon.sidecars_submitted")
                                         .increment(1);
