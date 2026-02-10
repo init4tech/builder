@@ -82,25 +82,25 @@ impl TestBlockBuildBuilder {
     }
 
     /// Set the deadline duration from now.
-    pub fn with_deadline(mut self, duration: Duration) -> Self {
+    pub const fn with_deadline(mut self, duration: Duration) -> Self {
         self.deadline_duration = duration;
         self
     }
 
     /// Set the concurrency limit for parallel simulation.
-    pub fn with_concurrency(mut self, limit: usize) -> Self {
+    pub const fn with_concurrency(mut self, limit: usize) -> Self {
         self.concurrency_limit = limit;
         self
     }
 
     /// Set the maximum gas limit for the rollup block.
-    pub fn with_max_gas(mut self, gas: u64) -> Self {
+    pub const fn with_max_gas(mut self, gas: u64) -> Self {
         self.max_gas = gas;
         self
     }
 
     /// Set the maximum gas limit for host transactions.
-    pub fn with_max_host_gas(mut self, gas: u64) -> Self {
+    pub const fn with_max_host_gas(mut self, gas: u64) -> Self {
         self.max_host_gas = gas;
         self
     }

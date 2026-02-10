@@ -55,7 +55,7 @@ impl TestDbBuilder {
     /// * `value` - The value to store
     pub fn with_storage(mut self, address: Address, slot: U256, value: U256) -> Self {
         // Ensure the account exists before setting storage
-        if self.db.cache.accounts.get(&address).is_none() {
+        if !self.db.cache.accounts.contains_key(&address) {
             self.db.insert_account_info(address, AccountInfo::default());
         }
         let _ = self.db.insert_account_storage(address, slot, value);
