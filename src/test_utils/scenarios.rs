@@ -3,10 +3,7 @@
 //! environments, and builders for common testing needs.
 
 use super::{
-    block::TestBlockBuildBuilder,
-    db::TestDbBuilder,
-    env::TestSimEnvBuilder,
-    tx::TestAccounts,
+    block::TestBlockBuildBuilder, db::TestDbBuilder, env::TestSimEnvBuilder, tx::TestAccounts,
 };
 use alloy::primitives::{Address, B256, U256};
 use signet_sim::SimCache;
@@ -146,9 +143,7 @@ pub fn custom_funded_scenario(
 
     let db = db_builder.build();
 
-    let sim_env = TestSimEnvBuilder::new()
-        .with_rollup_db(db.clone())
-        .with_host_db(db);
+    let sim_env = TestSimEnvBuilder::new().with_rollup_db(db.clone()).with_host_db(db);
 
     let cache = SimCache::new();
     let builder = TestBlockBuildBuilder::new().with_sim_env_builder(sim_env);

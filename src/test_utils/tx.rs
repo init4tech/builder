@@ -3,7 +3,10 @@
 //! for use in simulation tests.
 
 use alloy::{
-    consensus::{SignableTransaction, TxEip1559, TxEnvelope, transaction::Recovered, transaction::SignerRecoverable},
+    consensus::{
+        SignableTransaction, TxEip1559, TxEnvelope, transaction::Recovered,
+        transaction::SignerRecoverable,
+    },
     primitives::{Address, TxKind, U256},
     signers::{SignerSync, local::PrivateKeySigner},
 };
@@ -40,11 +43,7 @@ impl TestAccounts {
 
     /// Get all account addresses.
     pub fn addresses(&self) -> Vec<Address> {
-        vec![
-            self.alice.address(),
-            self.bob.address(),
-            self.charlie.address(),
-        ]
+        vec![self.alice.address(), self.bob.address(), self.charlie.address()]
     }
 
     /// Get Alice's address.
