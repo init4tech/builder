@@ -31,9 +31,7 @@ impl Default for TestDbBuilder {
 impl TestDbBuilder {
     /// Create a new empty test database builder.
     pub fn new() -> Self {
-        Self {
-            db: CacheDB::new(EmptyDB::default()),
-        }
+        Self { db: CacheDB::new(EmptyDB::default()) }
     }
 
     /// Add an account with the specified balance and nonce.
@@ -44,14 +42,7 @@ impl TestDbBuilder {
     /// * `balance` - The account balance in wei
     /// * `nonce` - The account nonce (transaction count)
     pub fn with_account(mut self, address: Address, balance: U256, nonce: u64) -> Self {
-        self.db.insert_account_info(
-            address,
-            AccountInfo {
-                balance,
-                nonce,
-                ..Default::default()
-            },
-        );
+        self.db.insert_account_info(address, AccountInfo { balance, nonce, ..Default::default() });
         self
     }
 
@@ -106,9 +97,7 @@ mod tests {
         let balance = U256::from(1000u64);
         let nonce = 5u64;
 
-        let db = TestDbBuilder::new()
-            .with_account(address, balance, nonce)
-            .build();
+        let db = TestDbBuilder::new().with_account(address, balance, nonce).build();
 
         let account = db.cache.accounts.get(&address).unwrap();
         assert_eq!(account.info.balance, balance);
@@ -121,9 +110,7 @@ mod tests {
         let slot = U256::from(42u64);
         let value = U256::from(123u64);
 
-        let db = TestDbBuilder::new()
-            .with_storage(address, slot, value)
-            .build();
+        let db = TestDbBuilder::new().with_storage(address, slot, value).build();
 
         let account = db.cache.accounts.get(&address).unwrap();
         let stored = account.storage.get(&slot).unwrap();

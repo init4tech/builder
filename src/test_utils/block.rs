@@ -106,7 +106,7 @@ impl TestBlockBuildBuilder {
     }
 
     /// Build the test `BlockBuild` instance.
-    /// This creates a `BlockBuild` ready for simulation. 
+    /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
     pub fn build(self) -> TestBlockBuild {
         let (rollup_env, host_env) = match (self.rollup_env, self.host_env) {
@@ -135,12 +135,7 @@ impl TestBlockBuildBuilder {
 /// This is useful for simple test cases where you just want to simulate
 /// some transactions quickly.
 pub async fn quick_build_block(cache: SimCache, deadline: Duration) -> BuiltBlock {
-    TestBlockBuildBuilder::new()
-        .with_cache(cache)
-        .with_deadline(deadline)
-        .build()
-        .build()
-        .await
+    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).build().build().await
 }
 
 #[cfg(test)]

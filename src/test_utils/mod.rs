@@ -10,15 +10,14 @@ mod scenarios;
 mod tx;
 
 // Re-export test harness components
-pub use block::{quick_build_block, TestBlockBuild, TestBlockBuildBuilder};
+pub use block::{TestBlockBuild, TestBlockBuildBuilder, quick_build_block};
 pub use db::{TestDb, TestDbBuilder};
 pub use env::{TestHostEnv, TestRollupEnv, TestSimEnvBuilder};
 pub use scenarios::{
-    basic_scenario, custom_funded_scenario, funded_test_db, gas_limit_scenario,
-    priority_ordering_scenario, test_block_env as scenarios_test_block_env, DEFAULT_BALANCE,
-    DEFAULT_BASEFEE,
+    DEFAULT_BALANCE, DEFAULT_BASEFEE, basic_scenario, custom_funded_scenario, funded_test_db,
+    gas_limit_scenario, priority_ordering_scenario, test_block_env as scenarios_test_block_env,
 };
-pub use tx::{create_call_tx, create_transfer_tx, TestAccounts};
+pub use tx::{TestAccounts, create_call_tx, create_transfer_tx};
 
 use crate::config::BuilderConfig;
 use alloy::{

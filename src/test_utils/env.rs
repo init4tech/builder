@@ -7,7 +7,9 @@ use crate::tasks::block::cfg::SignetCfgEnv;
 use alloy::primitives::{Address, B256, U256};
 use signet_constants::SignetSystemConstants;
 use signet_sim::{HostEnv, RollupEnv};
-use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice, inspector::NoOpInspector};
+use trevm::revm::{
+    context::BlockEnv, context_interface::block::BlobExcessGasAndPrice, inspector::NoOpInspector,
+};
 
 /// Test rollup environment using in-memory database.
 pub type TestRollupEnv = RollupEnv<TestDb, NoOpInspector>;
@@ -105,24 +107,14 @@ impl TestSimEnvBuilder {
     pub fn build_rollup_env(&self) -> TestRollupEnv {
         let timestamp = self.rollup_block_env.timestamp.to::<u64>();
         let cfg = SignetCfgEnv::new(self.constants.ru_chain_id(), timestamp);
-        RollupEnv::new(
-            self.rollup_db.clone(),
-            self.constants.clone(),
-            &cfg,
-            &self.rollup_block_env,
-        )
+        RollupEnv::new(self.rollup_db.clone(), self.constants.clone(), &cfg, &self.rollup_block_env)
     }
 
     /// Build the test HostEnv.
     pub fn build_host_env(&self) -> TestHostEnv {
         let timestamp = self.host_block_env.timestamp.to::<u64>();
         let cfg = SignetCfgEnv::new(self.constants.host_chain_id(), timestamp);
-        HostEnv::new(
-            self.host_db.clone(),
-            self.constants.clone(),
-            &cfg,
-            &self.host_block_env,
-        )
+        HostEnv::new(self.host_db.clone(), self.constants.clone(), &cfg, &self.host_block_env)
     }
 
     /// Build both environments as a tuple.
