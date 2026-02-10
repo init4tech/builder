@@ -79,13 +79,13 @@ impl TestSimEnvBuilder {
     }
 
     /// Set the rollup block environment.
-    pub fn with_rollup_block_env(mut self, env: BlockEnv) -> Self {
+    pub const fn with_rollup_block_env(mut self, env: BlockEnv) -> Self {
         self.rollup_block_env = env;
         self
     }
 
     /// Set the host block environment.
-    pub fn with_host_block_env(mut self, env: BlockEnv) -> Self {
+    pub const fn with_host_block_env(mut self, env: BlockEnv) -> Self {
         self.host_block_env = env;
         self
     }
@@ -98,7 +98,7 @@ impl TestSimEnvBuilder {
     }
 
     /// Set the system constants.
-    pub fn with_constants(mut self, constants: SignetSystemConstants) -> Self {
+    pub const fn with_constants(mut self, constants: SignetSystemConstants) -> Self {
         self.constants = constants;
         self
     }

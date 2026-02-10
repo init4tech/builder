@@ -148,6 +148,10 @@ Most tests in `tests/` are marked `#[ignore]` and require network access (real R
 - `TestBlockBuildBuilder` - Build blocks with `BlockBuild`
 - `basic_scenario()`, `gas_limit_scenario()` - Pre-configured test scenarios
 
+## Workflow
+
+After completing a set of changes, always run `make fmt` and `make clippy` and fix any issues before committing.
+
 ## Local Development
 
 For local SDK development, uncomment the `[patch.crates-io]` section in Cargo.toml to point to local signet-sdk paths.

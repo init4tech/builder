@@ -47,17 +47,17 @@ impl TestAccounts {
     }
 
     /// Get Alice's address.
-    pub fn alice_address(&self) -> Address {
+    pub const fn alice_address(&self) -> Address {
         self.alice.address()
     }
 
     /// Get Bob's address.
-    pub fn bob_address(&self) -> Address {
+    pub const fn bob_address(&self) -> Address {
         self.bob.address()
     }
 
     /// Get Charlie's address.
-    pub fn charlie_address(&self) -> Address {
+    pub const fn charlie_address(&self) -> Address {
         self.charlie.address()
     }
 }
@@ -113,6 +113,7 @@ pub fn create_transfer_tx(
 /// * `chain_id` - The chain ID
 /// * `gas_limit` - The gas limit for the transaction
 /// * `max_priority_fee_per_gas` - The priority fee per gas unit
+#[allow(clippy::too_many_arguments)]
 pub fn create_call_tx(
     signer: &PrivateKeySigner,
     to: Address,
