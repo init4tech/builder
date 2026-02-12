@@ -209,31 +209,31 @@ impl FlashbotsTask {
                     // Check if we met the submission deadline
                     let met_deadline = Instant::now() <= deadline;
 
-                    match response {
-                        Ok(resp) => {
+                    match (response, met_deadline) {
+                        (Ok(resp), true) => {
                             counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                            if met_deadline {
-                                info!(
-                                    hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                                    "Submitted MEV bundle to Flashbots within deadline"
-                                );
-                                counter!("signet.builder.flashbots.deadline_met").increment(1);
-                            } else {
-                                warn!(
-                                    hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                                    "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
-                                );
-                                counter!("signet.builder.flashbots.deadline_missed").increment(1);
-                            }
+                            counter!("signet.builder.flashbots.deadline_met").increment(1);
+                            info!(
+                                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                                "Submitted MEV bundle to Flashbots within deadline"
+                            );
                         }
-                        Err(err) => {
+                        (Ok(resp), false) => {
+                            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                            counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                            warn!(
+                                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                                "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
+                            );
+                        }
+                        (Err(err), true) => {
                             counter!("signet.builder.flashbots.submission_failures").increment(1);
-                            if met_deadline {
-                                error!(%err, "MEV bundle submission failed - error returned");
-                            } else {
-                                error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
-                                counter!("signet.builder.flashbots.deadline_missed").increment(1);
-                            }
+                            error!(%err, "MEV bundle submission failed - error returned");
+                        }
+                        (Err(err), false) => {
+                            counter!("signet.builder.flashbots.submission_failures").increment(1);
+                            counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                            error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
                         }
                     }
                 }
