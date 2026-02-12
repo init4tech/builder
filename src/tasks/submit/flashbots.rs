@@ -13,8 +13,9 @@ use alloy::{
     rpc::types::mev::EthSendBundle,
 };
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
+use std::time::{Duration, Instant};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{Instrument, debug, debug_span, error, instrument};
+use tracing::{Instrument, debug, debug_span, error, info, instrument, warn};
 
 /// Handles preparation and submission of simulated rollup blocks to the
 /// Flashbots relay as MEV bundles.
@@ -166,6 +167,9 @@ impl FlashbotsTask {
 
             let span = sim_result.clone_span();
 
+            // Calculate the submission deadline for this block
+            let deadline = self.calculate_submit_deadline();
+
             // Don't submit empty blocks
             if sim_result.block.is_empty() {
                 counter!("signet.builder.flashbots.empty_block").increment(1);
@@ -202,23 +206,68 @@ impl FlashbotsTask {
                     let response =
                         flashbots.send_bundle(bundle).with_auth(signer.clone()).into_future().await;
 
+                    // Check if we met the submission deadline
+                    let met_deadline = Instant::now() <= deadline;
+
                     match response {
                         Ok(resp) => {
                             counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                            debug!(
-                                hash = resp.map(|r| r.bundle_hash.to_string()),
-                                "Submitted MEV bundle to Flashbots, received OK response"
-                            );
+                            if met_deadline {
+                                info!(
+                                    hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                                    "Submitted MEV bundle to Flashbots within deadline"
+                                );
+                                counter!("signet.builder.flashbots.deadline_met").increment(1);
+                            } else {
+                                warn!(
+                                    hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                                    "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
+                                );
+                                counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                            }
                         }
                         Err(err) => {
                             counter!("signet.builder.flashbots.submission_failures").increment(1);
-                            error!(%err, "MEV bundle submission failed - error returned");
+                            if met_deadline {
+                                error!(%err, "MEV bundle submission failed - error returned");
+                            } else {
+                                error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
+                                counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                            }
                         }
                     }
                 }
                 .instrument(submit_span.clone()),
             );
         }
+    }
+
+    /// Calculates the deadline for bundle submission.
+    ///
+    /// The deadline is calculated as the time remaining in the current slot,
+    /// minus the configured submit deadline buffer. Submissions completing
+    /// after this deadline will be logged as warnings.
+    ///
+    /// # Returns
+    ///
+    /// An `Instant` representing the submission deadline.
+    fn calculate_submit_deadline(&self) -> Instant {
+        let slot_calculator = &self.config.slot_calculator;
+
+        // Get the current number of milliseconds into the slot.
+        let timepoint_ms =
+            slot_calculator.current_point_within_slot_ms().expect("host chain has started");
+
+        let slot_duration = slot_calculator.slot_duration() * 1000; // convert to milliseconds
+        let submit_buffer = self.config.submit_deadline_buffer;
+
+        // To find the remaining slot time, subtract the timepoint from the slot duration.
+        // Then subtract the submit deadline buffer to give us margin before slot ends.
+        let remaining = slot_duration.saturating_sub(timepoint_ms).saturating_sub(submit_buffer);
+
+        // The deadline is calculated by adding the remaining time to the current instant.
+        let deadline = Instant::now() + Duration::from_millis(remaining);
+        deadline.max(Instant::now())
     }
 
     /// Returns a clone of the host provider for transaction operations.

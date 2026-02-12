@@ -163,6 +163,15 @@ pub struct BuilderConfig {
     )]
     pub block_query_cutoff_buffer: u64,
 
+    /// Number of milliseconds before the end of the slot by which bundle submission to Flashbots must complete.
+    /// If submission completes after this deadline, a warning is logged.
+    #[from_env(
+        var = "SUBMIT_DEADLINE_BUFFER",
+        desc = "Number of milliseconds before the end of the slot by which bundle submission must complete. Submissions that miss this deadline will be logged as warnings.",
+        default = 500
+    )]
+    pub submit_deadline_buffer: u64,
+
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
 
