@@ -50,7 +50,9 @@ pub static CONFIG: OnceLock<config::BuilderConfig> = OnceLock::new();
 /// Panics if the configuration cannot be loaded from the environment AND no
 /// other configuration has been previously initialized.
 pub fn config_from_env() -> &'static config::BuilderConfig {
-    CONFIG.get_or_init(|| config::BuilderConfig::from_env().expect("Failed to load Builder config"))
+    CONFIG.get_or_init(|| {
+        config::BuilderConfig::from_env().expect("Failed to load Builder config").sanitize()
+    })
 }
 
 /// Get a reference to the global Builder configuration.
