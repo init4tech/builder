@@ -54,6 +54,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
                 0, 1,
             ),
             block_query_cutoff_buffer: 3000,
+            submit_deadline_buffer: 500,
             max_host_gas_coefficient: Some(80),
             constants: SignetSystemConstants::parmigiana(),
         }
