@@ -43,6 +43,16 @@ use std::sync::OnceLock;
 /// Global static configuration for the Builder binary.
 pub static CONFIG: OnceLock<config::BuilderConfig> = OnceLock::new();
 
+/// Ensures a URL has a trailing slash, which is required for correct behavior
+/// with `Url::join()`. Without a trailing slash, `join()` replaces the last
+/// path segment instead of appending to it.
+fn ensure_trailing_slash(url: &mut url::Url) {
+    let path = url.path();
+    if !path.ends_with('/') {
+        url.set_path(&format!("{}/", path));
+    }
+}
+
 /// Load the Builder configuration from the environment and store it in the
 /// global static CONFIG variable. Returns a reference to the configuration.
 ///
@@ -51,7 +61,13 @@ pub static CONFIG: OnceLock<config::BuilderConfig> = OnceLock::new();
 /// Panics if the configuration cannot be loaded from the environment AND no
 /// other configuration has been previously initialized.
 pub fn config_from_env() -> &'static config::BuilderConfig {
-    CONFIG.get_or_init(|| config::BuilderConfig::from_env().expect("Failed to load Builder config"))
+    CONFIG.get_or_init(|| {
+        let mut config =
+            config::BuilderConfig::from_env().expect("Failed to load Builder config");
+        // Sanitize tx_pool_url to ensure it ends with `/` for correct Url::join() behavior
+        ensure_trailing_slash(&mut config.tx_pool_url);
+        config
+    })
 }
 
 /// Get a reference to the global Builder configuration.

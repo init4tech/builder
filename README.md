@@ -93,7 +93,7 @@ Key                           | Required | Description
 `ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain
 `QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint
 `SEQUENCER_KEY`               | No       | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing
-`TX_POOL_URL`                 | Yes      | Transaction pool URL (must end with `/`)
+`TX_POOL_URL`                 | Yes      | Transaction pool URL
 `FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to
 `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for rollup block gas limit
 `MAX_HOST_GAS_COEFFICIENT`    | No       | Optional maximum host gas coefficient, as a percentage, to use when building blocks
