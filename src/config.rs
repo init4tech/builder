@@ -317,11 +317,14 @@ mod tests {
         use url::Url;
 
         #[test]
-        fn url_without_trailing_slash_gets_sanitized() {
+        fn root_url_already_has_trailing_slash() {
+            // Per URL spec, a URL without an explicit path gets the root path "/"
+            // So "http://localhost:9000" is equivalent to "http://localhost:9000/"
             let url: Url = "http://localhost:9000".parse().unwrap();
-            assert!(!url.path().ends_with('/'));
+            assert_eq!(url.path(), "/");
+            assert!(url.path().ends_with('/'));
 
-            // Simulate sanitization
+            // Sanitization is a no-op for root URLs since they already have trailing slash
             let mut sanitized = url.clone();
             if !sanitized.path().ends_with('/') {
                 sanitized.set_path(&format!("{}/", sanitized.path()));
