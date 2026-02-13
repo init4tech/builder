@@ -304,8 +304,6 @@ impl BuilderConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     /// Tests that URL sanitization correctly handles trailing slashes for url.join() behavior.
     ///
     /// The `url.join()` method behaves differently based on trailing slashes:
