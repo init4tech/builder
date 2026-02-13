@@ -57,8 +57,8 @@ Closes ENG-XXXX
 
 ## Pre-Submit Checklist
 
-- [ ] `cargo fmt --check` passes
-- [ ] `cargo clippy` passes without warnings
+- [ ] `make fmt` passes
+- [ ] `make clippy` passes
 - [ ] All CI checks pass
 - [ ] Branch is up to date with main
 
