@@ -1,0 +1,25 @@
+name: Flashbots Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  flashbots-tests:
+    name: Flashbots Integration Tests
+    runs-on:
+      group: init4-runners
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Optional Foundry Install
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      - name: Run flashbots integration tests
+        run: make test-flashbots
