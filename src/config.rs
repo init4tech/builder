@@ -180,6 +180,21 @@ pub struct BuilderConfig {
 }
 
 impl BuilderConfig {
+    /// Sanitizes URL fields to ensure consistent behavior with `url.join()`.
+    ///
+    /// This ensures `tx_pool_url` has a trailing slash so that `url.join("path")`
+    /// appends to the URL path rather than replacing the last segment.
+    /// For example:
+    /// - `http://example.com/api/` + `join("transactions")` = `http://example.com/api/transactions`
+    /// - `http://example.com/api` + `join("transactions")` = `http://example.com/transactions` (wrong!)
+    pub fn sanitize(mut self) -> Self {
+        // Ensure tx_pool_url has a trailing slash for correct url.join() behavior
+        if !self.tx_pool_url.path().ends_with('/') {
+            self.tx_pool_url.set_path(&format!("{}/", self.tx_pool_url.path()));
+        }
+        self
+    }
+
     /// Connect to the Builder signer.
     pub async fn connect_builder_signer(&self) -> eyre::Result<LocalOrAws> {
         static ONCE: tokio::sync::OnceCell<LocalOrAws> = tokio::sync::OnceCell::const_new();
@@ -293,5 +308,109 @@ impl BuilderConfig {
         // Set max host gas to a percentage of the host block gas limit
         ((gas_limit as u128 * (self.max_host_gas_coefficient.unwrap_or(80) as u128)) / 100u128)
             as u64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Tests that URL sanitization correctly handles trailing slashes for url.join() behavior.
+    ///
+    /// The `url.join()` method behaves differently based on trailing slashes:
+    /// - With trailing slash: `http://example.com/api/`.join("path") = `http://example.com/api/path`
+    /// - Without trailing slash: `http://example.com/api`.join("path") = `http://example.com/path`
+    ///
+    /// This test verifies that our sanitization ensures consistent behavior.
+    mod tx_pool_url_sanitization {
+        use url::Url;
+
+        #[test]
+        fn root_url_already_has_trailing_slash() {
+            // Per URL spec, a URL without an explicit path gets the root path "/"
+            // So "http://localhost:9000" is equivalent to "http://localhost:9000/"
+            let url: Url = "http://localhost:9000".parse().unwrap();
+            assert_eq!(url.path(), "/");
+            assert!(url.path().ends_with('/'));
+
+            // Sanitization is a no-op for root URLs since they already have trailing slash
+            let mut sanitized = url.clone();
+            if !sanitized.path().ends_with('/') {
+                sanitized.set_path(&format!("{}/", sanitized.path()));
+            }
+
+            assert!(sanitized.path().ends_with('/'));
+            assert_eq!(sanitized.as_str(), "http://localhost:9000/");
+        }
+
+        #[test]
+        fn url_with_trailing_slash_unchanged() {
+            let url: Url = "http://localhost:9000/".parse().unwrap();
+            assert!(url.path().ends_with('/'));
+
+            // Simulate sanitization - should be unchanged
+            let mut sanitized = url.clone();
+            if !sanitized.path().ends_with('/') {
+                sanitized.set_path(&format!("{}/", sanitized.path()));
+            }
+
+            assert_eq!(sanitized.as_str(), "http://localhost:9000/");
+        }
+
+        #[test]
+        fn url_with_path_without_trailing_slash_gets_sanitized() {
+            let url: Url = "http://localhost:9000/api/v1".parse().unwrap();
+            assert!(!url.path().ends_with('/'));
+
+            // Simulate sanitization
+            let mut sanitized = url.clone();
+            if !sanitized.path().ends_with('/') {
+                sanitized.set_path(&format!("{}/", sanitized.path()));
+            }
+
+            assert!(sanitized.path().ends_with('/'));
+            assert_eq!(sanitized.as_str(), "http://localhost:9000/api/v1/");
+        }
+
+        #[test]
+        fn url_with_path_with_trailing_slash_unchanged() {
+            let url: Url = "http://localhost:9000/api/v1/".parse().unwrap();
+            assert!(url.path().ends_with('/'));
+
+            // Simulate sanitization - should be unchanged
+            let mut sanitized = url.clone();
+            if !sanitized.path().ends_with('/') {
+                sanitized.set_path(&format!("{}/", sanitized.path()));
+            }
+
+            assert_eq!(sanitized.as_str(), "http://localhost:9000/api/v1/");
+        }
+
+        #[test]
+        fn sanitized_url_joins_correctly() {
+            // Without sanitization - WRONG behavior
+            let url_no_slash: Url = "http://localhost:9000/api".parse().unwrap();
+            let joined_wrong = url_no_slash.join("transactions").unwrap();
+            assert_eq!(joined_wrong.as_str(), "http://localhost:9000/transactions");
+
+            // With sanitization - CORRECT behavior
+            let url_with_slash: Url = "http://localhost:9000/api/".parse().unwrap();
+            let joined_correct = url_with_slash.join("transactions").unwrap();
+            assert_eq!(joined_correct.as_str(), "http://localhost:9000/api/transactions");
+        }
+
+        #[test]
+        fn sanitized_root_url_joins_correctly() {
+            // Root URL without trailing slash
+            let url_no_slash: Url = "http://localhost:9000".parse().unwrap();
+
+            // Sanitize it
+            let mut sanitized = url_no_slash.clone();
+            if !sanitized.path().ends_with('/') {
+                sanitized.set_path(&format!("{}/", sanitized.path()));
+            }
+
+            // Now join should work correctly
+            let joined = sanitized.join("transactions").unwrap();
+            assert_eq!(joined.as_str(), "http://localhost:9000/transactions");
+        }
     }
 }
