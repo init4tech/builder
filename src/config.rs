@@ -93,6 +93,17 @@ pub struct BuilderConfig {
     )]
     pub flashbots_endpoint: url::Url,
 
+    /// Optional dedicated Flashbots simulation endpoint. Bundles are always
+    /// simulated via `eth_callBundle` before submission. When set, simulation
+    /// uses this endpoint; otherwise, the default `flashbots_endpoint` is used.
+    #[from_env(
+        var = "FLASHBOTS_SIMULATION_ENDPOINT",
+        desc = "Optional dedicated Flashbots simulation endpoint. When set, bundle simulation uses this endpoint instead of the default FLASHBOTS_ENDPOINT",
+        infallible,
+        optional
+    )]
+    pub flashbots_simulation_endpoint: Option<url::Url>,
+
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
     #[from_env(
@@ -251,6 +262,20 @@ impl BuilderConfig {
         self.connect_builder_signer().await.map(|signer| {
             ProviderBuilder::new().wallet(signer).connect_http(self.flashbots_endpoint.clone())
         })
+    }
+
+    /// Connect to a dedicated Flashbots simulation provider, if configured.
+    ///
+    /// Returns `None` if `FLASHBOTS_SIMULATION_ENDPOINT` is not set. When
+    /// `None`, the caller should fall back to the default Flashbots provider
+    /// for simulation.
+    pub async fn connect_flashbots_simulation(&self) -> Result<Option<FlashbotsProvider>> {
+        match &self.flashbots_simulation_endpoint {
+            Some(endpoint) => self.connect_builder_signer().await.map(|signer| {
+                Some(ProviderBuilder::new().wallet(signer).connect_http(endpoint.clone()))
+            }),
+            None => Ok(None),
+        }
     }
 
     /// Connect to the Zenith instance, using the specified provider.
