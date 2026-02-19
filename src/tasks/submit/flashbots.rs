@@ -186,52 +186,50 @@ impl FlashbotsTask {
 
             tokio::spawn(
                 async move {
-                    let response =
-                        flashbots.send_bundle(bundle).with_auth(signer.clone()).into_future().await;
+                    let resp = match flashbots
+                        .send_bundle(bundle)
+                        .with_auth(signer.clone())
+                        .into_future()
+                        .await
+                    {
+                        Ok(resp) => resp,
+                        Err(err) => {
+                            counter!("signet.builder.flashbots.submission_failures").increment(1);
+                            if Instant::now() > deadline {
+                                counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                                error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
+                            } else {
+                                error!(%err, "MEV bundle submission failed - error returned");
+                            }
+                            return;
+                        }
+                    };
 
                     // Check if we met the submission deadline
-                    let met_deadline = Instant::now() <= deadline;
-
-                    match (response, met_deadline) {
-                        (Ok(resp), true) => {
-                            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                            counter!("signet.builder.flashbots.deadline_met").increment(1);
-                            info!(
-                                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                                "Submitted MEV bundle to Flashbots within deadline"
-                            );
-
-                            match pylon.post_blob_tx(block_tx).await {
-                                Ok(()) => {
-                                    counter!("signet.builder.pylon.sidecars_submitted")
-                                        .increment(1);
-                                    debug!("posted sidecar to pylon");
-                                }
-                                Err(err) => {
-                                    counter!("signet.builder.pylon.submission_failures")
-                                        .increment(1);
-                                    error!(%err, "pylon submission failed");
-                                }
-                            }
-                        }
-                        (Ok(resp), false) => {
-                            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                            counter!("signet.builder.flashbots.deadline_missed").increment(1);
-                            warn!(
-                                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                                "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
-                            );
-                        }
-                        (Err(err), true) => {
-                            counter!("signet.builder.flashbots.submission_failures").increment(1);
-                            error!(%err, "MEV bundle submission failed - error returned");
-                        }
-                        (Err(err), false) => {
-                            counter!("signet.builder.flashbots.submission_failures").increment(1);
-                            counter!("signet.builder.flashbots.deadline_missed").increment(1);
-                            error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
-                        }
+                    counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                    if Instant::now() > deadline {
+                        counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                        warn!(
+                            hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                            "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
+                        );
+                        return;
                     }
+
+                    counter!("signet.builder.flashbots.deadline_met").increment(1);
+                    info!(
+                        hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                        "Submitted MEV bundle to Flashbots within deadline"
+                    );
+
+                    if let Err(err) = pylon.post_blob_tx(block_tx).await {
+                        counter!("signet.builder.pylon.submission_failures").increment(1);
+                        error!(%err, "pylon submission failed");
+                        return;
+                    }
+
+                    counter!("signet.builder.pylon.sidecars_submitted").increment(1);
+                    debug!("posted sidecar to pylon");
                 }
                 .instrument(submit_span.clone()),
             );
