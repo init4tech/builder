@@ -1,15 +1,12 @@
 //! Flashbots Task receives simulated blocks from an upstream channel and
 //! submits them to the Flashbots relay as bundles.
 use crate::{
-    config::{BuilderConfig, FlashbotsProvider, HostProvider, ZenithInstance},
+    config::{BuilderConfig, FlashbotsProvider, HostProvider, PylonClient, ZenithInstance},
     quincey::Quincey,
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
-    consensus::TxEnvelope,
-    eips::Encodable2718,
-    primitives::{Bytes, TxHash},
-    providers::ext::MevApi,
+    consensus::TxEnvelope, eips::Encodable2718, primitives::TxHash, providers::ext::MevApi,
     rpc::types::mev::EthSendBundle,
 };
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
@@ -33,6 +30,8 @@ pub struct FlashbotsTask {
     signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
     outbound: mpsc::UnboundedSender<TxHash>,
+    /// Pylon client for blob sidecar submission.
+    pylon: PylonClient,
 }
 
 impl FlashbotsTask {
@@ -49,8 +48,9 @@ impl FlashbotsTask {
         )?;
 
         let zenith = config.connect_zenith(host_provider);
+        let pylon = config.connect_pylon();
 
-        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound })
+        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound, pylon })
     }
 
     /// Prepares a MEV bundle from a simulation result.
@@ -82,7 +82,7 @@ impl FlashbotsTask {
         let tx_bytes = block_tx.encoded_2718().into();
 
         // Build the bundle body with the block_tx bytes as the last transaction in the bundle.
-        let txs = self.build_bundle_body(sim_result, tx_bytes);
+        let txs = sim_result.build_bundle_body(tx_bytes);
 
         // Create the MEV bundle (valid only in the specific host block)
         Ok(EthSendBundle {
@@ -91,7 +91,6 @@ impl FlashbotsTask {
             ..Default::default()
         })
     }
-
     /// Prepares and signs the submission transaction for the rollup block.
     ///
     /// Creates a `SubmitPrep` instance to build the transaction, then fills
@@ -131,26 +130,6 @@ impl FlashbotsTask {
         }
     }
 
-    /// Constructs the MEV bundle body from host transactions and the submission transaction.
-    ///
-    /// Combines all host transactions from the rollup block with the prepared rollup block
-    /// submission transaction, wrapping each as a non-revertible bundle item.
-    ///
-    /// The rollup block transaction is placed last in the bundle.
-    fn build_bundle_body(
-        &self,
-        sim_result: &SimResult,
-        tx_bytes: alloy::primitives::Bytes,
-    ) -> Vec<Bytes> {
-        sim_result
-            .block
-            .host_transactions()
-            .iter()
-            .map(|tx| tx.encoded_2718().into())
-            .chain(std::iter::once(tx_bytes))
-            .collect()
-    }
-
     /// Main task loop that processes simulation results and submits bundles to Flashbots.
     ///
     /// Receives `SimResult`s from the inbound channel, prepares MEV bundles, and submits
@@ -180,7 +159,6 @@ impl FlashbotsTask {
 
             // Prepare a MEV bundle with the configured call type from the sim result
             let result = self.prepare(&sim_result).instrument(span.clone()).await;
-
             let bundle = match result {
                 Ok(bundle) => bundle,
                 Err(error) => {
@@ -190,6 +168,10 @@ impl FlashbotsTask {
                 }
             };
 
+            // Due to the way the bundle is built, the block transaction is the last transaction in the bundle, and will always exist.
+            // We'll use this to forward the tx to pylon, which will preload the sidecar.
+            let block_tx = bundle.txs.last().unwrap().clone();
+
             // Make a child span to cover submission, or use the current span
             // if debug is not enabled.
             let _guard = span.enter();
@@ -197,45 +179,57 @@ impl FlashbotsTask {
 
             // Send the bundle to Flashbots, instrumenting the send future so
             // all events inside the async send are attributed to the submit
-            // span.
+            // span. If Flashbots accepts it, submit the envelope to Pylon.
             let flashbots = self.flashbots().to_owned();
             let signer = self.signer.clone();
+            let pylon = self.pylon.clone();
 
             tokio::spawn(
                 async move {
-                    let response =
-                        flashbots.send_bundle(bundle).with_auth(signer.clone()).into_future().await;
+                    let resp = match flashbots
+                        .send_bundle(bundle)
+                        .with_auth(signer.clone())
+                        .into_future()
+                        .await
+                    {
+                        Ok(resp) => resp,
+                        Err(err) => {
+                            counter!("signet.builder.flashbots.submission_failures").increment(1);
+                            if Instant::now() > deadline {
+                                counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                                error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
+                            } else {
+                                error!(%err, "MEV bundle submission failed - error returned");
+                            }
+                            return;
+                        }
+                    };
 
                     // Check if we met the submission deadline
-                    let met_deadline = Instant::now() <= deadline;
-
-                    match (response, met_deadline) {
-                        (Ok(resp), true) => {
-                            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                            counter!("signet.builder.flashbots.deadline_met").increment(1);
-                            info!(
-                                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                                "Submitted MEV bundle to Flashbots within deadline"
-                            );
-                        }
-                        (Ok(resp), false) => {
-                            counter!("signet.builder.flashbots.bundles_submitted").increment(1);
-                            counter!("signet.builder.flashbots.deadline_missed").increment(1);
-                            warn!(
-                                hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
-                                "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
-                            );
-                        }
-                        (Err(err), true) => {
-                            counter!("signet.builder.flashbots.submission_failures").increment(1);
-                            error!(%err, "MEV bundle submission failed - error returned");
-                        }
-                        (Err(err), false) => {
-                            counter!("signet.builder.flashbots.submission_failures").increment(1);
-                            counter!("signet.builder.flashbots.deadline_missed").increment(1);
-                            error!(%err, "MEV bundle submission failed AFTER deadline - error returned");
-                        }
+                    counter!("signet.builder.flashbots.bundles_submitted").increment(1);
+                    if Instant::now() > deadline {
+                        counter!("signet.builder.flashbots.deadline_missed").increment(1);
+                        warn!(
+                            ?resp,
+                            "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
+                        );
+                        return;
                     }
+
+                    counter!("signet.builder.flashbots.deadline_met").increment(1);
+                    info!(
+                        hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                        "Submitted MEV bundle to Flashbots within deadline"
+                    );
+
+                    if let Err(err) = pylon.post_blob_tx(block_tx).await {
+                        counter!("signet.builder.pylon.submission_failures").increment(1);
+                        error!(%err, "pylon submission failed");
+                        return;
+                    }
+
+                    counter!("signet.builder.pylon.sidecars_submitted").increment(1);
+                    debug!("posted sidecar to pylon");
                 }
                 .instrument(submit_span.clone()),
             );

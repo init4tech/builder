@@ -1,7 +1,7 @@
 use crate::tasks::env::SimEnv;
 use alloy::consensus::{TxEnvelope, transaction::SignerRecoverable};
 use signet_sim::SimCache;
-use signet_tx_cache::types::TxCacheBundle;
+use signet_tx_cache::types::CachedBundle;
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
@@ -18,7 +18,7 @@ pub struct CacheTask {
     /// The channel to receive the block environment.
     envs: watch::Receiver<Option<SimEnv>>,
     /// The channel to receive the transaction bundles.
-    bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
+    bundles: mpsc::UnboundedReceiver<CachedBundle>,
     /// The channel to receive the transactions.
     txns: mpsc::UnboundedReceiver<TxEnvelope>,
 }
@@ -27,7 +27,7 @@ impl CacheTask {
     /// Create a new cache task with the given cache and channels.
     pub const fn new(
         env: watch::Receiver<Option<SimEnv>>,
-        bundles: mpsc::UnboundedReceiver<TxCacheBundle>,
+        bundles: mpsc::UnboundedReceiver<CachedBundle>,
         txns: mpsc::UnboundedReceiver<TxEnvelope>,
     ) -> Self {
         Self { envs: env, bundles, txns }

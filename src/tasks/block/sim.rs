@@ -5,7 +5,7 @@ use crate::{
     config::{BuilderConfig, HostProvider, RuProvider},
     tasks::env::SimEnv,
 };
-use alloy::consensus::Header;
+use alloy::{consensus::Header, eips::Encodable2718, primitives::Bytes};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     utils::calc::SlotCalculator,
@@ -61,6 +61,21 @@ impl SimResult {
     /// Clones the span for use in other tasks.
     pub fn clone_span(&self) -> Span {
         self.sim_env.clone_span()
+    }
+
+    /// Constructs the MEV bundle body from host transactions and the submission transaction.
+    ///
+    /// Combines all host transactions from the rollup block with the prepared rollup block
+    /// submission transaction, wrapping each as a non-revertible bundle item.
+    ///
+    /// The rollup block transaction is always included and placed last in the bundle.
+    pub fn build_bundle_body(&self, block_tx_bytes: Bytes) -> Vec<Bytes> {
+        self.block
+            .host_transactions()
+            .iter()
+            .map(|tx| tx.encoded_2718().into())
+            .chain(std::iter::once(block_tx_bytes))
+            .collect()
     }
 }
 
@@ -132,7 +147,7 @@ impl SimulatorTask {
         let block_build = BlockBuild::new(
             rollup_env,
             host_env,
-            finish_by,
+            finish_by.into(),
             concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,
