@@ -210,7 +210,7 @@ impl FlashbotsTask {
                     if Instant::now() > deadline {
                         counter!("signet.builder.flashbots.deadline_missed").increment(1);
                         warn!(
-                            hash = resp.as_ref().map(|r| r.bundle_hash.to_string()),
+                            ?resp,
                             "Submitted MEV bundle to Flashbots AFTER deadline - submission may be too late"
                         );
                         return;
