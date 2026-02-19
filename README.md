@@ -95,6 +95,7 @@ Key                           | Required | Description
 `SEQUENCER_KEY`               | No       | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing
 `TX_POOL_URL`                 | Yes      | Transaction pool URL
 `FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to
+`FLASHBOTS_SIMULATION_ENDPOINT` | No    | Optional dedicated Flashbots simulation endpoint. Bundles are always simulated via `eth_callBundle` before submission. When set, simulation uses this endpoint; otherwise, the default `FLASHBOTS_ENDPOINT` is used. Simulation failures are logged but do not block submission
 `ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for rollup block gas limit
 `MAX_HOST_GAS_COEFFICIENT`    | No       | Optional maximum host gas coefficient, as a percentage, to use when building blocks
 `BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signin

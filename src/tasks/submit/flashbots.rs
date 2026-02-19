@@ -10,7 +10,7 @@ use alloy::{
     eips::Encodable2718,
     primitives::{Bytes, TxHash},
     providers::ext::MevApi,
-    rpc::types::mev::EthSendBundle,
+    rpc::types::mev::{EthCallBundle, EthSendBundle},
 };
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use std::time::{Duration, Instant};
@@ -29,6 +29,10 @@ pub struct FlashbotsTask {
     zenith: ZenithInstance<HostProvider>,
     /// Provides access to a Flashbots-compatible bundle API.
     flashbots: FlashbotsProvider,
+    /// Optional dedicated Flashbots simulation provider. When `Some`, bundle
+    /// simulation uses this provider; when `None`, the default `flashbots`
+    /// provider is used instead.
+    flashbots_simulation: Option<FlashbotsProvider>,
     /// The key used to sign requests to the Flashbots relay.
     signer: LocalOrAws,
     /// Channel for sending hashes of outbound transactions.
@@ -41,16 +45,29 @@ impl FlashbotsTask {
     pub async fn new(outbound: mpsc::UnboundedSender<TxHash>) -> eyre::Result<FlashbotsTask> {
         let config = crate::config();
 
-        let (quincey, host_provider, flashbots, builder_key) = tokio::try_join!(
+        let (quincey, host_provider, flashbots, flashbots_simulation, builder_key) = tokio::try_join!(
             config.connect_quincey(),
             config.connect_host_provider(),
             config.connect_flashbots(),
+            config.connect_flashbots_simulation(),
             config.connect_builder_signer()
         )?;
 
         let zenith = config.connect_zenith(host_provider);
 
-        Ok(Self { config, quincey, zenith, flashbots, signer: builder_key, outbound })
+        if flashbots_simulation.is_some() {
+            debug!("flashbots simulation endpoint configured");
+        }
+
+        Ok(Self {
+            config,
+            quincey,
+            zenith,
+            flashbots,
+            flashbots_simulation,
+            signer: builder_key,
+            outbound,
+        })
     }
 
     /// Prepares a MEV bundle from a simulation result.
@@ -151,6 +168,55 @@ impl FlashbotsTask {
             .collect()
     }
 
+    /// Simulates a bundle before submission using `eth_callBundle`.
+    ///
+    /// If `FLASHBOTS_SIMULATION_ENDPOINT` is configured, the bundle is simulated
+    /// against that endpoint. Otherwise, the default Flashbots provider is used.
+    ///
+    /// # Arguments
+    ///
+    /// * `bundle` - The MEV bundle to simulate
+    #[instrument(skip_all, level = "debug")]
+    async fn simulate_bundle(&self, bundle: &EthSendBundle) -> eyre::Result<()> {
+        counter!("signet.builder.flashbots.simulation_attempts").increment(1);
+
+        // Use the dedicated simulation provider if configured, otherwise fall
+        // back to the default flashbots provider.
+        let provider = self.flashbots_simulation.as_ref().unwrap_or(&self.flashbots);
+
+        // Convert EthSendBundle to EthCallBundle for simulation
+        let call_bundle = EthCallBundle {
+            txs: bundle.txs.clone(),
+            block_number: bundle.block_number,
+            state_block_number: bundle.block_number.saturating_sub(1).into(),
+            timestamp: bundle.min_timestamp,
+            ..Default::default()
+        };
+
+        let using_dedicated = self.flashbots_simulation.is_some();
+        debug!(
+            block_number = %bundle.block_number,
+            using_dedicated_endpoint = using_dedicated,
+            "simulating bundle"
+        );
+
+        let response =
+            provider.call_bundle(call_bundle).with_auth(self.signer.clone()).into_future().await?;
+
+        if let Some(result) = response {
+            debug!(
+                bundle_gas_price = %result.bundle_gas_price,
+                total_gas_used = %result.total_gas_used,
+                coinbase_diff = %result.coinbase_diff,
+                "bundle simulation succeeded"
+            );
+        } else {
+            warn!("bundle simulation returned no result");
+        }
+
+        Ok(())
+    }
+
     /// Main task loop that processes simulation results and submits bundles to Flashbots.
     ///
     /// Receives `SimResult`s from the inbound channel, prepares MEV bundles, and submits
@@ -189,6 +255,19 @@ impl FlashbotsTask {
                     continue;
                 }
             };
+
+            // Simulate the bundle before submission. Simulation failures are
+            // logged but do not block submission.
+            match self.simulate_bundle(&bundle).instrument(span.clone()).await {
+                Ok(()) => {
+                    counter!("signet.builder.flashbots.simulation_success").increment(1);
+                    span_debug!(span, "bundle simulation succeeded, proceeding to submission");
+                }
+                Err(error) => {
+                    counter!("signet.builder.flashbots.simulation_failures").increment(1);
+                    span_debug!(span, %error, "bundle simulation failed, continuing with submission");
+                }
+            }
 
             // Make a child span to cover submission, or use the current span
             // if debug is not enabled.
