@@ -147,7 +147,7 @@ impl SimulatorTask {
         let block_build = BlockBuild::new(
             rollup_env,
             host_env,
-            finish_by,
+            finish_by.into(),
             concurrency_limit,
             sim_items,
             self.config.rollup_block_gas_limit,

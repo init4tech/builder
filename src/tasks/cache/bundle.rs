@@ -1,7 +1,7 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
 use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
-use signet_tx_cache::{TxCacheError, types::TxCacheBundle};
+use signet_tx_cache::{TxCacheError, types::CachedBundle};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
@@ -51,11 +51,12 @@ impl BundlePoller {
     }
 
     /// Checks the bundle cache for new bundles.
-    pub async fn check_bundle_cache(&self) -> Result<Vec<TxCacheBundle>, BuilderTxCacheError> {
+    pub async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BuilderTxCacheError> {
         let res = self.tx_cache.get_bundles(None).await;
 
         match res {
-            Ok(bundles) => {
+            Ok(resp) => {
+                let bundles = resp.into_inner();
                 trace!(count = ?bundles.bundles.len(), "found bundles");
                 Ok(bundles.bundles)
             }
@@ -70,7 +71,7 @@ impl BundlePoller {
         }
     }
 
-    async fn task_future(self, outbound: UnboundedSender<TxCacheBundle>) {
+    async fn task_future(self, outbound: UnboundedSender<CachedBundle>) {
         loop {
             let span = trace_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
 
@@ -100,7 +101,7 @@ impl BundlePoller {
     }
 
     /// Spawns a task that sends bundles it finds to its channel sender.
-    pub fn spawn(self) -> (UnboundedReceiver<TxCacheBundle>, JoinHandle<()>) {
+    pub fn spawn(self) -> (UnboundedReceiver<CachedBundle>, JoinHandle<()>) {
         let (outbound, inbound) = unbounded_channel();
 
         let jh = tokio::spawn(self.task_future(outbound));
