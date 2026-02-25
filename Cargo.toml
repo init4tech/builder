@@ -47,16 +47,17 @@ alloy = { version = "1.4.0", features = [
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.11.0" }
 
 axum = "0.7.5"
+backon = { version = "1.6.0", features = ["tokio-sleep"] }
 eyre = "0.6.12"
+futures-util = "0.3.31"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12.22", features = ["blocking", "json"] }
 serde = { version = "1.0.197", features = ["derive"] }
-tracing = "0.1.41"
+thiserror = "2.0.17"
 tokio = { version = "1.36.0", features = ["full", "macros", "rt-multi-thread"] }
 tokio-stream = "0.1.17"
+tracing = "0.1.41"
 url = "2.5.4"
-thiserror = "2.0.17"
-futures-util = "0.3.31"
 
 [dev-dependencies]
 alloy-hardforks = "0.4.0"
