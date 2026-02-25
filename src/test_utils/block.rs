@@ -7,7 +7,8 @@ use super::{
     env::{TestHostEnv, TestRollupEnv, TestSimEnvBuilder},
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 use trevm::revm::inspector::NoOpInspector;
 
 /// Test block builder type using in-memory databases.
