@@ -10,6 +10,8 @@ use alloy::{
     primitives::{B256, U256},
     providers::{Provider, network::Network},
 };
+use backon::{ExponentialBuilder, Retryable};
+use core::time::Duration;
 use init4_bin_base::deps::{
     opentelemetry::trace::TraceContextExt, tracing_opentelemetry::OpenTelemetrySpanExt,
 };
@@ -305,10 +307,24 @@ impl EnvTask {
             // Ensure that we record the OpenTelemetry trace ID in the span.
             span.record("trace_id", span.context().span().span_context().trace_id().to_string());
 
+            let get_host_block_header = || {
+                let provider = self.host_provider.clone();
+                async move { provider.get_header_by_number(host_block_number.into()).await }
+            };
+            let backoff = ExponentialBuilder::default()
+                .with_factor(2.0)
+                .with_min_delay(Duration::from_millis(50))
+                .with_max_times(4);
             let (host_block_res, quincey_res) = tokio::join!(
-                self.host_provider
-                    .get_block_by_number(host_block_number.into())
-                    .into_future()
+                get_host_block_header
+                    .retry(backoff)
+                    .notify(|error, duration| {
+                        tracing::warn!(
+                            ?error,
+                            retry_in_ms = duration.as_millis(),
+                            "host block fetch failed, retrying"
+                        );
+                    })
                     .instrument(
                         debug_span!(parent: &span, "EnvTask::fetch_host_block").or_current()
                     ),
@@ -346,8 +362,7 @@ impl EnvTask {
                 host_block_opt,
                 span,
                 warn!("previous host block not found - skipping block construction")
-            )
-            .header;
+            );
 
             span.record("confirmed.host.hash", host_header.hash.to_string());
 
