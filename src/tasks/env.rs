@@ -12,6 +12,7 @@ use alloy::{
 };
 use backon::{ExponentialBuilder, Retryable};
 use core::time::Duration;
+use eyre::{WrapErr, eyre};
 use init4_bin_base::deps::{
     opentelemetry::trace::TraceContextExt, tracing_opentelemetry::OpenTelemetrySpanExt,
 };
@@ -309,7 +310,13 @@ impl EnvTask {
 
             let get_host_block_header = || {
                 let provider = self.host_provider.clone();
-                async move { provider.get_header_by_number(host_block_number.into()).await }
+                async move {
+                    provider
+                        .get_header_by_number(host_block_number.into())
+                        .await
+                        .wrap_err("failed to fetch host block header")?
+                        .ok_or_else(|| eyre!("host block not yet available"))
+                }
             };
             let backoff = ExponentialBuilder::default()
                 .with_factor(2.0)
@@ -320,7 +327,7 @@ impl EnvTask {
                     .retry(backoff)
                     .notify(|error, duration| {
                         tracing::warn!(
-                            ?error,
+                            error = format!("{error:#}"),
                             retry_in_ms = duration.as_millis(),
                             "host block fetch failed, retrying"
                         );
@@ -352,16 +359,10 @@ impl EnvTask {
                 Ok(_) => {}
             }
 
-            let host_block_opt = res_unwrap_or_continue!(
+            let host_header = res_unwrap_or_continue!(
                 host_block_res,
                 span,
-                error!("error fetching previous host block - skipping block construction")
-            );
-
-            let host_header = opt_unwrap_or_continue!(
-                host_block_opt,
-                span,
-                warn!("previous host block not found - skipping block construction")
+                warn!("failed to fetch previous host block - skipping block construction")
             );
 
             span.record("confirmed.host.hash", host_header.hash.to_string());
