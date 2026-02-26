@@ -52,16 +52,3 @@ macro_rules! res_unwrap_or_continue {
         }
     };
 }
-
-/// Helper macro to unwrap an option or continue the loop with a tracing event.
-macro_rules! opt_unwrap_or_continue {
-    ($option:expr, $span:expr, $level:ident!($($arg:tt)*)) => {
-        match $option {
-            Some(value) => value,
-            None => {
-                span_scoped!($span, $level!($($arg)*));
-                continue;
-            }
-        }
-    };
-}
