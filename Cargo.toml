@@ -50,6 +50,7 @@ axum = "0.7.5"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 eyre = "0.6.12"
 futures-util = "0.3.31"
+git-version = "0.3.9"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12.22", features = ["blocking", "json"] }
 serde = { version = "1.0.197", features = ["derive"] }

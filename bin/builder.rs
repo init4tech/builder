@@ -5,8 +5,13 @@ use builder::{
         submit::FlashbotsTask,
     },
 };
+use git_version::git_version;
 use init4_bin_base::deps::tracing::{info, info_span};
 use tokio::select;
+
+const GIT_COMMIT: &str =
+    git_version!(args = ["--always", "--match=", "--abbrev=7"], fallback = "unknown");
+const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Note: Must be set to `multi_thread` to support async tasks.
 // See: https://docs.rs/tokio/latest/tokio/attr.main.html
@@ -14,6 +19,8 @@ use tokio::select;
 async fn main() -> eyre::Result<()> {
     let _guard = init4_bin_base::init4();
     let init_span_guard = info_span!("builder initialization").entered();
+
+    info!(pkg_version = PKG_VERSION, git_commit = GIT_COMMIT, "starting builder");
 
     builder::config_from_env();
 
