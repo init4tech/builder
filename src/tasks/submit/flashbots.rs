@@ -224,7 +224,7 @@ impl FlashbotsTask {
 
                     if let Err(err) = pylon.post_blob_tx(block_tx).await {
                         counter!("signet.builder.pylon.submission_failures").increment(1);
-                        error!(%err, "pylon submission failed");
+                        warn!(%err, "pylon submission failed");
                         return;
                     }
 
