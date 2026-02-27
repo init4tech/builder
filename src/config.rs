@@ -266,7 +266,7 @@ impl BuilderConfig {
     }
 
     /// Get an oauth2 token for the builder, starting the authenticator if it
-    // is not already running.
+    /// is not already running.
     pub fn oauth_token(&self) -> SharedToken {
         static ONCE: std::sync::OnceLock<SharedToken> = std::sync::OnceLock::new();
 

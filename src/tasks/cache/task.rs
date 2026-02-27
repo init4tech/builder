@@ -6,7 +6,7 @@ use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 /// Cache task for the block builder.
 ///
@@ -34,6 +34,8 @@ impl CacheTask {
     }
 
     async fn task_future(mut self, cache: SimCache) {
+        let mut skipped_bundle_count: u64 = 0;
+
         loop {
             let mut basefee = 0;
             tokio::select! {
@@ -47,6 +49,11 @@ impl CacheTask {
                     if let Some(env) = self.envs.borrow_and_update().as_ref() {
                         let _guard = env.span().enter();
                         let sim_env = env.rollup_env();
+
+                        if skipped_bundle_count > 0 {
+                            debug!(skipped_bundle_count, "skipped stale bundles for previous block");
+                            skipped_bundle_count = 0;
+                        }
 
                         basefee = sim_env.basefee;
                         info!(
@@ -68,7 +75,13 @@ impl CacheTask {
 
                     // Don't insert bundles for past blocks
                     if env_block > bundle_block {
-                        debug!(env.block = env_block, bundle.block = bundle_block, "skipping bundle insert");
+                        trace!(
+                            env.block = env_block,
+                            bundle.block = bundle_block,
+                            %bundle.id,
+                            "skipping bundle insert"
+                        );
+                        skipped_bundle_count += 1;
                         continue;
                     }
 
