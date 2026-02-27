@@ -17,6 +17,14 @@ make clippy       # Lint with warnings denied
 
 Always lint before committing. The Makefile provides shortcuts (`make fmt`, `make clippy`, `make test`)
 
+### Running Individual Tests
+
+```bash
+cargo test test_name                    # Run specific test by name
+cargo test --test test_file_name        # Run all tests in a specific test file
+cargo test -- --ignored                 # Run ignored integration tests (require network)
+```
+
 ## Architecture
 
 Five actor tasks communicate via tokio channels:
@@ -123,7 +131,26 @@ src/
 ### GitHub
 
 - Fresh branches off `main` for PRs. Descriptive branch names.
-- AI-authored GitHub comments must include `**[Claude Code]**` header.
+- AI-authored GitHub comments must include `**[Claude Code]**` header. Minimum: 1.85, Edition: 2024
+
+## Testing
+
+### Integration Tests
+
+Most tests in `tests/` are marked `#[ignore]` and require network access (real RPC endpoints or Anvil).
+
+### Simulation Harness (Offline Tests)
+
+`src/test_utils/` provides a testing harness for offline simulation testing:
+
+- `TestDbBuilder` - Create in-memory EVM state
+- `TestSimEnvBuilder` - Create `RollupEnv`/`HostEnv` without RPC
+- `TestBlockBuildBuilder` - Build blocks with `BlockBuild`
+- `basic_scenario()`, `gas_limit_scenario()` - Pre-configured test scenarios
+
+## Workflow
+
+After completing a set of changes, always run `make fmt` and `make clippy` and fix any issues before committing.
 
 ## Local Development
 
