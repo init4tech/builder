@@ -35,7 +35,8 @@ pub mod utils;
 pub mod test_utils;
 
 use init4_bin_base::utils::from_env::FromEnv;
-// Anonymous import suppresses warnings about unused imports.
+// Anonymous imports suppress warnings about unused crate dependencies.
+use git_version as _;
 use openssl as _;
 use signet_constants::SignetSystemConstants;
 use std::sync::OnceLock;
