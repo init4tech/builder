@@ -6,17 +6,20 @@ use alloy::{
     rpc::client::BuiltInConnectionString,
     signers::{SignerSync, local::PrivateKeySigner},
 };
+use core::str::FromStr;
 use eyre::Result;
 use init4_bin_base::{
     deps::tracing_subscriber::{
         EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
     },
     perms::OAuthConfig,
-    utils::{calc::SlotCalculator, provider::ProviderConfig},
+    utils::{
+        calc::SlotCalculator, metrics::MetricsConfig, provider::ProviderConfig,
+        tracing::TracingConfig,
+    },
 };
 use signet_constants::SignetSystemConstants;
 use std::env;
-use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// Set up a block builder with test values
@@ -53,11 +56,13 @@ pub fn setup_test_config() -> &'static BuilderConfig {
                 1740681556, // pecorino start timestamp as sane default
                 0, 1,
             ),
-            block_query_cutoff_buffer: 3000,
-            submit_deadline_buffer: 500,
-            max_host_gas_coefficient: Some(80),
+            block_query_cutoff_buffer: Default::default(),
+            submit_deadline_buffer: Default::default(),
+            max_host_gas_coefficient: Default::default(),
             constants: SignetSystemConstants::parmigiana(),
             pylon_url: "http://localhost:8081".parse().unwrap(),
+            tracing: TracingConfig::default(),
+            metrics: MetricsConfig::default(),
         }
     })
 }
