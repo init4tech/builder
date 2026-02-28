@@ -3,7 +3,7 @@ use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
     providers::{
-        self, Identity, ProviderBuilder, RootProvider,
+        Identity, ProviderBuilder, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
             SimpleNonceManager, WalletFiller,
@@ -15,11 +15,14 @@ use init4_bin_base::{
     perms::{Authenticator, OAuthConfig, SharedToken, pylon},
     utils::{
         calc::SlotCalculator,
-        from_env::FromEnv,
+        from_env::{EnvItemInfo, FromEnv, OptionalU8WithDefault, OptionalU64WithDefault},
+        metrics::MetricsConfig,
         provider::{ProviderConfig, PubSubConfig},
         signer::LocalOrAws,
+        tracing::TracingConfig,
     },
 };
+use itertools::Itertools;
 use signet_constants::SignetSystemConstants;
 use signet_zenith::Zenith;
 use std::borrow::Cow;
@@ -58,7 +61,7 @@ pub type FlashbotsProvider = FillProvider<
         >,
         WalletFiller<EthereumWallet>,
     >,
-    providers::RootProvider,
+    RootProvider,
 >;
 
 /// The default concurrency limit for the builder if the system call
@@ -145,7 +148,8 @@ pub struct BuilderConfig {
     /// The max number of simultaneous block simulations to run.
     #[from_env(
         var = "CONCURRENCY_LIMIT",
-        desc = "The max number of simultaneous block simulations to run"
+        desc = "The max number of simultaneous block simulations to run [default: std::thread::available_parallelism]",
+        optional
     )]
     pub concurrency_limit: Option<usize>,
 
@@ -153,27 +157,27 @@ pub struct BuilderConfig {
     /// Defaults to 80% (80) if not set.
     #[from_env(
         var = "MAX_HOST_GAS_COEFFICIENT",
-        desc = "Optional maximum host gas coefficient, as a percentage, to use when building blocks",
-        default = 80
+        desc = "Optional maximum host gas coefficient, as a percentage, to use when building blocks [default: 80]",
+        optional
     )]
-    pub max_host_gas_coefficient: Option<u8>,
+    pub max_host_gas_coefficient: OptionalU8WithDefault<80>,
 
     /// Number of milliseconds before the end of the slot to stop querying for new blocks and start the block signing and submission process.
     #[from_env(
         var = "BLOCK_QUERY_CUTOFF_BUFFER",
-        desc = "Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process. Quincey will stop accepting signature requests 2000ms before the end of the slot, so this buffer should be no less than 2000ms to match.",
-        default = 3000
+        desc = "Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process. Quincey will stop accepting signature requests 2000ms before the end of the slot, so this buffer should be no less than 2000ms to match. [default: 3000]",
+        optional
     )]
-    pub block_query_cutoff_buffer: u64,
+    pub block_query_cutoff_buffer: OptionalU64WithDefault<3000>,
 
     /// Number of milliseconds before the end of the slot by which bundle submission to Flashbots must complete.
     /// If submission completes after this deadline, a warning is logged.
     #[from_env(
         var = "SUBMIT_DEADLINE_BUFFER",
-        desc = "Number of milliseconds before the end of the slot by which bundle submission must complete. Submissions that miss this deadline will be logged as warnings.",
-        default = 500
+        desc = "Number of milliseconds before the end of the slot by which bundle submission must complete. Submissions that miss this deadline will be logged as warnings. [default: 500]",
+        optional
     )]
-    pub submit_deadline_buffer: u64,
+    pub submit_deadline_buffer: OptionalU64WithDefault<500>,
 
     /// The slot calculator for the builder.
     pub slot_calculator: SlotCalculator,
@@ -184,6 +188,12 @@ pub struct BuilderConfig {
     /// URL for the Pylon blob server API.
     #[from_env(var = "PYLON_URL", desc = "URL for the Pylon blob server API")]
     pub pylon_url: url::Url,
+
+    /// Tracing and OTEL configuration.
+    pub tracing: TracingConfig,
+
+    /// Metrics configuration.
+    pub metrics: MetricsConfig,
 }
 
 impl BuilderConfig {
@@ -311,16 +321,40 @@ impl BuilderConfig {
     }
 
     /// Returns the maximum host gas to use for block building based on the configured max host gas coefficient.
-    pub fn max_host_gas(&self, gas_limit: u64) -> u64 {
+    pub const fn max_host_gas(&self, gas_limit: u64) -> u64 {
         // Set max host gas to a percentage of the host block gas limit
-        ((gas_limit as u128 * (self.max_host_gas_coefficient.unwrap_or(80) as u128)) / 100u128)
-            as u64
+        ((gas_limit as u128 * self.max_host_gas_coefficient.into_inner() as u128) / 100u128) as u64
     }
 
     /// Connect to the Pylon blob server.
     pub fn connect_pylon(&self) -> PylonClient {
         PylonClient::new(self.pylon_url.clone(), self.oauth_token())
     }
+}
+
+/// Get a list of the env vars used to configure the app.
+pub fn env_var_info() -> String {
+    // We need to remove the `SlotCalculator` env vars from the list. `SignetSystemConstants`
+    // already requires `CHAIN_NAME`, so we don't want to include `CHAIN_NAME` twice.  That also
+    // means the other `SlotCalculator` env vars are ignored since `CHAIN_NAME` must be set.
+    let is_not_from_slot_calc = |env_item: &&EnvItemInfo| match env_item.var {
+        "CHAIN_NAME" if env_item.optional => false,
+        "START_TIMESTAMP" | "SLOT_OFFSET" | "SLOT_DURATION" => false,
+        _ => true,
+    };
+    let inventory_iter = BuilderConfig::inventory().into_iter().filter(is_not_from_slot_calc);
+    let max_width = inventory_iter.clone().map(|env_item| env_item.var.len()).max().unwrap_or(0);
+    inventory_iter
+        .map(|env_item| {
+            format!(
+                "  {:width$}  {}{}",
+                env_item.var,
+                env_item.description,
+                if env_item.optional { " [optional]" } else { "" },
+                width = max_width
+            )
+        })
+        .join("\n")
 }
 
 #[cfg(test)]

@@ -51,6 +51,7 @@ backon = { version = "1.6.0", features = ["tokio-sleep"] }
 eyre = "0.6.12"
 futures-util = "0.3.31"
 git-version = "0.3.9"
+itertools = "0.14.0"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12.22", features = ["blocking", "json"] }
 serde = { version = "1.0.197", features = ["derive"] }
@@ -65,7 +66,7 @@ alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
 
 # comment / uncomment for local dev
-# [patch.crates-io]
+[patch.crates-io]
 # signet-constants = { path = "../signet-sdk/crates/constants" }
 # signet-types = { path = "../signet-sdk/crates/types" }
 # signet-zenith = { path = "../signet-sdk/crates/zenith" }
@@ -75,4 +76,4 @@ alloy-chains = "0.2"
 # signet-journal = { path = "../signet-sdk/crates/journal" }
 # signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
 # signet-bundle = { path = "../signet-sdk/crates/bundle" }
-# init4-bin-base = { path = "../bin-base" }
+init4-bin-base = { git = "https://github.com/init4tech/bin-base", branch = "fraser/eng-1943/various-updates" }
