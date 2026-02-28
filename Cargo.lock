@@ -2427,6 +2427,7 @@ dependencies = [
  "futures-util",
  "git-version",
  "init4-bin-base",
+ "itertools 0.14.0",
  "openssl",
  "reqwest",
  "reth-chainspec",
@@ -4956,8 +4957,7 @@ dependencies = [
 [[package]]
 name = "init4-bin-base"
 version = "0.18.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f21074644ebc7b46d36979eefafa21d3fd518164199edbfb37ade7f9ad438fc"
+source = "git+https://github.com/init4tech/bin-base?branch=fraser%2Feng-1943%2Fvarious-updates#3a3473e7eb69a714eb4dee37599eb1ac45752f35"
 dependencies = [
  "alloy",
  "async-trait",
@@ -4965,6 +4965,7 @@ dependencies = [
  "aws-sdk-kms",
  "axum 0.8.8",
  "chrono",
+ "eyre",
  "futures-util",
  "init4-from-env-derive",
  "metrics",
@@ -4993,8 +4994,7 @@ dependencies = [
 [[package]]
 name = "init4-from-env-derive"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b9c78527fcfeaecc9805e5736a7592a26ecad3b7845eb273c8c1710de0dbb0c"
+source = "git+https://github.com/init4tech/bin-base?branch=fraser%2Feng-1943%2Fvarious-updates#3a3473e7eb69a714eb4dee37599eb1ac45752f35"
 dependencies = [
  "proc-macro2",
  "quote",
