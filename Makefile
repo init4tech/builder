@@ -1,12 +1,13 @@
 # Usage:
-#   make            # build (debug)
-#   make run        # cargo run (debug)
-#   make release    # optimized build
-#   make test       # run unit + integration tests
-#   make fmt        # check & auto‑format
-#   make clippy     # full‑feature lint, deny warnings
-#   make doc        # build docs
-#   make clean      # remove target dir
+#   make                 # build (debug)
+#   make run             # cargo run (debug)
+#   make release         # optimized build
+#   make test            # run unit + integration tests
+#   make test-flashbots  # run flashbots integration tests (ignored tests)
+#   make fmt             # check & auto‑format
+#   make clippy          # full‑feature lint, deny warnings
+#   make doc             # build docs
+#   make clean           # remove target dir
 # ----------------------------------------------------
 
 CARGO        ?= cargo
@@ -16,7 +17,7 @@ PROFILE      ?= dev             # override with `make PROFILE=release build`
 CLIPPY_FLAGS ?= $(TARGETS) $(FEATURES) --workspace --profile dev -- -D warnings
 FMT_FLAGS    ?= --all
 
-.PHONY: build release run test clean fmt clippy default
+.PHONY: build release run test test-flashbots clean fmt clippy default
 
 default: build
 
@@ -33,6 +34,9 @@ run:
 
 test:
 	$(CARGO) test
+
+test-flashbots:
+	cargo nextest run --run-ignored=only --workspace
 
 clean:
 	$(CARGO) clean
