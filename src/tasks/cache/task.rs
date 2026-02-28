@@ -1,12 +1,13 @@
 use crate::tasks::env::SimEnv;
 use alloy::consensus::{TxEnvelope, transaction::SignerRecoverable};
+use init4_bin_base::deps::metrics::counter;
 use signet_sim::SimCache;
 use signet_tx_cache::types::CachedBundle;
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 /// Cache task for the block builder.
 ///
@@ -34,6 +35,8 @@ impl CacheTask {
     }
 
     async fn task_future(mut self, cache: SimCache) {
+        let mut skipped_bundle_count: u64 = 0;
+
         loop {
             let mut basefee = 0;
             tokio::select! {
@@ -48,6 +51,11 @@ impl CacheTask {
                         let _guard = env.span().enter();
                         let sim_env = env.rollup_env();
 
+                        if skipped_bundle_count > 0 {
+                            debug!(skipped_bundle_count, "skipped stale bundles for previous block");
+                            skipped_bundle_count = 0;
+                        }
+
                         basefee = sim_env.basefee;
                         info!(
                             basefee,
@@ -57,6 +65,7 @@ impl CacheTask {
                         cache.clean(
                             sim_env.number.to(), sim_env.timestamp.to()
                         );
+                        counter!("signet.builder.cache.cache_cleans").increment(1);
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
@@ -68,21 +77,36 @@ impl CacheTask {
 
                     // Don't insert bundles for past blocks
                     if env_block > bundle_block {
-                        debug!(env.block = env_block, bundle.block = bundle_block, "skipping bundle insert");
+                        trace!(
+                            env.block = env_block,
+                            bundle.block = bundle_block,
+                            %bundle.id,
+                            "skipping bundle insert"
+                        );
+                        counter!("signet.builder.cache.bundles_skipped").increment(1);
+                        skipped_bundle_count += 1;
                         continue;
                     }
 
                     let res = cache.add_bundle(bundle.bundle, basefee);
                     // Skip bundles that fail to be added to the cache
                     if let Err(e) = res {
+                        counter!("signet.builder.cache.bundle_add_errors").increment(1);
                         debug!(?e, "Failed to add bundle to cache");
                         continue;
                     }
+                    counter!("signet.builder.cache.bundles_ingested").increment(1);
                 }
                 Some(txn) = self.txns.recv() => {
                     match txn.try_into_recovered() {
-                        Ok(recovered_tx) => cache.add_tx(recovered_tx, basefee),
-                        Err(_) => debug!("Failed to recover transaction signature"),
+                        Ok(recovered_tx) => {
+                            cache.add_tx(recovered_tx, basefee);
+                            counter!("signet.builder.cache.txs_ingested").increment(1);
+                        }
+                        Err(_) => {
+                            counter!("signet.builder.cache.tx_recover_failures").increment(1);
+                            debug!("Failed to recover transaction signature");
+                        }
                     }
                 }
             }

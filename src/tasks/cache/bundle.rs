@@ -1,6 +1,9 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
+use init4_bin_base::{
+    deps::metrics::{counter, histogram},
+    perms::tx_cache::{BuilderTxCache, BuilderTxCacheError},
+};
 use signet_tx_cache::{TxCacheError, types::CachedBundle};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -57,6 +60,8 @@ impl BundlePoller {
         match res {
             Ok(resp) => {
                 let bundles = resp.into_inner();
+                histogram!("signet.builder.cache.bundles_fetched")
+                    .record(bundles.bundles.len() as f64);
                 trace!(count = ?bundles.bundles.len(), "found bundles");
                 Ok(bundles.bundles)
             }
@@ -64,6 +69,7 @@ impl BundlePoller {
                 if matches!(&err, BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot)) {
                     trace!("Not our slot to fetch bundles");
                 } else {
+                    counter!("signet.builder.cache.bundle_poll_errors").increment(1);
                     error!(?err, "Failed to fetch bundles from tx-cache");
                 }
                 Err(err)
@@ -87,6 +93,7 @@ impl BundlePoller {
             // exit the span after the check.
             drop(_guard);
 
+            counter!("signet.builder.cache.bundle_poll_count").increment(1);
             if let Ok(bundles) = self.check_bundle_cache().instrument(span.clone()).await {
                 for bundle in bundles.into_iter() {
                     if let Err(err) = outbound.send(bundle) {

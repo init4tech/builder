@@ -253,7 +253,7 @@ impl SimulatorTask {
             self.slot_calculator().current_point_within_slot_ms().expect("host chain has started");
 
         let slot_duration = self.slot_calculator().slot_duration() * 1000; // convert to milliseconds
-        let query_cutoff_buffer = self.config.block_query_cutoff_buffer;
+        let query_cutoff_buffer = self.config.block_query_cutoff_buffer.into_inner();
 
         // To find the remaining slot time, subtract the timepoint from the slot duration.
         // Then subtract the block query cutoff buffer from the slot duration to account for
