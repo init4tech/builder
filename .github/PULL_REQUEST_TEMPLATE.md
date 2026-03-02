@@ -8,5 +8,7 @@
 
 ## Testing
 
-- [ ] Tests pass locally
+- [ ] `make fmt` passes
+- [ ] `make clippy` passes
+- [ ] `make test` passes
 - [ ] New tests added (if applicable)
