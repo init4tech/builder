@@ -2374,6 +2374,7 @@ dependencies = [
  "reqwest",
  "reth-chainspec",
  "signet-block-processor",
+ "signet-bundle",
  "signet-constants",
  "signet-genesis",
  "signet-sim",

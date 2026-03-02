@@ -115,15 +115,14 @@ impl TestBlockBuildBuilder {
     /// Build the test `BlockBuild` instance.
     /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
-    pub async fn into_block_build(self) -> BuiltBlock {
-        // Keep the async state sources aligned with whichever environment pair we use.
-        let (rollup_env, host_env, ru_source, host_source) = match self.env {
-            TestBlockBuildEnv::Builder(sim_env_builder) => sim_env_builder.build_with_sources(),
-            TestBlockBuildEnv::Built { rollup, host } => {
-                let ru_source = TestStateSource::from_inner_db(rollup.db().clone());
-                let host_source = TestStateSource::from_inner_db(host.db().clone());
-                (rollup, host, ru_source, host_source)
-            }
+    pub fn build(self) -> TestBlockBuild {
+        let builder = self.sim_env_builder.unwrap_or_default();
+        let ru_state_source = TestStateSource::new(builder.rollup_db());
+        let host_state_source = TestStateSource::new(builder.host_db());
+
+        let (rollup_env, host_env) = match (self.rollup_env, self.host_env) {
+            (Some(rollup), Some(host)) => (rollup, host),
+            _ => builder.build(),
         };
 
         // Convert the relative deadline into the absolute instant expected by `BlockBuild`.
@@ -137,8 +136,8 @@ impl TestBlockBuildBuilder {
             self.sim_cache,
             self.max_gas,
             self.max_host_gas,
-            ru_source,
-            host_source,
+            ru_state_source,
+            host_state_source,
         )
         .build()
         .await
