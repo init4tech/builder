@@ -111,15 +111,13 @@ impl TestBlockBuildBuilder {
     /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
     pub fn build(self) -> TestBlockBuild {
-        let sim_env_builder = self.sim_env_builder.unwrap_or_default();
+        let builder = self.sim_env_builder.unwrap_or_default();
+        let ru_state_source = TestStateSource::new(builder.rollup_db());
+        let host_state_source = TestStateSource::new(builder.host_db());
 
-        let (rollup_env, host_env, ru_source, host_source) = match (self.rollup_env, self.host_env)
-        {
-            (Some(rollup), Some(host)) => {
-                let (ru_source, host_source) = sim_env_builder.build_state_sources();
-                (rollup, host, ru_source, host_source)
-            }
-            _ => sim_env_builder.build_with_sources(),
+        let (rollup_env, host_env) = match (self.rollup_env, self.host_env) {
+            (Some(rollup), Some(host)) => (rollup, host),
+            _ => builder.build(),
         };
 
         let finish_by = Instant::now() + self.deadline_duration;
@@ -132,8 +130,8 @@ impl TestBlockBuildBuilder {
             self.sim_cache,
             self.max_gas,
             self.max_host_gas,
-            ru_source,
-            host_source,
+            ru_state_source,
+            host_state_source,
         )
     }
 }
