@@ -66,7 +66,8 @@ async fn test_handle_build() {
         rollup: Environment::new(block_env, ru_header),
         span: tracing::Span::none(),
     };
-    let got = block_builder.handle_build(sim_items, finish_by, &sim_env).await;
+    let sim_rt = tokio::runtime::Runtime::new().unwrap();
+    let got = block_builder.handle_build(sim_items, finish_by, &sim_env, &sim_rt).await;
 
     // Assert on the built block
     assert!(got.is_ok());

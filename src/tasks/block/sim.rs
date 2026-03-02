@@ -14,6 +14,7 @@ use signet_sim::{BlockBuild, BuiltBlock, SimCache};
 use signet_types::constants::SignetSystemConstants;
 use std::time::{Duration, Instant};
 use tokio::{
+    runtime::Runtime,
     sync::{
         mpsc::{self},
         watch,
@@ -138,6 +139,7 @@ impl SimulatorTask {
         sim_items: SimCache,
         finish_by: Instant,
         sim_env: &SimEnv,
+        sim_rt: &Runtime,
     ) -> eyre::Result<BuiltBlock> {
         let concurrency_limit = self.config.concurrency_limit();
 
@@ -154,7 +156,12 @@ impl SimulatorTask {
             self.config.max_host_gas(sim_env.prev_host().gas_limit),
         );
 
-        let built_block = block_build.build().in_current_span().await;
+        // Spawn the CPU-heavy EVM simulation on the dedicated runtime so it
+        // cannot starve the main tokio runtime (healthcheck, cache I/O, etc.).
+        let built_block = sim_rt
+            .spawn(block_build.build().in_current_span())
+            .await
+            .map_err(|e| eyre::eyre!("simulation task panicked: {e}"))?;
         debug!(
             tx_count = built_block.tx_count(),
             block_number = built_block.block_number(),
@@ -209,6 +216,15 @@ impl SimulatorTask {
         cache: SimCache,
         submit_sender: mpsc::UnboundedSender<SimResult>,
     ) {
+        // Build a dedicated runtime for CPU-heavy EVM simulation so that it
+        // cannot starve the main tokio runtime (healthcheck, channel I/O, etc.).
+        let sim_rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(self.config.concurrency_limit())
+            .thread_name("sim-worker")
+            .enable_all()
+            .build()
+            .expect("failed to create simulation runtime");
+
         loop {
             // Wait for the block environment to be set
             if self.envs.changed().await.is_err() {
@@ -227,7 +243,7 @@ impl SimulatorTask {
             let sim_cache = cache.clone();
 
             let Ok(block) = self
-                .handle_build(sim_cache, finish_by, &sim_env)
+                .handle_build(sim_cache, finish_by, &sim_env, &sim_rt)
                 .instrument(span.clone())
                 .await
                 .inspect_err(|err| span_error!(span, %err, "error during block build"))
