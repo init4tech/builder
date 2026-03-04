@@ -1,4 +1,24 @@
 //! Test utilities for testing builder tasks
+//!
+//! This module provides utilities for testing the block builder without
+//! requiring network access or full chain state setup.
+
+mod block;
+mod db;
+mod env;
+mod scenarios;
+mod tx;
+
+// Re-export test harness components
+pub use block::{TestBlockBuild, TestBlockBuildBuilder, quick_build_block};
+pub use db::{TestDb, TestDbBuilder};
+pub use env::{TestHostEnv, TestRollupEnv, TestSimEnvBuilder};
+pub use scenarios::{
+    DEFAULT_BALANCE, DEFAULT_BASEFEE, basic_scenario, custom_funded_scenario, funded_test_db,
+    gas_limit_scenario, priority_ordering_scenario, test_block_env as scenarios_test_block_env,
+};
+pub use tx::{TestAccounts, create_call_tx, create_transfer_tx};
+
 use crate::config::BuilderConfig;
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
@@ -15,7 +35,6 @@ use init4_bin_base::{
     utils::{calc::SlotCalculator, provider::ProviderConfig},
 };
 use signet_constants::SignetSystemConstants;
-use std::env;
 use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
@@ -35,7 +54,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
             flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
             quincey_url: "http://localhost:8080".into(),
             sequencer_key: None,
-            builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+            builder_key: std::env::var("SEPOLIA_ETH_PRIV_KEY")
                 .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
             builder_port: 8080,
             builder_rewards_address: Address::default(),
