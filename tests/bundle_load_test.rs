@@ -107,7 +107,6 @@ async fn test_load_many_bundles() {
     );
 }
 
-
 /// 50k bundles each containing 1 transfer tx. Verify block builds with non-zero count of included txs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_load_50k_bundles() {
