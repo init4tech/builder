@@ -144,6 +144,12 @@ impl SimulatorTask {
         let rollup_env = sim_env.sim_rollup_env(self.constants(), self.ru_provider.clone());
         let host_env = sim_env.sim_host_env(self.constants(), self.host_provider.clone());
 
+        // Create async state sources for preflight validity checks. These use
+        // the provider's async methods directly, avoiding the block_in_place +
+        // Handle::block_on pattern that deadlocks the tokio I/O driver.
+        let ru_async_source = sim_env.rollup.alloy_db(self.ru_provider.clone());
+        let host_async_source = sim_env.host.alloy_db(self.host_provider.clone());
+
         let block_build = BlockBuild::new(
             rollup_env,
             host_env,
@@ -152,6 +158,8 @@ impl SimulatorTask {
             sim_items,
             self.config.rollup_block_gas_limit,
             self.config.max_host_gas(sim_env.prev_host().gas_limit),
+            ru_async_source,
+            host_async_source,
         );
 
         let built_block = block_build.build().in_current_span().await;

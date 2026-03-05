@@ -10993,9 +10993,8 @@ dependencies = [
 
 [[package]]
 name = "signet-bundle"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "203376d9a0a2c5f249310dceb2081e22320890ead436eaea95fafc33096b7bdb"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "serde",
@@ -11009,9 +11008,8 @@ dependencies = [
 
 [[package]]
 name = "signet-constants"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8069f8f5f318ca0fadd506addbb736af7ea7d6e0adb3066c3f45f3aebf5cf262"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "serde",
@@ -11045,9 +11043,8 @@ dependencies = [
 
 [[package]]
 name = "signet-evm"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6eb4df01e6966e222b221585fbc569ae1c64c6d6831a4e2e164d64a73180b0e"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "bitflags 2.11.0",
@@ -11062,9 +11059,8 @@ dependencies = [
 
 [[package]]
 name = "signet-extract"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dc37dff1473a0bfeaee33a2dc4318f7217abab700483887ada36fc721a71e0f"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "signet-types",
@@ -11087,9 +11083,8 @@ dependencies = [
 
 [[package]]
 name = "signet-journal"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a14efbcfe87970e2b05e116b0e4dfa036480831db4245dfcd54cb8e150b95f17"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "futures-util",
@@ -11115,9 +11110,8 @@ dependencies = [
 
 [[package]]
 name = "signet-sim"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f39e1d67083525a96b7408d12689acc5617b4ffbd9b2df53f820898b5c81f1b9"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "lru 0.16.3",
@@ -11134,11 +11128,11 @@ dependencies = [
 
 [[package]]
 name = "signet-tx-cache"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "144b1d656657b89eab1a07b82d1e58c3aaae6c804650897905f97a9e2652d818"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
+ "futures-util",
  "reqwest",
  "serde",
  "signet-bundle",
@@ -11152,9 +11146,8 @@ dependencies = [
 
 [[package]]
 name = "signet-types"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cb69ac9f64a96b8907a18169568fa397e49f234b6139e5cd9c4824b29c7bf90"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "chrono",
@@ -11166,9 +11159,8 @@ dependencies = [
 
 [[package]]
 name = "signet-zenith"
-version = "0.16.0-rc.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "388eea4951d24781d39f9fb21faeae90ae22439c030a87db15afd86979e94963"
+version = "0.16.0-rc.12"
+source = "git+https://github.com/init4tech/signet-sdk.git?branch=fraser%2Feng-1944%2Ffix-hang#4b1d9a7df2d937921326161ca881728f67bbd013"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -12106,8 +12098,7 @@ dependencies = [
 [[package]]
 name = "trevm"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84933b9405f06a23da9ce348855d5b7550a04ad0092bc24cfecc196e843790c1"
+source = "git+https://github.com/init4tech/trevm.git?branch=fraser%2Feng-1944%2Ffix-hang#7c5cd32f20b85bf69ceeaf2d57300be5853a7338"
 dependencies = [
  "alloy",
  "dashmap",
