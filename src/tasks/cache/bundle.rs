@@ -123,7 +123,11 @@ impl BundlePoller {
                 let host_tx = match decode_tx(host_tx_bytes) {
                     Some(tx) => tx,
                     None => {
-                        span_debug!(span, idx, "Failed to decode host transaction, dropping bundle");
+                        span_debug!(
+                            span,
+                            idx,
+                            "Failed to decode host transaction, dropping bundle"
+                        );
                         return;
                     }
                 };
@@ -131,7 +135,11 @@ impl BundlePoller {
                 let sender = match host_tx.recover_signer() {
                     Ok(s) => s,
                     Err(_) => {
-                        span_debug!(span, idx, "Failed to recover sender from host tx, dropping bundle");
+                        span_debug!(
+                            span,
+                            idx,
+                            "Failed to recover sender from host tx, dropping bundle"
+                        );
                         return;
                     }
                 };
