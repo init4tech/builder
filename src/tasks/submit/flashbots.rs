@@ -224,7 +224,7 @@ impl FlashbotsTask {
 
                     if let Err(err) = pylon.post_blob_tx(block_tx).await {
                         counter!("signet.builder.pylon.submission_failures").increment(1);
-                        error!(%err, "pylon submission failed");
+                        warn!(%err, "pylon submission failed");
                         return;
                     }
 
@@ -253,7 +253,7 @@ impl FlashbotsTask {
             slot_calculator.current_point_within_slot_ms().expect("host chain has started");
 
         let slot_duration = slot_calculator.slot_duration() * 1000; // convert to milliseconds
-        let submit_buffer = self.config.submit_deadline_buffer;
+        let submit_buffer = self.config.submit_deadline_buffer.into_inner();
 
         // To find the remaining slot time, subtract the timepoint from the slot duration.
         // Then subtract the submit deadline buffer to give us margin before slot ends.
