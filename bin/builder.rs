@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use builder::{
     service::serve_builder,
     tasks::{
