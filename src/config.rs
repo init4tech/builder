@@ -12,6 +12,7 @@ use alloy::{
 };
 use eyre::Result;
 use init4_bin_base::{
+    Init4Config,
     perms::{Authenticator, OAuthConfig, SharedToken, pylon},
     utils::{
         calc::SlotCalculator,
@@ -194,6 +195,16 @@ pub struct BuilderConfig {
 
     /// Metrics configuration.
     pub metrics: MetricsConfig,
+}
+
+impl Init4Config for BuilderConfig {
+    fn tracing(&self) -> &TracingConfig {
+        &self.tracing
+    }
+
+    fn metrics(&self) -> &MetricsConfig {
+        &self.metrics
+    }
 }
 
 impl BuilderConfig {

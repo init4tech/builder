@@ -58,7 +58,6 @@ async fn main() -> eyre::Result<()> {
     }
 
     let config = builder::config_from_env();
-    let _guard = init4_bin_base::init(config.tracing.clone(), config.metrics);
     let init_span_guard = info_span!("builder initialization").entered();
 
     info!(pkg_version = PKG_VERSION, git_commit = GIT_COMMIT, "starting builder");
@@ -89,7 +88,7 @@ async fn main() -> eyre::Result<()> {
     let build_jh = simulator_task.spawn_simulator_task(cache_system.sim_cache, submit_channel);
 
     // Start the healthcheck server
-    let server = serve_builder(([0, 0, 0, 0], builder::config().builder_port));
+    let server = serve_builder(([0, 0, 0, 0], config.builder_port));
 
     // We have finished initializing the builder, so we can drop the init span
     // guard.
