@@ -1,6 +1,6 @@
 [package]
 name = "builder"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 description = "signet builder example"
 
 edition = "2024"
@@ -20,15 +20,15 @@ path = "bin/builder.rs"
 [dependencies]
 init4-bin-base = { version = "0.18.0-rc.10", features = ["perms", "aws", "pylon"] }
 
-signet-constants = { version = "0.16.0-rc.11" }
-signet-sim = { version = "0.16.0-rc.11" }
-signet-tx-cache = { version = "0.16.0-rc.11" }
-signet-types = { version = "0.16.0-rc.11" }
-signet-zenith = { version = "0.16.0-rc.11" }
+signet-constants = { version = "0.16.0-rc.13" }
+signet-sim = { version = "0.16.0-rc.13" }
+signet-tx-cache = { version = "0.16.0-rc.13" }
+signet-types = { version = "0.16.0-rc.13" }
+signet-zenith = { version = "0.16.0-rc.13" }
 signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.8" }
 signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.8" }
 
-trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils"] }
+trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils", "asyncdb"] }
 
 alloy = { version = "1.4.0", features = [
     "full",

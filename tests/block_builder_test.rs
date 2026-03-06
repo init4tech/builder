@@ -1,5 +1,7 @@
 //! Tests for the block building task.
 
+#![recursion_limit = "256"]
+
 use alloy::{
     consensus::transaction::SignerRecoverable, eips::BlockId, node_bindings::Anvil,
     primitives::U256, providers::Provider, signers::local::PrivateKeySigner,
