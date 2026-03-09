@@ -1,13 +1,7 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use alloy::{
-    consensus::{Transaction, transaction::SignerRecoverable},
-    eips::Decodable2718,
-    primitives::Bytes,
-    providers::Provider,
-    rlp::Buf,
-};
-use futures_util::{TryFutureExt, TryStreamExt};
+use alloy::providers::Provider;
+use futures_util::{StreamExt, TryFutureExt, TryStreamExt, stream};
 use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
 use signet_tx_cache::{TxCacheError, types::CachedBundle};
 use tokio::{
@@ -66,14 +60,28 @@ impl BundlePoller {
     /// Spawns a tokio task to check the nonces of all host transactions in a bundle
     /// before sending it to the cache task via the outbound channel.
     ///
-    /// Bundles with stale host transaction nonces are dropped to prevent them from
-    /// entering the SimCache, failing simulation, and being re-ingested on the next poll.
+    /// Uses the bundle's `host_tx_reqs()` to extract signer/nonce requirements
+    /// (reusing the existing validity check pattern from `signet-sim`), then checks
+    /// all host tx nonces concurrently via [`FuturesUnordered`], cancelling early
+    /// on the first stale or failed nonce.
+    ///
+    /// [`FuturesUnordered`]: futures_util::stream::FuturesUnordered
     fn spawn_check_bundle_nonces(bundle: CachedBundle, outbound: UnboundedSender<CachedBundle>) {
         tokio::spawn(async move {
             let span = debug_span!("check_bundle_nonces", bundle_id = %bundle.id);
 
+            // Recover the bundle to get typed host tx requirements instead of
+            // manually decoding and recovering signers.
+            let recovered = match bundle.bundle.try_to_recovered() {
+                Ok(r) => r,
+                Err(e) => {
+                    span_debug!(span, ?e, "Failed to recover bundle, dropping");
+                    return;
+                }
+            };
+
             // If no host transactions, forward directly
-            if bundle.bundle.host_txs.is_empty() {
+            if recovered.host_txs().is_empty() {
                 if outbound.send(bundle).is_err() {
                     span_debug!(span, "Outbound channel closed, stopping nonce check task");
                 }
@@ -87,55 +95,47 @@ impl BundlePoller {
                 return;
             };
 
-            // Check each host transaction's nonce
-            for (idx, host_tx_bytes) in bundle.bundle.host_txs.iter().enumerate() {
-                let host_tx = match decode_tx(host_tx_bytes) {
-                    Some(tx) => tx,
-                    None => {
-                        span_debug!(
-                            span,
-                            idx,
-                            "Failed to decode host transaction, dropping bundle"
-                        );
-                        return;
-                    }
-                };
+            // Collect host tx requirements (signer + nonce) from the recovered bundle
+            let reqs: Vec<_> = recovered.host_tx_reqs().enumerate().collect();
 
-                let sender = match host_tx.recover_signer() {
-                    Ok(s) => s,
-                    Err(_) => {
-                        span_debug!(
-                            span,
-                            idx,
-                            "Failed to recover sender from host tx, dropping bundle"
-                        );
-                        return;
-                    }
-                };
+            // Check all host tx nonces concurrently, cancelling on first failure.
+            let result = stream::iter(reqs)
+                .map(Ok)
+                .try_for_each_concurrent(None, |(idx, req)| {
+                    let host_provider = &host_provider;
+                    let span = &span;
+                    async move {
+                        let tx_count = host_provider
+                            .get_transaction_count(req.signer)
+                            .await
+                            .map_err(|_| {
+                                span_debug!(
+                                    span,
+                                    idx,
+                                    sender = %req.signer,
+                                    "Failed to fetch nonce for sender, dropping bundle"
+                                );
+                            })?;
 
-                let tx_count = match host_provider.get_transaction_count(sender).await {
-                    Ok(count) => count,
-                    Err(_) => {
-                        span_debug!(span, idx, %sender, "Failed to fetch nonce for sender, dropping bundle");
-                        return;
-                    }
-                };
+                        if req.nonce < tx_count {
+                            debug!(
+                                parent: span,
+                                sender = %req.signer,
+                                tx_nonce = %req.nonce,
+                                host_nonce = %tx_count,
+                                idx,
+                                "Dropping bundle with stale host tx nonce"
+                            );
+                            return Err(());
+                        }
 
-                if host_tx.nonce() < tx_count {
-                    debug!(
-                        parent: &span,
-                        %sender,
-                        tx_nonce = %host_tx.nonce(),
-                        host_nonce = %tx_count,
-                        idx,
-                        "Dropping bundle with stale host tx nonce"
-                    );
-                    return;
-                }
-            }
+                        Ok(())
+                    }
+                })
+                .await;
 
             // All host txs have valid nonces, forward the bundle
-            if outbound.send(bundle).is_err() {
+            if result.is_ok() && outbound.send(bundle).is_err() {
                 span_debug!(span, "Outbound channel closed, stopping nonce check task");
             }
         });
@@ -192,9 +192,4 @@ impl BundlePoller {
 
         (inbound, jh)
     }
-}
-
-/// Decodes a transaction from RLP-encoded bytes.
-fn decode_tx(bytes: &Bytes) -> Option<alloy::consensus::TxEnvelope> {
-    alloy::consensus::TxEnvelope::decode_2718(&mut bytes.chunk()).ok()
 }
