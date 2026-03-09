@@ -5,6 +5,7 @@ use alloy::{
     providers::Provider,
 };
 use futures_util::TryStreamExt;
+use init4_bin_base::deps::metrics::{counter, histogram};
 use signet_tx_cache::{TxCache, TxCacheError};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
@@ -81,6 +82,7 @@ impl TxPoller {
             };
 
             if tx.nonce() < tx_count {
+                counter!("signet.builder.cache.tx_nonce_stale").increment(1);
                 span_debug!(span, %sender, tx_nonce = %tx.nonce(), ru_nonce = %tx_count, "Dropping transaction with stale nonce");
                 return;
             }
@@ -107,12 +109,15 @@ impl TxPoller {
                 break;
             }
 
+            counter!("signet.builder.cache.tx_poll_count").increment(1);
             if let Ok(transactions) =
                 self.check_tx_cache().instrument(span.clone()).await.inspect_err(|error| {
+                    counter!("signet.builder.cache.tx_poll_errors").increment(1);
                     debug!(%error, "Error fetching transactions");
                 })
             {
                 let _guard = span.entered();
+                histogram!("signet.builder.cache.txs_fetched").record(transactions.len() as f64);
                 trace!(count = transactions.len(), "found transactions");
                 for tx in transactions.into_iter() {
                     self.spawn_check_nonce(tx, outbound.clone());
