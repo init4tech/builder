@@ -1,12 +1,11 @@
-//! Transaction service responsible for fetching and sending trasnsactions to the simulator.
+//! Transaction service responsible for fetching and sending transactions to the simulator.
 use crate::config::BuilderConfig;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     providers::Provider,
 };
-use eyre::Error;
-use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
+use futures_util::TryStreamExt;
+use signet_tx_cache::{TxCache, TxCacheError};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 use tracing::{Instrument, debug, debug_span, trace, trace_span};
@@ -14,21 +13,14 @@ use tracing::{Instrument, debug, debug_span, trace, trace_span};
 /// Poll interval for the transaction poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
 
-/// Models a response from the transaction pool.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TxPoolResponse {
-    /// Holds the transactions property as a list on the response.
-    transactions: Vec<TxEnvelope>,
-}
-
 /// Implements a poller for the block builder to pull transactions from the
 /// transaction pool.
 #[derive(Debug, Clone)]
 pub struct TxPoller {
     /// Config values from the Builder.
     config: &'static BuilderConfig,
-    /// Reqwest Client for fetching transactions from the cache.
-    client: Client,
+    /// Client for the tx cache.
+    tx_cache: TxCache,
     /// Defines the interval at which the service should poll the cache.
     poll_interval_ms: u64,
 }
@@ -51,7 +43,8 @@ impl TxPoller {
     /// Returns a new [`TxPoller`] with the given config and cache polling interval in milliseconds.
     pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
         let config = crate::config();
-        Self { config, client: Client::new(), poll_interval_ms }
+        let tx_cache = TxCache::new(config.tx_pool_url.clone());
+        Self { config, tx_cache, poll_interval_ms }
     }
 
     /// Returns the poll duration as a [`Duration`].
@@ -98,21 +91,12 @@ impl TxPoller {
         });
     }
 
-    /// Polls the transaction cache for transactions.
-    pub async fn check_tx_cache(&mut self) -> Result<Vec<TxEnvelope>, Error> {
-        let url: Url = self.config.tx_pool_url.join("transactions")?;
-        self.client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-            .map(|resp: TxPoolResponse| resp.transactions)
-            .map_err(Into::into)
+    /// Polls the transaction cache for transactions, paginating through all available pages.
+    pub async fn check_tx_cache(&self) -> Result<Vec<TxEnvelope>, TxCacheError> {
+        self.tx_cache.stream_transactions().try_collect().await
     }
 
-    async fn task_future(mut self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
+    async fn task_future(self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
         loop {
             let span = trace_span!("TxPoller::loop", url = %self.config.tx_pool_url);
 
@@ -124,12 +108,12 @@ impl TxPoller {
             }
 
             if let Ok(transactions) =
-                self.check_tx_cache().instrument(span.clone()).await.inspect_err(|err| {
-                    debug!(%err, "Error fetching transactions");
+                self.check_tx_cache().instrument(span.clone()).await.inspect_err(|error| {
+                    debug!(%error, "Error fetching transactions");
                 })
             {
                 let _guard = span.entered();
-                trace!(count = ?transactions.len(), "found transactions");
+                trace!(count = transactions.len(), "found transactions");
                 for tx in transactions.into_iter() {
                     self.spawn_check_nonce(tx, outbound.clone());
                 }

@@ -1,13 +1,16 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
 use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
-use signet_tx_cache::{TxCacheError, types::CachedBundle};
+use signet_tx_cache::{
+    TxCacheError,
+    types::{BundleKey, CachedBundle},
+};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
     time::{self, Duration},
 };
-use tracing::{Instrument, error, trace, trace_span};
+use tracing::{Instrument, trace, trace_span, warn};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -50,25 +53,33 @@ impl BundlePoller {
         Duration::from_millis(self.poll_interval_ms)
     }
 
-    /// Checks the bundle cache for new bundles.
+    /// Fetches all bundles from the tx-cache, paginating through all available pages.
     pub async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BuilderTxCacheError> {
-        let res = self.tx_cache.get_bundles(None).await;
+        let mut all_bundles = Vec::new();
+        let mut cursor: Option<BundleKey> = None;
 
-        match res {
-            Ok(resp) => {
-                let bundles = resp.into_inner();
-                trace!(count = ?bundles.bundles.len(), "found bundles");
-                Ok(bundles.bundles)
-            }
-            Err(err) => {
-                if matches!(&err, BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot)) {
-                    trace!("Not our slot to fetch bundles");
-                } else {
-                    error!(?err, "Failed to fetch bundles from tx-cache");
+        loop {
+            let resp = match self.tx_cache.get_bundles(cursor).await {
+                Ok(resp) => resp,
+                Err(error) => {
+                    if matches!(&error, BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot)) {
+                        trace!("Not our slot to fetch bundles");
+                    } else {
+                        warn!(%error, "Failed to fetch bundles from tx-cache");
+                    }
+                    return Err(error);
                 }
-                Err(err)
-            }
+            };
+
+            let (bundle_list, next_cursor) = resp.into_parts();
+            all_bundles.extend(bundle_list.bundles);
+
+            let Some(next) = next_cursor else { break };
+            cursor = Some(next);
         }
+
+        trace!(count = all_bundles.len(), "fetched all bundles from tx-cache");
+        Ok(all_bundles)
     }
 
     async fn task_future(self, outbound: UnboundedSender<CachedBundle>) {
