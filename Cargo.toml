@@ -1,6 +1,6 @@
 [package]
 name = "builder"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 description = "signet builder example"
 
 edition = "2024"
