@@ -2430,7 +2430,6 @@ dependencies = [
  "openssl",
  "reqwest",
  "reth-chainspec",
- "serde",
  "signet-block-processor",
  "signet-constants",
  "signet-genesis",
