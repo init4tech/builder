@@ -3,8 +3,11 @@
 //! for testing block simulation without requiring network access.
 
 use alloy::primitives::{Address, B256, U256};
+use signet_sim::AcctInfo;
 use trevm::revm::{
     database::{CacheDB, EmptyDB},
+    database_interface::DatabaseRef,
+    primitives::KECCAK_EMPTY,
     state::AccountInfo,
 };
 
@@ -13,6 +16,35 @@ use trevm::revm::{
 /// blockchain state in memory. It implements `DatabaseRef` and can be used
 /// with `RollupEnv` and `HostEnv` for offline simulation testing.
 pub type TestDb = CacheDB<EmptyDB>;
+
+/// A [`StateSource`] backed by a [`TestDb`] for offline testing.
+///
+/// This wraps an in-memory database and implements [`signet_sim::StateSource`]
+/// so it can be used as the async state source parameter in [`BlockBuild::new`].
+///
+/// [`StateSource`]: signet_sim::StateSource
+/// [`BlockBuild::new`]: signet_sim::BlockBuild::new
+#[derive(Debug, Clone)]
+pub struct TestStateSource {
+    db: TestDb,
+}
+
+impl TestStateSource {
+    /// Create a new [`TestStateSource`] from a [`TestDb`].
+    pub const fn new(db: TestDb) -> Self {
+        Self { db }
+    }
+}
+
+impl signet_sim::StateSource for TestStateSource {
+    type Error = <TestDb as DatabaseRef>::Error;
+
+    async fn account_details(&self, address: &Address) -> Result<AcctInfo, Self::Error> {
+        let info = self.db.basic_ref(*address)?.unwrap_or_default();
+        let has_code = info.code_hash() != KECCAK_EMPTY;
+        Ok(AcctInfo { nonce: info.nonce, balance: info.balance, has_code })
+    }
+}
 
 /// Builder for creating pre-populated test databases.
 /// Use this builder to set up blockchain state (accounts, contracts, storage)
