@@ -2515,9 +2515,9 @@ dependencies = [
 
 [[package]]
 name = "c-kzg"
-version = "2.1.6"
+version = "2.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a0f582957c24870b7bfd12bf562c40b4734b533cafbaf8ded31d6d85f462c01"
+checksum = "6648ed1e4ea8e8a1a4a2c78e1cda29a3fd500bc622899c340d8525ea9a76b24a"
 dependencies = [
  "arbitrary",
  "blst",
@@ -4956,8 +4956,9 @@ dependencies = [
 
 [[package]]
 name = "init4-bin-base"
-version = "0.18.0-rc.11"
-source = "git+https://github.com/init4tech/bin-base?branch=fraser%2Feng-1943%2Fvarious-updates#3a3473e7eb69a714eb4dee37599eb1ac45752f35"
+version = "0.18.0-rc.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbd54d450107f93971c3ed82352628bd2cc4d6de54e7042e3aa6ea4bda1fdda"
 dependencies = [
  "alloy",
  "async-trait",
@@ -4994,7 +4995,8 @@ dependencies = [
 [[package]]
 name = "init4-from-env-derive"
 version = "0.2.0"
-source = "git+https://github.com/init4tech/bin-base?branch=fraser%2Feng-1943%2Fvarious-updates#3a3473e7eb69a714eb4dee37599eb1ac45752f35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9c78527fcfeaecc9805e5736a7592a26ecad3b7845eb273c8c1710de0dbb0c"
 dependencies = [
  "proc-macro2",
  "quote",
