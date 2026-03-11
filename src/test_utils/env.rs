@@ -2,7 +2,7 @@
 //! This module provides builders for creating `RollupEnv` and `HostEnv`
 //! instances with in-memory databases for offline testing.
 
-use super::db::{TestDb, TestDbBuilder};
+use super::db::{TestDb, TestDbBuilder, TestStateSource};
 use crate::tasks::block::cfg::SignetCfgEnv;
 use alloy::primitives::{Address, B256, U256};
 use signet_constants::SignetSystemConstants;
@@ -117,11 +117,26 @@ impl TestSimEnvBuilder {
         HostEnv::new(self.host_db.clone(), self.constants.clone(), &cfg, &self.host_block_env)
     }
 
+    /// Build [`TestStateSource`] instances from the current databases.
+    pub fn build_state_sources(&self) -> (TestStateSource, TestStateSource) {
+        (TestStateSource::new(self.rollup_db.clone()), TestStateSource::new(self.host_db.clone()))
+    }
+
     /// Build both environments as a tuple.
     pub fn build(self) -> (TestRollupEnv, TestHostEnv) {
         let rollup = self.build_rollup_env();
         let host = self.build_host_env();
         (rollup, host)
+    }
+
+    /// Build environments and state sources together.
+    pub fn build_with_sources(
+        &self,
+    ) -> (TestRollupEnv, TestHostEnv, TestStateSource, TestStateSource) {
+        let rollup = self.build_rollup_env();
+        let host = self.build_host_env();
+        let (ru_source, host_source) = self.build_state_sources();
+        (rollup, host, ru_source, host_source)
     }
 }
 

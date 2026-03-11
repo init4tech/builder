@@ -3,7 +3,7 @@
 //! for testing block simulation.
 
 use super::{
-    db::TestDb,
+    db::{TestDb, TestStateSource},
     env::{TestHostEnv, TestRollupEnv, TestSimEnvBuilder},
 };
 use signet_sim::{BlockBuild, BuiltBlock, SimCache};
@@ -12,7 +12,8 @@ use tokio::time::Instant;
 use trevm::revm::inspector::NoOpInspector;
 
 /// Test block builder type using in-memory databases.
-pub type TestBlockBuild = BlockBuild<TestDb, TestDb, NoOpInspector, NoOpInspector>;
+pub type TestBlockBuild =
+    BlockBuild<TestDb, TestDb, TestStateSource, TestStateSource, NoOpInspector, NoOpInspector>;
 
 /// Builder for creating test `BlockBuild` instances.
 /// Configures all the parameters needed for block simulation
@@ -110,12 +111,15 @@ impl TestBlockBuildBuilder {
     /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
     pub fn build(self) -> TestBlockBuild {
-        let (rollup_env, host_env) = match (self.rollup_env, self.host_env) {
-            (Some(rollup), Some(host)) => (rollup, host),
-            _ => {
-                let builder = self.sim_env_builder.unwrap_or_default();
-                builder.build()
+        let sim_env_builder = self.sim_env_builder.unwrap_or_default();
+
+        let (rollup_env, host_env, ru_source, host_source) = match (self.rollup_env, self.host_env)
+        {
+            (Some(rollup), Some(host)) => {
+                let (ru_source, host_source) = sim_env_builder.build_state_sources();
+                (rollup, host, ru_source, host_source)
             }
+            _ => sim_env_builder.build_with_sources(),
         };
 
         let finish_by = Instant::now() + self.deadline_duration;
@@ -128,6 +132,8 @@ impl TestBlockBuildBuilder {
             self.sim_cache,
             self.max_gas,
             self.max_host_gas,
+            ru_source,
+            host_source,
         )
     }
 }
