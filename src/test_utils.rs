@@ -6,60 +6,69 @@ use alloy::{
     rpc::client::BuiltInConnectionString,
     signers::{SignerSync, local::PrivateKeySigner},
 };
+use core::str::FromStr;
 use eyre::Result;
 use init4_bin_base::{
+    ConfigAndGuard,
     deps::tracing_subscriber::{
         EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
     },
     perms::OAuthConfig,
-    utils::{calc::SlotCalculator, provider::ProviderConfig},
+    utils::{
+        calc::SlotCalculator, metrics::MetricsConfig, provider::ProviderConfig,
+        tracing::TracingConfig,
+    },
 };
 use signet_constants::SignetSystemConstants;
 use std::env;
-use std::str::FromStr;
 use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
 
 /// Set up a block builder with test values
 pub fn setup_test_config() -> &'static BuilderConfig {
-    crate::CONFIG.get_or_init(|| {
-        BuilderConfig {
-            host_rpc: "ws://host-rpc.pecorino.signet.sh"
-                .parse::<BuiltInConnectionString>()
-                .map(ProviderConfig::new)
-                .unwrap(),
-            ru_rpc: "ws://rpc.pecorino.signet.sh"
-                .parse::<BuiltInConnectionString>()
-                .unwrap()
-                .try_into()
-                .unwrap(),
-            flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
-            quincey_url: "http://localhost:8080".into(),
-            sequencer_key: None,
-            builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
-                .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
-            builder_port: 8080,
-            builder_rewards_address: Address::default(),
-            rollup_block_gas_limit: 3_000_000_000,
-            tx_pool_url: "http://localhost:9000/".parse().unwrap(),
-            oauth: OAuthConfig {
-                oauth_client_id: "some_client_id".into(),
-                oauth_client_secret: "some_client_secret".into(),
-                oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
-                oauth_token_url: "http://localhost:8080".parse().unwrap(),
-                oauth_token_refresh_interval: 300, // 5 minutes
-            },
-            concurrency_limit: None, // NB: Defaults to available parallelism
-            slot_calculator: SlotCalculator::new(
-                1740681556, // pecorino start timestamp as sane default
-                0, 1,
-            ),
-            block_query_cutoff_buffer: 3000,
-            submit_deadline_buffer: 500,
-            max_host_gas_coefficient: Some(80),
-            constants: SignetSystemConstants::parmigiana(),
-            pylon_url: "http://localhost:8081".parse().unwrap(),
-        }
-    })
+    &crate::CONFIG_AND_GUARD
+        .get_or_init(|| {
+            let config = BuilderConfig {
+                host_rpc: "ws://host-rpc.pecorino.signet.sh"
+                    .parse::<BuiltInConnectionString>()
+                    .map(ProviderConfig::new)
+                    .unwrap(),
+                ru_rpc: "ws://rpc.pecorino.signet.sh"
+                    .parse::<BuiltInConnectionString>()
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+                flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
+                quincey_url: "http://localhost:8080".into(),
+                sequencer_key: None,
+                builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
+                    .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
+                builder_port: 8080,
+                builder_rewards_address: Address::default(),
+                rollup_block_gas_limit: 3_000_000_000,
+                tx_pool_url: "http://localhost:9000/".parse().unwrap(),
+                oauth: OAuthConfig {
+                    oauth_client_id: "some_client_id".into(),
+                    oauth_client_secret: "some_client_secret".into(),
+                    oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
+                    oauth_token_url: "http://localhost:8080".parse().unwrap(),
+                    oauth_token_refresh_interval: 300, // 5 minutes
+                },
+                concurrency_limit: None, // NB: Defaults to available parallelism
+                slot_calculator: SlotCalculator::new(
+                    1740681556, // pecorino start timestamp as sane default
+                    0, 1,
+                ),
+                block_query_cutoff_buffer: Default::default(),
+                submit_deadline_buffer: Default::default(),
+                max_host_gas_coefficient: Default::default(),
+                constants: SignetSystemConstants::parmigiana(),
+                pylon_url: "http://localhost:8081".parse().unwrap(),
+                tracing: TracingConfig::default(),
+                metrics: MetricsConfig::default(),
+            };
+            ConfigAndGuard { config, guard: None }
+        })
+        .config
 }
 
 /// Returns a new signed test transaction with the provided nonce, value, and mpfpg.

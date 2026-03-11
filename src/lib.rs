@@ -34,26 +34,33 @@ pub mod utils;
 /// Test utilitites
 pub mod test_utils;
 
-use init4_bin_base::utils::from_env::FromEnv;
-// Anonymous import suppresses warnings about unused imports.
+// Anonymous imports suppress warnings about unused crate dependencies.
+use git_version as _;
+use init4_bin_base::ConfigAndGuard;
 use openssl as _;
 use signet_constants::SignetSystemConstants;
 use std::sync::OnceLock;
 
-/// Global static configuration for the Builder binary.
-pub static CONFIG: OnceLock<config::BuilderConfig> = OnceLock::new();
+/// Global static configuration and OTLP guard for the Builder binary. The
+/// guard is kept alive for the lifetime of the process.
+static CONFIG_AND_GUARD: OnceLock<ConfigAndGuard<config::BuilderConfig>> = OnceLock::new();
 
-/// Load the Builder configuration from the environment and store it in the
-/// global static CONFIG variable. Returns a reference to the configuration.
+/// Load the Builder configuration from the environment, initialize tracing and
+/// metrics, and store the config in the global static. Returns a reference to
+/// the configuration.
 ///
 /// # Panics
 ///
-/// Panics if the configuration cannot be loaded from the environment AND no
-/// other configuration has been previously initialized.
+/// Panics if the configuration cannot be loaded from the environment.
 pub fn config_from_env() -> &'static config::BuilderConfig {
-    CONFIG.get_or_init(|| {
-        config::BuilderConfig::from_env().expect("Failed to load Builder config").sanitize()
-    })
+    &CONFIG_AND_GUARD
+        .get_or_init(|| {
+            let mut config_and_guard = init4_bin_base::init::<config::BuilderConfig>()
+                .expect("Failed to load Builder config");
+            config_and_guard.config = config_and_guard.config.sanitize();
+            config_and_guard
+        })
+        .config
 }
 
 /// Get a reference to the global Builder configuration.
@@ -62,7 +69,7 @@ pub fn config_from_env() -> &'static config::BuilderConfig {
 ///
 /// Panics if the configuration has not been initialized.
 pub fn config() -> &'static config::BuilderConfig {
-    CONFIG.get().expect("Builder config not initialized")
+    &CONFIG_AND_GUARD.get().expect("Builder config not initialized").config
 }
 
 /// Get a reference to the Signet system constants from the global Builder

@@ -1,6 +1,9 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
+use init4_bin_base::{
+    deps::metrics::{counter, histogram},
+    perms::tx_cache::{BuilderTxCache, BuilderTxCacheError},
+};
 use signet_tx_cache::{
     TxCacheError,
     types::{BundleKey, CachedBundle},
@@ -65,6 +68,7 @@ impl BundlePoller {
                     if matches!(&error, BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot)) {
                         trace!("Not our slot to fetch bundles");
                     } else {
+                        counter!("signet.builder.cache.bundle_poll_errors").increment(1);
                         warn!(%error, "Failed to fetch bundles from tx-cache");
                     }
                     return Err(error);
@@ -79,6 +83,7 @@ impl BundlePoller {
         }
 
         trace!(count = all_bundles.len(), "fetched all bundles from tx-cache");
+        histogram!("signet.builder.cache.bundles_fetched").record(all_bundles.len() as f64);
         Ok(all_bundles)
     }
 
@@ -98,6 +103,7 @@ impl BundlePoller {
             // exit the span after the check.
             drop(_guard);
 
+            counter!("signet.builder.cache.bundle_poll_count").increment(1);
             if let Ok(bundles) = self.check_bundle_cache().instrument(span.clone()).await {
                 for bundle in bundles.into_iter() {
                     if let Err(err) = outbound.send(bundle) {
