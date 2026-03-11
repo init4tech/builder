@@ -14,6 +14,7 @@ use builder::test_utils::{
 };
 use signet_bundle::RecoveredBundle;
 use signet_sim::{BuiltBlock, SimCache};
+use std::collections::HashSet;
 use std::time::Duration;
 
 /// Block number used for all test environments and bundles.
@@ -24,6 +25,9 @@ const BLOCK_TIMESTAMP: u64 = 1_700_000_000;
 
 /// Parmigiana rollup chain ID.
 const RU_CHAIN_ID: u64 = 88888;
+
+/// Default max priority fee used for transfer bundles in tests.
+const DEFAULT_PRIORITY_FEE: u128 = 10_000_000_000;
 
 /// Generate N random funded signers and a database builder with all of them funded.
 fn generate_funded_accounts(n: usize) -> (Vec<PrivateKeySigner>, TestDbBuilder) {
@@ -39,16 +43,14 @@ fn generate_funded_accounts(n: usize) -> (Vec<PrivateKeySigner>, TestDbBuilder) 
 }
 
 /// Create a `RecoveredBundle` with one transfer transaction.
-fn make_bundle(signer: &PrivateKeySigner, to: Address, uuid: String) -> RecoveredBundle {
-    let tx = create_transfer_tx(
-        signer,
-        to,
-        U256::from(1_000u64),
-        0,
-        RU_CHAIN_ID,
-        10_000_000_000, // 10 gwei priority fee
-    )
-    .unwrap();
+fn make_bundle(
+    signer: &PrivateKeySigner,
+    to: Address,
+    uuid: String,
+    max_priority_fee: u128,
+) -> RecoveredBundle {
+    let tx = create_transfer_tx(signer, to, U256::from(1_000u64), 0, RU_CHAIN_ID, max_priority_fee)
+        .unwrap();
 
     RecoveredBundle::new_unchecked(
         vec![tx],
@@ -89,7 +91,9 @@ async fn test_load_many_bundles() {
     let bundles: Vec<RecoveredBundle> = signers
         .iter()
         .enumerate()
-        .map(|(i, signer)| make_bundle(signer, recipient, format!("bundle-{i}")))
+        .map(|(i, signer)| {
+            make_bundle(signer, recipient, format!("bundle-{i}"), DEFAULT_PRIORITY_FEE)
+        })
         .collect();
 
     cache.add_bundles(bundles, DEFAULT_BASEFEE);
@@ -118,7 +122,10 @@ async fn test_load_50k_bundles() {
     let bundles: Vec<RecoveredBundle> = signers
         .iter()
         .enumerate()
-        .map(|(i, signer)| make_bundle(signer, recipient, format!("bundle-{i}")))
+        .map(|(i, signer)| {
+            // Keep ranks distinct to avoid pathological cache insertion cost at high volume.
+            make_bundle(signer, recipient, format!("bundle-{i}"), DEFAULT_PRIORITY_FEE + i as u128)
+        })
         .collect();
 
     cache.add_bundles(bundles, DEFAULT_BASEFEE);
@@ -145,7 +152,9 @@ async fn test_load_bundles_and_txs_mixed() {
     let bundles: Vec<RecoveredBundle> = signers[..bundle_count]
         .iter()
         .enumerate()
-        .map(|(i, signer)| make_bundle(signer, recipient, format!("mix-bundle-{i}")))
+        .map(|(i, signer)| {
+            make_bundle(signer, recipient, format!("mix-bundle-{i}"), DEFAULT_PRIORITY_FEE)
+        })
         .collect();
     cache.add_bundles(bundles, DEFAULT_BASEFEE);
 
@@ -187,7 +196,9 @@ async fn test_load_saturate_gas_limit() {
     let bundles: Vec<RecoveredBundle> = signers
         .iter()
         .enumerate()
-        .map(|(i, signer)| make_bundle(signer, recipient, format!("gas-bundle-{i}")))
+        .map(|(i, signer)| {
+            make_bundle(signer, recipient, format!("gas-bundle-{i}"), DEFAULT_PRIORITY_FEE)
+        })
         .collect();
     cache.add_bundles(bundles, DEFAULT_BASEFEE);
 
@@ -219,7 +230,9 @@ async fn test_load_deadline_pressure() {
     let bundles: Vec<RecoveredBundle> = signers
         .iter()
         .enumerate()
-        .map(|(i, signer)| make_bundle(signer, recipient, format!("deadline-bundle-{i}")))
+        .map(|(i, signer)| {
+            make_bundle(signer, recipient, format!("deadline-bundle-{i}"), DEFAULT_PRIORITY_FEE)
+        })
         .collect();
     cache.add_bundles(bundles, DEFAULT_BASEFEE);
 
@@ -235,4 +248,61 @@ async fn test_load_deadline_pressure() {
 
     // Should complete within a reasonable margin of the deadline.
     assert!(elapsed < deadline * 3, "block build took {elapsed:?}, expected within ~{deadline:?}");
+}
+
+/// Gas-constrained block: verify the builder selects the highest-fee bundles first.
+///
+/// 10 low-fee bundles + 10 high-fee bundles, with a gas cap that can only fit 10.
+/// Every included transaction must originate from a high-fee sender.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_load_fee_priority_ordering() {
+    let low_count = 10usize;
+    let high_count = 10usize;
+    let total = low_count + high_count;
+
+    let (signers, db_builder) = generate_funded_accounts(total);
+    let recipient = Address::repeat_byte(0xEE);
+
+    let cache = SimCache::with_capacity(total);
+
+    let low_fee = DEFAULT_PRIORITY_FEE;
+    let high_fee = 90_000_000_000u128; // 90 Gwei — valid (<= max_fee_per_gas=100 Gwei), 9× above low_fee
+
+    let low_fee_senders: HashSet<Address> =
+        signers[..low_count].iter().map(|s| s.address()).collect();
+
+    let bundles: Vec<RecoveredBundle> = signers
+        .iter()
+        .enumerate()
+        .map(|(i, signer)| {
+            let fee = if i < low_count { low_fee } else { high_fee };
+            make_bundle(signer, recipient, format!("priority-bundle-{i}"), fee)
+        })
+        .collect();
+
+    cache.add_bundles(bundles, DEFAULT_BASEFEE);
+
+    // Gas limit exactly fits the 10 high-fee bundles (21,000 gas each).
+    let max_gas: u64 = 21_000 * high_count as u64;
+
+    let builder = build_env(db_builder)
+        .with_cache(cache)
+        .with_deadline(Duration::from_secs(5))
+        .with_max_gas(max_gas);
+    let built: BuiltBlock = builder.build().build().await;
+
+    assert_eq!(
+        built.tx_count(),
+        high_count,
+        "expected exactly {high_count} txs, got {}",
+        built.tx_count()
+    );
+
+    for tx in built.transactions() {
+        assert!(
+            !low_fee_senders.contains(&tx.signer()),
+            "low-fee sender {} was included instead of a high-fee sender",
+            tx.signer()
+        );
+    }
 }
