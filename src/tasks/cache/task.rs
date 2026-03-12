@@ -59,7 +59,8 @@ impl CacheTask {
                         basefee = sim_env.basefee;
                         info!(
                             basefee,
-                            block_env_number = sim_env.number.to::<u64>(), block_env_timestamp = sim_env.timestamp.to::<u64>(),
+                            block_env_number = sim_env.number.to::<u64>(),
+                            block_env_timestamp = sim_env.timestamp.to::<u64>(),
                             "rollup block env changed, clearing cache"
                         );
                         cache.clean(
