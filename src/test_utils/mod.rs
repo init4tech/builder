@@ -12,7 +12,7 @@ mod tx;
 
 // Re-export test harness components
 pub use block::{TestBlockBuild, TestBlockBuildBuilder, quick_build_block};
-pub use db::{TestDb, TestDbBuilder, TestStateSource};
+pub use db::{LatencyDb, TestDb, TestDbBuilder, TestStateSource};
 pub use env::{TestHostEnv, TestRollupEnv, TestSimEnvBuilder};
 pub use scenarios::{
     DEFAULT_BALANCE, DEFAULT_BASEFEE, basic_scenario, custom_funded_scenario, funded_test_db,

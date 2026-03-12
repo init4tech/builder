@@ -66,7 +66,14 @@ url = "2.5.4"
 [dev-dependencies]
 alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
+criterion = { version = "0.8.2", features = ["async_tokio"] }
 signet-bundle = "0.16.0-rc.11"
+
+[[bench]]
+name = "sim"
+path = "benches/sim/main.rs"
+harness = false
+required-features = ["test-utils"]
 
 # comment / uncomment for local dev
 # [patch.crates-io]
