@@ -27,3 +27,7 @@ target/
 .claude/*.local.*
 .claude/settings.json
 CLAUDE.local.md
+
+# Local dmux worktree checkouts
+.dmux/worktrees/
+.dmux-hooks/
