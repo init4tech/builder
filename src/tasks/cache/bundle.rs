@@ -1,7 +1,7 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
 use alloy::providers::Provider;
-use futures_util::{TryStreamExt, StreamExt, stream};
+use futures_util::future::try_join_all;
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     perms::tx_cache::{BuilderTxCache, BuilderTxCacheError},
@@ -10,12 +10,13 @@ use signet_tx_cache::{
     TxCacheError,
     types::{BundleKey, CachedBundle},
 };
+use std::collections::{BTreeMap, BTreeSet};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
     time::{self, Duration},
 };
-use tracing::{Instrument, debug, debug_span, trace, trace_span, warn};
+use tracing::{Instrument, debug_span, trace, trace_span, warn};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -92,22 +93,19 @@ impl BundlePoller {
     /// Spawns a tokio task to check the nonces of all host transactions in a bundle
     /// before sending it to the cache task via the outbound channel.
     ///
-    /// Uses the bundle's `host_tx_reqs()` to extract signer/nonce requirements
-    /// (reusing the existing validity check pattern from `signet-sim`), then checks
-    /// all host tx nonces concurrently via [`FuturesUnordered`], cancelling early
-    /// on the first stale or failed nonce.
-    ///
-    /// [`FuturesUnordered`]: futures_util::stream::FuturesUnordered
+    /// Fetches on-chain nonces concurrently for each unique signer, then validates
+    /// sequentially with a local nonce cache — mirroring the SDK's
+    /// `check_bundle_tx_list` pattern. Drops bundles where any host tx has a stale
+    /// or future nonce.
     fn spawn_check_bundle_nonces(bundle: CachedBundle, outbound: UnboundedSender<CachedBundle>) {
+        let span = debug_span!("check_bundle_nonces", bundle_id = %bundle.id);
         tokio::spawn(async move {
-            let span = debug_span!("check_bundle_nonces", bundle_id = %bundle.id);
-
             // Recover the bundle to get typed host tx requirements instead of
             // manually decoding and recovering signers.
             let recovered = match bundle.bundle.try_to_recovered() {
                 Ok(r) => r,
-                Err(e) => {
-                    span_debug!(span, ?e, "Failed to recover bundle, dropping");
+                Err(error) => {
+                    span_debug!(span, ?error, "Failed to recover bundle, dropping");
                     return;
                 }
             };
@@ -128,49 +126,56 @@ impl BundlePoller {
             };
 
             // Collect host tx requirements (signer + nonce) from the recovered bundle
-            let reqs: Vec<_> = recovered.host_tx_reqs().enumerate().collect();
+            let reqs: Vec<_> = recovered.host_tx_reqs().collect();
 
-            // Check all host tx nonces concurrently, cancelling on first failure.
-            let result = stream::iter(reqs)
-                .map(Ok)
-                .try_for_each_concurrent(None, |(idx, req)| {
-                    let host_provider = &host_provider;
-                    let span = &span;
-                    async move {
-                        let tx_count = host_provider
-                            .get_transaction_count(req.signer)
-                            .await
-                            .map_err(|_| {
-                                span_debug!(
-                                    span,
-                                    idx,
-                                    sender = %req.signer,
-                                    "Failed to fetch nonce for sender, dropping bundle"
-                                );
-                            })?;
-
-                        if req.nonce < tx_count {
-                            debug!(
-                                parent: span,
-                                sender = %req.signer,
-                                tx_nonce = %req.nonce,
-                                host_nonce = %tx_count,
-                                idx,
-                                "Dropping bundle with stale host tx nonce"
+            // Fetch on-chain nonces concurrently for each unique signer
+            let unique_signers: BTreeSet<_> = reqs.iter().map(|req| req.signer).collect();
+            let nonce_fetches = unique_signers.into_iter().map(|signer| {
+                let host_provider = &host_provider;
+                let span = &span;
+                async move {
+                    host_provider
+                        .get_transaction_count(signer)
+                        .await
+                        .map(|nonce| (signer, nonce))
+                        .inspect_err(|error| {
+                            span_debug!(
+                                span,
+                                ?error,
+                                sender = %signer,
+                                "Failed to fetch nonce for sender, dropping bundle"
                             );
-                            return Err(());
-                        }
-
-                        Ok(())
-                    }
-                })
-                .await;
-
-            // All host txs have valid nonces, forward the bundle
-            if result.is_ok() {
-                if outbound.send(bundle).is_err() {
-                    span_debug!(span, "Outbound channel closed, stopping nonce check task");
+                        })
                 }
+            });
+
+            let Ok(fetched) = try_join_all(nonce_fetches).await else {
+                return;
+            };
+            let mut nonce_cache: BTreeMap<_, _> = fetched.into_iter().collect();
+
+            // Validate sequentially, checking exact nonce match and incrementing for
+            // same-signer sequential txs (mirroring check_bundle_tx_list in signet-sim).
+            for (idx, req) in reqs.iter().enumerate() {
+                let expected = nonce_cache.get(&req.signer).copied().expect("nonce must be cached");
+
+                if req.nonce != expected {
+                    span_debug!(
+                        span,
+                        sender = %req.signer,
+                        tx_nonce = req.nonce,
+                        expected_nonce = expected,
+                        idx,
+                        "Dropping bundle: host tx nonce mismatch"
+                    );
+                    return;
+                }
+
+                nonce_cache.entry(req.signer).and_modify(|nonce| *nonce += 1);
+            }
+
+            if outbound.send(bundle).is_err() {
+                span_debug!(span, "Outbound channel closed, stopping nonce check task");
             }
         });
     }
