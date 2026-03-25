@@ -3,7 +3,8 @@
 //! for testing block simulation without requiring network access.
 
 use alloy::primitives::{Address, B256, U256};
-use signet_sim::AcctInfo;
+use signet_sim::{AcctInfo, InnerDb};
+use std::sync::Arc;
 use trevm::revm::{
     database::{CacheDB, EmptyDB},
     database_interface::DatabaseRef,
@@ -26,12 +27,17 @@ pub type TestDb = CacheDB<EmptyDB>;
 /// [`BlockBuild::new`]: signet_sim::BlockBuild::new
 #[derive(Debug, Clone)]
 pub struct TestStateSource {
-    db: TestDb,
+    db: InnerDb<TestDb>,
 }
 
 impl TestStateSource {
     /// Create a new [`TestStateSource`] from a [`TestDb`].
-    pub const fn new(db: TestDb) -> Self {
+    pub fn new(db: TestDb) -> Self {
+        Self { db: Arc::new(CacheDB::new(db)) }
+    }
+
+    /// Create a new [`TestStateSource`] from an environment database handle.
+    pub const fn from_inner_db(db: InnerDb<TestDb>) -> Self {
         Self { db }
     }
 }
