@@ -1,7 +1,5 @@
 //! Tests for the block building task.
 
-#![recursion_limit = "256"]
-
 use alloy::{
     consensus::transaction::SignerRecoverable, eips::BlockId, node_bindings::Anvil,
     primitives::U256, providers::Provider, signers::local::PrivateKeySigner,
@@ -21,7 +19,6 @@ use std::time::{Duration, Instant};
 /// This test sets up a simulated environment using Anvil, creates a block builder,
 /// and verifies that the block builder can successfully build a block containing
 /// transactions from multiple senders.
-#[ignore = "integration test"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_handle_build() {
     setup_logging();

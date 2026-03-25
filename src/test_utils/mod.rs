@@ -2,6 +2,7 @@
 //!
 //! This module provides utilities for testing the block builder without
 //! requiring network access or full chain state setup.
+#![allow(dead_code, unreachable_pub, unused_imports)]
 
 mod block;
 mod db;

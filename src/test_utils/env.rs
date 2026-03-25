@@ -23,10 +23,15 @@ pub type TestHostEnv = HostEnv<TestDb, NoOpInspector>;
 /// without network access.
 #[derive(Debug)]
 pub struct TestSimEnvBuilder {
+    /// The in-memory database for the rollup environment.
     rollup_db: TestDb,
+    /// The in-memory database for the host environment.
     host_db: TestDb,
+    /// The block environment configuration for the rollup.
     rollup_block_env: BlockEnv,
+    /// The block environment configuration for the host.
     host_block_env: BlockEnv,
+    /// The unified system constants to use for both environments.
     constants: SignetSystemConstants,
 }
 
@@ -39,6 +44,7 @@ impl Default for TestSimEnvBuilder {
 impl TestSimEnvBuilder {
     /// Create a new builder with default Parmigiana constants and empty databases.
     pub fn new() -> Self {
+        // Share one default block template so the rollup and host builders start aligned.
         let default_block_env = Self::default_block_env();
         Self {
             rollup_db: TestDbBuilder::new().build(),
@@ -54,7 +60,7 @@ impl TestSimEnvBuilder {
         BlockEnv {
             number: U256::from(100u64),
             beneficiary: Address::repeat_byte(0x01),
-            timestamp: U256::from(1700000000u64),
+            timestamp: U256::from(1_700_000_000u64),
             gas_limit: 3_000_000_000,
             basefee: 1_000_000_000, // 1 gwei
             difficulty: U256::ZERO,
@@ -119,6 +125,7 @@ impl TestSimEnvBuilder {
 
     /// Build [`TestStateSource`] instances from the current databases.
     pub fn build_state_sources(&self) -> (TestStateSource, TestStateSource) {
+        // Match the environment internals so explicit env injection can reuse the same source type.
         (TestStateSource::new(self.rollup_db.clone()), TestStateSource::new(self.host_db.clone()))
     }
 
@@ -146,6 +153,7 @@ mod tests {
 
     #[test]
     fn test_sim_env_builder_creates_environments() {
+        // The default builder should produce both environments without any extra setup.
         let builder = TestSimEnvBuilder::new();
         let (rollup_env, host_env) = builder.build();
 
@@ -157,6 +165,7 @@ mod tests {
 
     #[test]
     fn test_sim_env_builder_with_custom_block_env() {
+        // Override the shared block env to verify both environments accept custom settings.
         let custom_env = BlockEnv {
             number: U256::from(500u64),
             beneficiary: Address::repeat_byte(0x42),
