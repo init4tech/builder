@@ -20,14 +20,28 @@ pub type TestBlockBuild =
 /// and provides sensible defaults for testing scenarios.
 #[derive(Debug)]
 pub struct TestBlockBuildBuilder {
-    rollup_env: Option<TestRollupEnv>,
-    host_env: Option<TestHostEnv>,
-    sim_env_builder: Option<TestSimEnvBuilder>,
+    /// The test environment configuration for the block build.
+    env: TestBlockBuildEnv,
+    /// The simulation cache to use for the block build.
     sim_cache: SimCache,
+    /// The duration from now until the block build should finish.
     deadline_duration: Duration,
+    /// The concurrency limit for parallel simulation.
     concurrency_limit: usize,
+    /// The maximum gas limit for the rollup block.
     max_gas: u64,
+    /// The maximum gas limit for host transactions.
     max_host_gas: u64,
+}
+
+/// Internal enum to manage the environment configuration for the block build.
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+enum TestBlockBuildEnv {
+    /// A builder that will create the environments when `into_block_build()` is called.
+    Builder(TestSimEnvBuilder),
+    /// A pair of already built environments to use directly.
+    Built { rollup: TestRollupEnv, host: TestHostEnv },
 }
 
 impl Default for TestBlockBuildBuilder {
@@ -37,7 +51,7 @@ impl Default for TestBlockBuildBuilder {
 }
 
 impl TestBlockBuildBuilder {
-    /// Create a new test block build builder with sensible defaults.
+    /// Create a new test block build builder with test-focused defaults.
     /// Default values:
     /// - Deadline: 2 seconds
     /// - Concurrency limit: 4
@@ -45,9 +59,8 @@ impl TestBlockBuildBuilder {
     /// - Max host gas: 24,000,000
     pub fn new() -> Self {
         Self {
-            rollup_env: None,
-            host_env: None,
-            sim_env_builder: Some(TestSimEnvBuilder::new()),
+            // Default to building fresh test environments unless the caller injects a pair.
+            env: TestBlockBuildEnv::Builder(TestSimEnvBuilder::new()),
             sim_cache: SimCache::new(),
             deadline_duration: Duration::from_secs(2),
             concurrency_limit: 4,
@@ -57,23 +70,15 @@ impl TestBlockBuildBuilder {
     }
 
     /// Set the simulation environment builder.
-    /// The environments will be built from this builder when `build()` is called.
+    /// The environments will be built from this builder when `into_block_build()` is called.
     pub fn with_sim_env_builder(mut self, builder: TestSimEnvBuilder) -> Self {
-        self.sim_env_builder = Some(builder);
-        self.rollup_env = None;
-        self.host_env = None;
+        self.env = TestBlockBuildEnv::Builder(builder);
         self
     }
 
-    /// Set the rollup environment directly.
-    pub fn with_rollup_env(mut self, env: TestRollupEnv) -> Self {
-        self.rollup_env = Some(env);
-        self
-    }
-
-    /// Set the host environment directly.
-    pub fn with_host_env(mut self, env: TestHostEnv) -> Self {
-        self.host_env = Some(env);
+    /// Set both environments directly so the block build uses a consistent pair.
+    pub fn with_envs(mut self, rollup: TestRollupEnv, host: TestHostEnv) -> Self {
+        self.env = TestBlockBuildEnv::Built { rollup, host };
         self
     }
 
@@ -110,18 +115,18 @@ impl TestBlockBuildBuilder {
     /// Build the test `BlockBuild` instance.
     /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
-    pub fn build(self) -> TestBlockBuild {
-        let sim_env_builder = self.sim_env_builder.unwrap_or_default();
-
-        let (rollup_env, host_env, ru_source, host_source) = match (self.rollup_env, self.host_env)
-        {
-            (Some(rollup), Some(host)) => {
-                let (ru_source, host_source) = sim_env_builder.build_state_sources();
+    pub async fn into_block_build(self) -> BuiltBlock {
+        // Keep the async state sources aligned with whichever environment pair we use.
+        let (rollup_env, host_env, ru_source, host_source) = match self.env {
+            TestBlockBuildEnv::Builder(sim_env_builder) => sim_env_builder.build_with_sources(),
+            TestBlockBuildEnv::Built { rollup, host } => {
+                let ru_source = TestStateSource::from_inner_db(rollup.db().clone());
+                let host_source = TestStateSource::from_inner_db(host.db().clone());
                 (rollup, host, ru_source, host_source)
             }
-            _ => sim_env_builder.build_with_sources(),
         };
 
+        // Convert the relative deadline into the absolute instant expected by `BlockBuild`.
         let finish_by = Instant::now() + self.deadline_duration;
 
         BlockBuild::new(
@@ -135,6 +140,8 @@ impl TestBlockBuildBuilder {
             ru_source,
             host_source,
         )
+        .build()
+        .await
     }
 }
 
@@ -142,7 +149,7 @@ impl TestBlockBuildBuilder {
 /// This is useful for simple test cases where you just want to simulate
 /// some transactions quickly.
 pub async fn quick_build_block(cache: SimCache, deadline: Duration) -> BuiltBlock {
-    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).build().build().await
+    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).into_block_build().await
 }
 
 #[cfg(test)]

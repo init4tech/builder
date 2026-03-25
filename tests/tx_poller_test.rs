@@ -5,7 +5,6 @@ use builder::{
 };
 use eyre::{Ok, Result};
 
-#[ignore = "integration test"]
 #[tokio::test]
 async fn test_tx_roundtrip() -> Result<()> {
     setup_logging();
