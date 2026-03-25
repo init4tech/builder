@@ -55,7 +55,7 @@ impl TxPoller {
 
     // Spawn a tokio task to check the nonce of a transaction before sending
     // it to the cachetask via the outbound channel.
-    fn spawn_check_nonce(&self, tx: TxEnvelope, outbound: mpsc::UnboundedSender<TxEnvelope>) {
+    fn spawn_check_nonce(&self, tx: TxEnvelope, outbound: mpsc::UnboundedSender<ReceivedTx>) {
         tokio::spawn(async move {
             let span = debug_span!("check_nonce", tx_id = %tx.tx_hash());
 
@@ -83,11 +83,14 @@ impl TxPoller {
 
             if tx.nonce() < tx_count {
                 counter!("signet.builder.cache.tx_nonce_stale").increment(1);
+                if outbound.send(ReceivedTx::StaleNonce).is_err() {
+                    span_warn!(span, "Outbound channel closed, stopping NonceChecker task.");
+                }
                 span_debug!(span, %sender, tx_nonce = %tx.nonce(), ru_nonce = %tx_count, "Dropping transaction with stale nonce");
                 return;
             }
 
-            if outbound.send(tx).is_err() {
+            if outbound.send(ReceivedTx::Tx(tx)).is_err() {
                 span_warn!(span, "Outbound channel closed, stopping NonceChecker task.");
             }
         });
@@ -98,7 +101,7 @@ impl TxPoller {
         self.tx_cache.stream_transactions().try_collect().await
     }
 
-    async fn task_future(self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
+    async fn task_future(self, outbound: mpsc::UnboundedSender<ReceivedTx>) {
         loop {
             let span = trace_span!("TxPoller::loop", url = %self.config.tx_pool_url);
 
@@ -128,10 +131,21 @@ impl TxPoller {
         }
     }
 
-    /// Spawns a task that continuously polls the cache for transactions and sends any it finds to its sender.
-    pub fn spawn(self) -> (mpsc::UnboundedReceiver<TxEnvelope>, JoinHandle<()>) {
+    /// Spawns a task that continuously polls the cache for transactions and sends any it finds to
+    /// its sender.
+    pub fn spawn(self) -> (mpsc::UnboundedReceiver<ReceivedTx>, JoinHandle<()>) {
         let (outbound, inbound) = mpsc::unbounded_channel();
         let jh = tokio::spawn(self.task_future(outbound));
         (inbound, jh)
     }
+}
+
+#[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "only sent through an mpsc channel, which heap-allocates each message"
+)]
+pub enum ReceivedTx {
+    Tx(TxEnvelope),
+    StaleNonce,
 }
