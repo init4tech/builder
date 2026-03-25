@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Tests for the block building task.
 
 use alloy::{
