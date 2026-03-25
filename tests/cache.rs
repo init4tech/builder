@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use builder::{
     tasks::{cache::CacheTasks, env::EnvTask},
     test_utils::{setup_logging, setup_test_config},
