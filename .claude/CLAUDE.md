@@ -10,7 +10,8 @@ Single-crate Rust application (not a workspace) that builds Signet rollup blocks
 make              # Debug build
 make release      # Optimized release build
 make run          # Run zenith-builder-example binary
-make test         # Run all tests
+make test         # Run unit tests
+make test-all     # Run unit + integration tests (requires network)
 make fmt          # Format code
 make clippy       # Lint with warnings denied
 ```
@@ -20,9 +21,8 @@ Always lint before committing. The Makefile provides shortcuts (`make fmt`, `mak
 ### Running Individual Tests
 
 ```bash
-cargo test test_name                    # Run specific test by name
-cargo test --test test_file_name        # Run all tests in a specific test file
-cargo test -- --ignored                 # Run ignored integration tests (require network)
+cargo test test_name                                      # Run specific unit test by name
+cargo test --features test-utils --test test_file_name     # Run a specific integration test
 ```
 
 ## Architecture
@@ -49,7 +49,7 @@ src/
   service.rs          - Axum /healthcheck endpoint
   macros.rs           - span_scoped!, span_debug/info/warn/error!, res/opt_unwrap_or_continue!
   utils.rs            - Signature extraction, gas population helpers
-  test_utils.rs       - setup_test_config, new_signed_tx, test_block_env helpers
+  test_utils/         - Test harness (cfg-gated via test-utils feature)
   tasks/
     mod.rs            - Module re-exports
     env.rs            - EnvTask, SimEnv, Environment types
@@ -137,11 +137,11 @@ src/
 
 ### Integration Tests
 
-Most tests in `tests/` are marked `#[ignore]` and require network access (real RPC endpoints or Anvil).
+Integration tests live in `tests/` and are gated behind the `test-utils` Cargo feature via `required-features` in `Cargo.toml`. They are not compiled by `cargo test` alone — use `make test-all` or `cargo test --features test-utils` to build and run them. They require network access (real RPC endpoints or Anvil).
 
 ### Simulation Harness (Offline Tests)
 
-`src/test_utils/` provides a testing harness for offline simulation testing:
+`src/test_utils/` provides a testing harness for offline simulation testing, gated with `#[cfg(any(test, feature = "test-utils"))]`:
 
 - `TestDbBuilder` - Create in-memory EVM state
 - `TestSimEnvBuilder` - Create `RollupEnv`/`HostEnv` without RPC
