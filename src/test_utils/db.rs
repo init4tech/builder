@@ -4,17 +4,20 @@
 
 use alloy::primitives::{Address, B256, U256};
 use signet_sim::{AcctInfo, StateSource};
+use std::time::Duration;
 use trevm::revm::{
+    bytecode::Bytecode,
     database::{CacheDB, EmptyDB},
     database_interface::DatabaseRef,
+    primitives::{StorageKey, StorageValue},
     state::AccountInfo,
 };
 
-/// In-memory database for testing (no network access required).
-/// This is a type alias for revm's `CacheDB<EmptyDB>`, which stores all
-/// blockchain state in memory. It implements `DatabaseRef` and can be used
-/// with `RollupEnv` and `HostEnv` for offline simulation testing.
-pub type TestDb = CacheDB<EmptyDB>;
+/// Mirrors the production `CacheDB<AlloyDB>` stack: the outer [`CacheDB`] starts
+/// empty and caches on the mutable `Database` path, while the inner [`LatencyDb`]
+/// holds all state in-memory and applies configurable sleep on every read to
+/// simulate RPC round-trip cost.
+pub type TestDb = CacheDB<LatencyDb>;
 
 /// A [`StateSource`] for testing backed by an in-memory [`TestDb`].
 /// Returns actual account info (nonce, balance) from the database,
@@ -51,7 +54,7 @@ impl StateSource for TestStateSource {
 /// before running simulations.
 #[derive(Debug)]
 pub struct TestDbBuilder {
-    db: TestDb,
+    latency_db: LatencyDb,
 }
 
 impl Default for TestDbBuilder {
@@ -63,7 +66,7 @@ impl Default for TestDbBuilder {
 impl TestDbBuilder {
     /// Create a new empty test database builder.
     pub fn new() -> Self {
-        Self { db: CacheDB::new(EmptyDB::default()) }
+        Self { latency_db: LatencyDb::default() }
     }
 
     /// Add an account with the specified balance and nonce.
@@ -74,7 +77,9 @@ impl TestDbBuilder {
     /// * `balance` - The account balance in wei
     /// * `nonce` - The account nonce (transaction count)
     pub fn with_account(mut self, address: Address, balance: U256, nonce: u64) -> Self {
-        self.db.insert_account_info(address, AccountInfo { balance, nonce, ..Default::default() });
+        self.latency_db
+            .in_mem_db
+            .insert_account_info(address, AccountInfo { balance, nonce, ..Default::default() });
         self
     }
 
@@ -87,10 +92,10 @@ impl TestDbBuilder {
     /// * `value` - The value to store
     pub fn with_storage(mut self, address: Address, slot: U256, value: U256) -> Self {
         // Ensure the account exists before setting storage
-        if !self.db.cache.accounts.contains_key(&address) {
-            self.db.insert_account_info(address, AccountInfo::default());
+        if !self.latency_db.in_mem_db.cache.accounts.contains_key(&address) {
+            self.latency_db.in_mem_db.insert_account_info(address, AccountInfo::default());
         }
-        let _ = self.db.insert_account_storage(address, slot, value);
+        let _ = self.latency_db.in_mem_db.insert_account_storage(address, slot, value);
         self
     }
 
@@ -103,60 +108,78 @@ impl TestDbBuilder {
     /// * `number` - The block number
     /// * `hash` - The block hash
     pub fn with_block_hash(mut self, number: u64, hash: B256) -> Self {
-        self.db.cache.block_hashes.insert(U256::from(number), hash);
+        self.latency_db.in_mem_db.cache.block_hashes.insert(U256::from(number), hash);
+        self
+    }
+
+    /// Add a contract account with the specified bytecode.
+    pub fn with_contract(mut self, address: Address, bytecode: Bytecode) -> Self {
+        self.latency_db.in_mem_db.insert_account_info(
+            address,
+            AccountInfo { code: Some(bytecode), ..Default::default() },
+        );
+        self
+    }
+
+    /// Apply the given latency to every call to the wrapped, in-memory DB.
+    pub const fn with_latency(mut self, latency: Duration) -> Self {
+        self.latency_db.latency = Some(latency);
         self
     }
 
     /// Build the test database.
     pub fn build(self) -> TestDb {
-        self.db
+        CacheDB::new(self.latency_db)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// In-memory database with configurable per-access latency.
+///
+/// Holds all state (accounts, storage, block hashes) in plain hash maps and
+/// calls [`std::thread::sleep`] before every read through [`DatabaseRef`].
+/// This simulates production conditions where the backing store (e.g. `AlloyDB`)
+/// sends an RPC for each state lookup.
+///
+/// Intended to be wrapped in a [`CacheDB`] so that the `CacheDB` provides real
+/// mutable-path caching while this type represents the slow backing store behind it.
+#[derive(Debug, Clone, Default)]
+pub struct LatencyDb {
+    in_mem_db: CacheDB<EmptyDB>,
+    latency: Option<Duration>,
+}
 
-    #[test]
-    fn test_db_builder_creates_empty_db() {
-        let db = TestDbBuilder::new().build();
-        assert!(db.cache.accounts.is_empty());
+impl LatencyDb {
+    fn sleep(&self) {
+        if let Some(latency) = self.latency {
+            std::thread::sleep(latency);
+        }
+    }
+}
+
+impl DatabaseRef for LatencyDb {
+    type Error = core::convert::Infallible;
+
+    fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
+        self.sleep();
+        Ok(self.in_mem_db.basic_ref(address).unwrap())
     }
 
-    #[test]
-    fn test_db_builder_adds_account() {
-        let address = Address::repeat_byte(0x01);
-        let balance = U256::from(1000u64);
-        let nonce = 5u64;
-
-        let db = TestDbBuilder::new().with_account(address, balance, nonce).build();
-
-        let account = db.cache.accounts.get(&address).unwrap();
-        assert_eq!(account.info.balance, balance);
-        assert_eq!(account.info.nonce, nonce);
+    fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        self.sleep();
+        Ok(self.in_mem_db.code_by_hash_ref(code_hash).unwrap())
     }
 
-    #[test]
-    fn test_db_builder_adds_storage() {
-        let address = Address::repeat_byte(0x01);
-        let slot = U256::from(42u64);
-        let value = U256::from(123u64);
-
-        let db = TestDbBuilder::new().with_storage(address, slot, value).build();
-
-        let account = db.cache.accounts.get(&address).unwrap();
-        let stored = account.storage.get(&slot).unwrap();
-        assert_eq!(*stored, value);
+    fn storage_ref(
+        &self,
+        address: Address,
+        index: StorageKey,
+    ) -> Result<StorageValue, Self::Error> {
+        self.sleep();
+        Ok(self.in_mem_db.storage_ref(address, index).unwrap())
     }
 
-    #[test]
-    fn test_db_builder_adds_block_hash() {
-        let number = 100u64;
-        let hash = B256::repeat_byte(0xab);
-
-        let db = TestDbBuilder::new().with_block_hash(number, hash).build();
-
-        let stored = db.cache.block_hashes.get(&U256::from(number)).unwrap();
-        assert_eq!(*stored, hash);
+    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
+        self.sleep();
+        Ok(self.in_mem_db.block_hash_ref(number).unwrap())
     }
 }
