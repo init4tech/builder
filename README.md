@@ -1,3 +1,6 @@
+[![Rust CI](https://github.com/init4tech/builder/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/init4tech/builder/actions/workflows/rust-ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 # The Signet Block Builder
 
 The Builder simulates bundles and transactions against the latest chain state to create valid Signet rollup blocks and submits them to the configured host chain as an [EIP-4844 transaction](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4844.md).
@@ -85,31 +88,31 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
-Key                           | Required | Description
------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------
-`RUST_LOG`                    | No       | The log level of the builder
-`CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)
-`HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain
-`ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain
-`QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint
-`SEQUENCER_KEY`               | No       | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing
-`TX_POOL_URL`                 | Yes      | Transaction pool URL
-`FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to
-`ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for rollup block gas limit
-`MAX_HOST_GAS_COEFFICIENT`    | No       | Optional maximum host gas coefficient, as a percentage, to use when building blocks
-`BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signin
-`BLOCK_QUERY_CUTOFF_BUFFER`   | Yes      | Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process
-`AWS_ACCESS_KEY_ID`           | No       | AWS secret access key ID (required if not using `BUILDER_KEY`)
-`AWS_SECRET_ACCESS_KEY`       | No       | AWS secret access key (required if not using `BUILDER_KEY`)
-`AWS_DEFAULT_REGION`          | No       | AWS region for the KMS key in question (required if not using `BUILDER_KEY`)
-`BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)
-`BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards
-`CONCURRENCY_LIMIT`           | No       | Optional max number of concurrent tasks the simulator uses. Defaults to a system call to determine optimal parallelism
-`OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder
-`OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder
-`OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins
-`OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token
-`AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.
+| Key | Required | Description |
+| --- | --- | --- |
+| `RUST_LOG` | No | The log level of the builder |
+| `CHAIN_NAME` | No | The chain name ("pecorino", or the corresponding name) |
+| `HOST_RPC_URL` | Yes | RPC endpoint for the host chain |
+| `ROLLUP_RPC_URL` | Yes | RPC endpoint for the rollup chain |
+| `QUINCEY_URL` | Yes | Remote sequencer signing endpoint |
+| `SEQUENCER_KEY` | No | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing |
+| `TX_POOL_URL` | Yes | Transaction pool URL |
+| `FLASHBOTS_ENDPOINT` | No | Flashbots API to submit blocks to |
+| `ROLLUP_BLOCK_GAS_LIMIT` | No | Override for rollup block gas limit |
+| `MAX_HOST_GAS_COEFFICIENT` | No | Optional maximum host gas coefficient, as a percentage, to use when building blocks |
+| `BUILDER_KEY` | Yes | AWS KMS key ID _or_ local private key for builder signing |
+| `BLOCK_QUERY_CUTOFF_BUFFER` | Yes | Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process |
+| `AWS_ACCESS_KEY_ID` | No | AWS secret access key ID (required if not using `BUILDER_KEY`) |
+| `AWS_SECRET_ACCESS_KEY` | No | AWS secret access key (required if not using `BUILDER_KEY`) |
+| `AWS_DEFAULT_REGION` | No | AWS region for the KMS key in question (required if not using `BUILDER_KEY`) |
+| `BUILDER_PORT` | Yes | HTTP port for the Builder (default: `8080`) |
+| `BUILDER_REWARDS_ADDRESS` | Yes | Address receiving builder rewards |
+| `CONCURRENCY_LIMIT` | No | Optional max number of concurrent tasks the simulator uses. Defaults to a system call to determine optimal parallelism |
+| `OAUTH_CLIENT_ID` | Yes | OAuth client ID for the builder |
+| `OAUTH_CLIENT_SECRET` | Yes | OAuth client secret for the builder |
+| `OAUTH_AUTHENTICATE_URL` | Yes | OAuth authenticate URL for the builder for performing OAuth logins |
+| `OAUTH_TOKEN_URL` | Yes | OAuth token URL for the builder to get an OAuth2 access token |
+| `AUTH_TOKEN_REFRESH_INTERVAL` | Yes | The OAuth token refresh interval in seconds |
 
 --------------------------------------------------------------------------------
 
