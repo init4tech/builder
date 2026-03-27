@@ -1,3 +1,5 @@
+#![cfg(feature = "test-utils")]
+
 use builder::test_utils::{setup_logging, setup_test_config};
 use eyre::Result;
 
