@@ -1,3 +1,4 @@
+#![cfg(feature = "test-utils")]
 #![recursion_limit = "256"]
 //! Tests for the block building task.
 

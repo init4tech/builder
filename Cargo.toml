@@ -20,26 +20,6 @@ name = "builder"
 name = "zenith-builder-example"
 path = "bin/builder.rs"
 
-[[test]]
-name = "block_builder_test"
-required-features = ["test-utils"]
-
-[[test]]
-name = "bundle_poller_test"
-required-features = ["test-utils"]
-
-[[test]]
-name = "cache"
-required-features = ["test-utils"]
-
-[[test]]
-name = "env"
-required-features = ["test-utils"]
-
-[[test]]
-name = "tx_poller_test"
-required-features = ["test-utils"]
-
 [dependencies]
 init4-bin-base = { version = "0.18.0-rc.13", features = ["perms", "aws", "pylon"] }
 

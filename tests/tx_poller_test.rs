@@ -1,3 +1,5 @@
+#![cfg(feature = "test-utils")]
+
 use alloy::{primitives::U256, signers::local::PrivateKeySigner};
 use builder::{
     tasks::cache::TxPoller,
