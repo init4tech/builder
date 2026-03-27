@@ -131,7 +131,7 @@ src/
 ### GitHub
 
 - Fresh branches off `main` for PRs. Descriptive branch names.
-- AI-authored GitHub comments must include `**[Claude Code]**` header. Minimum: 1.85, Edition: 2024
+- AI-authored GitHub comments must include `**[Claude Code]**` header.
 
 ## Testing
 
