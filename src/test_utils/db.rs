@@ -21,7 +21,7 @@ pub type TestDb = CacheDB<EmptyDB>;
 /// which is required for preflight validity checks during simulation.
 #[derive(Debug, Clone)]
 pub struct TestStateSource {
-    db: InnerDb<TestDb>,
+    db: TestDb,
 }
 
 impl TestStateSource {

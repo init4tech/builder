@@ -1,3 +1,4 @@
+#![cfg(feature = "test-utils")]
 //! Load tests for bundle simulation.
 //!
 //! These tests exercise the block building loop with high volumes of bundles
