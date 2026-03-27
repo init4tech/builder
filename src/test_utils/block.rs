@@ -116,14 +116,22 @@ impl TestBlockBuildBuilder {
     /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
     pub fn build(self) -> TestBlockBuild {
-        let builder = self.sim_env_builder.unwrap_or_default();
-        let ru_state_source = TestStateSource::new(builder.rollup_db());
-        let host_state_source = TestStateSource::new(builder.host_db());
-
-        let (rollup_env, host_env) = match (self.rollup_env, self.host_env) {
-            (Some(rollup), Some(host)) => (rollup, host),
-            _ => builder.build(),
+        let (rollup_env, host_env, rollup_db, host_db) = match self.env {
+            TestBlockBuildEnv::Builder(builder) => {
+                let rollup_db = builder.rollup_db();
+                let host_db = builder.host_db();
+                let (rollup, host) = builder.build();
+                (rollup, host, rollup_db, host_db)
+            }
+            TestBlockBuildEnv::Built { rollup, host } => {
+                let rollup_db = TestDb::new(Default::default());
+                let host_db = TestDb::new(Default::default());
+                (rollup, host, rollup_db, host_db)
+            }
         };
+
+        let ru_state_source = TestStateSource::new(rollup_db);
+        let host_state_source = TestStateSource::new(host_db);
 
         // Convert the relative deadline into the absolute instant expected by `BlockBuild`.
         let finish_by = Instant::now() + self.deadline_duration;
@@ -139,8 +147,6 @@ impl TestBlockBuildBuilder {
             ru_state_source,
             host_state_source,
         )
-        .build()
-        .await
     }
 }
 
@@ -148,7 +154,7 @@ impl TestBlockBuildBuilder {
 /// This is useful for simple test cases where you just want to simulate
 /// some transactions quickly.
 pub async fn quick_build_block(cache: SimCache, deadline: Duration) -> BuiltBlock {
-    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).into_block_build().await
+    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).build().build().await
 }
 
 #[cfg(test)]
