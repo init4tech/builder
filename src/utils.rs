@@ -30,9 +30,8 @@ pub fn populate_initial_gas(
     let base_fee_per_gas = prev_header
         .next_block_base_fee(BaseFeeParams::ethereum())
         .expect("signet deployed after 1559 active") as u128;
-    let blob_basefee = prev_header
-        .next_block_blob_fee(blob_params)
-        .expect("signet deployed after 7840 active");
+    let blob_basefee =
+        prev_header.next_block_blob_fee(blob_params).expect("signet deployed after 7840 active");
 
     req.max_priority_fee_per_gas = Some(STARTING_MPFPG);
     req.max_fee_per_gas = Some((base_fee_per_gas * 1025 / 1024) + STARTING_MPFPG);
