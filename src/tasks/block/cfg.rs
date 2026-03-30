@@ -1,5 +1,6 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
-use reth_chainspec::ChainSpec;
+use alloy::eips::eip7840::BlobParams;
+use reth_chainspec::{ChainSpec, EthChainSpec};
 use signet_block_processor::revm_spec;
 use signet_constants::{mainnet, parmigiana};
 use signet_genesis::{
@@ -29,18 +30,29 @@ impl SignetCfgEnv {
         Self { chain_id, timestamp }
     }
 
-    fn spec_id(&self) -> SpecId {
+    /// Returns a reference to the [`ChainSpec`] for the configured chain.
+    fn chainspec(&self) -> &ChainSpec {
         match self.chain_id {
-            parmigiana::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => revm_spec(
-                RU_CHAINSPEC.get_or_init(|| initialize_ru_chainspec(self.chain_id)),
-                self.timestamp,
-            ),
-            parmigiana::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => revm_spec(
-                HOST_CHAINSPEC.get_or_init(|| initialize_host_chainspec(self.chain_id)),
-                self.timestamp,
-            ),
+            parmigiana::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => {
+                RU_CHAINSPEC.get_or_init(|| initialize_ru_chainspec(self.chain_id))
+            }
+            parmigiana::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => {
+                HOST_CHAINSPEC.get_or_init(|| initialize_host_chainspec(self.chain_id))
+            }
             _ => unimplemented!("Unknown chain ID: {}", self.chain_id),
         }
+    }
+
+    /// Returns the [`BlobParams`] for the configured chain and timestamp.
+    ///
+    /// Resolves the correct blob parameters from the chain spec's blob
+    /// schedule, handling Cancun, Prague, Osaka, and BPO hardfork transitions.
+    pub fn blob_params(&self) -> Option<BlobParams> {
+        EthChainSpec::blob_params_at_timestamp(self.chainspec(), self.timestamp)
+    }
+
+    fn spec_id(&self) -> SpecId {
+        revm_spec(self.chainspec(), self.timestamp)
     }
 }
 

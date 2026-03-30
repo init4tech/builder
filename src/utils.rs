@@ -20,14 +20,18 @@ pub fn extract_signature_components(sig: &Signature) -> (u8, B256, B256) {
 
 /// Populates the initial gas parameters for a transaction request based on the
 /// previous block header.
-pub fn populate_initial_gas(req: &mut TransactionRequest, prev_header: &Header) {
+pub fn populate_initial_gas(
+    req: &mut TransactionRequest,
+    prev_header: &Header,
+    blob_params: BlobParams,
+) {
     const STARTING_MPFPG: u128 = 2 * GWEI_TO_WEI as u128;
 
     let base_fee_per_gas = prev_header
         .next_block_base_fee(BaseFeeParams::ethereum())
         .expect("signet deployed after 1559 active") as u128;
     let blob_basefee = prev_header
-        .next_block_blob_fee(BlobParams::prague())
+        .next_block_blob_fee(blob_params)
         .expect("signet deployed after 7840 active");
 
     req.max_priority_fee_per_gas = Some(STARTING_MPFPG);
