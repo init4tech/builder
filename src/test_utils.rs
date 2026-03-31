@@ -101,6 +101,59 @@ pub fn setup_logging() {
     let _ = registry.try_init();
 }
 
+/// Set up a builder config for mainnet integration tests.
+///
+/// Uses `SignetSystemConstants::mainnet()` and the mainnet `SlotCalculator`.
+/// The `host_rpc_url` should point to an Anvil fork of Ethereum mainnet.
+/// The `builder_key_hex` should be a hex-encoded private key (e.g. from
+/// Anvil's pre-funded accounts).
+pub fn setup_mainnet_test_config(
+    host_rpc_url: &str,
+    builder_key_hex: &str,
+) -> &'static BuilderConfig {
+    &crate::CONFIG_AND_GUARD
+        .get_or_init(|| {
+            let config = BuilderConfig {
+                host_rpc: host_rpc_url
+                    .parse::<BuiltInConnectionString>()
+                    .map(ProviderConfig::new)
+                    .unwrap(),
+                // Dummy RU RPC — not used when SimEnv is constructed manually.
+                ru_rpc: "ws://localhost:59999"
+                    .parse::<BuiltInConnectionString>()
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+                flashbots_endpoint: "https://relay.flashbots.net:443".parse().unwrap(),
+                quincey_url: "http://localhost:8080".into(),
+                sequencer_key: None,
+                builder_key: builder_key_hex.to_string(),
+                builder_port: 8080,
+                builder_rewards_address: Address::default(),
+                rollup_block_gas_limit: 3_000_000_000,
+                tx_pool_url: "http://localhost:9000/".parse().unwrap(),
+                oauth: OAuthConfig {
+                    oauth_client_id: "some_client_id".into(),
+                    oauth_client_secret: "some_client_secret".into(),
+                    oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
+                    oauth_token_url: "http://localhost:8080".parse().unwrap(),
+                    oauth_token_refresh_interval: 300,
+                },
+                concurrency_limit: None,
+                slot_calculator: SlotCalculator::mainnet(),
+                block_query_cutoff_buffer: Default::default(),
+                submit_deadline_buffer: Default::default(),
+                max_host_gas_coefficient: Default::default(),
+                constants: SignetSystemConstants::mainnet(),
+                pylon_url: "http://localhost:8081".parse().unwrap(),
+                tracing: TracingConfig::default(),
+                metrics: MetricsConfig::default(),
+            };
+            ConfigAndGuard { config, guard: None }
+        })
+        .config
+}
+
 /// Returns a Pecorino block environment for simulation with the timestamp set to `finish_by`,
 /// the block number set to latest + 1, system gas configs, and a beneficiary address.
 pub fn test_block_env(number: u64, basefee: u64, timestamp: u64) -> BlockEnv {
