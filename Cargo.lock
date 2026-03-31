@@ -126,9 +126,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-chains"
-version = "0.2.32"
+version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9247f0a399ef71aeb68f497b2b8fb348014f742b50d3b83b1e00dfe1b7d64b3d"
+checksum = "f4e9e31d834fe25fe991b8884e4b9f0e59db4a97d86e05d1464d6899c013cd62"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -4951,14 +4951,15 @@ dependencies = [
 
 [[package]]
 name = "ipconfig"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d72a21f6a71a6c4c3160e095e8925861f5119dd26ef71acee1b9146f74f76c8"
+checksum = "4d40460c0ce33d6ce4b0630ad68ff63d6661961c48b6dba35e5a4d81cfb48222"
 dependencies = [
  "socket2",
  "widestring",
+ "windows-registry",
+ "windows-result",
  "windows-sys 0.61.2",
- "winreg",
 ]
 
 [[package]]
@@ -5410,9 +5411,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1744e39d1d6a9948f4f388969627434e31128196de472883b39f148769bfe30a"
+checksum = "7ddbf48fd451246b1f8c2610bd3b4ac0cc6e149d89832867093ab69a17194f08"
 dependencies = [
  "bitflags 2.11.0",
  "libc",
@@ -5941,9 +5942,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
+checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
 
 [[package]]
 name = "num-integer"
@@ -10888,9 +10889,9 @@ dependencies = [
 
 [[package]]
 name = "signet-bundle"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e9bd62b011781950089d31f742d90b3d62ba00f374db0dfe0d3ba1f1358b45c"
+checksum = "68186af7d8d64cb0f797958f2dc7f804d43e4aee173a7f47da7306e334ff4944"
 dependencies = [
  "alloy",
  "serde",
@@ -10904,9 +10905,9 @@ dependencies = [
 
 [[package]]
 name = "signet-constants"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf9a4bb305179fc7461eb5cbee914344067ef03dccc267b20dfc1eaea9db1459"
+checksum = "2a56e37afb65ccc49d4a3fa755d784541b3935ec6c2893a1a3ced9f70b33b19b"
 dependencies = [
  "alloy",
  "serde",
@@ -10940,9 +10941,9 @@ dependencies = [
 
 [[package]]
 name = "signet-evm"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55caa1277f82e8854b9daf275d20deb8a78d57fa1babdcdeed8dd2976dfca18c"
+checksum = "ae5ec198bdc5cefedd4f8032eb8364fda2dd4244046146cb98809e5efed4b570"
 dependencies = [
  "alloy",
  "bitflags 2.11.0",
@@ -10957,9 +10958,9 @@ dependencies = [
 
 [[package]]
 name = "signet-extract"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a1e5c76e9c86d5e3cc8d321e41022cf2a6658e6346119fd4c29f894d8513a1c"
+checksum = "ad44bbdefd2e8e48b3949ecd4b6ec30bf839a9c42d8f6577ce0a134834f0bdda"
 dependencies = [
  "alloy",
  "signet-types",
@@ -10982,9 +10983,9 @@ dependencies = [
 
 [[package]]
 name = "signet-journal"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89519bce0c6d3143593cdab0501852741f66b641d048d65ec87cb095a803bd0a"
+checksum = "230f5b7e72f1e09da3bc5800cb54b9020dd6c33a4918cf3ef8b5f87e0253b544"
 dependencies = [
  "alloy",
  "futures-util",
@@ -11010,9 +11011,9 @@ dependencies = [
 
 [[package]]
 name = "signet-sim"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f6fe279a15c70233025257536f405c1f4c502525ef533c852f918933e0b5084"
+checksum = "d086b820ddde81a34b6c3d9aa65fe0de5e4604d18f89feab75e4670dea4093cf"
 dependencies = [
  "alloy",
  "lru",
@@ -11029,9 +11030,9 @@ dependencies = [
 
 [[package]]
 name = "signet-tx-cache"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d95529a7f5a351bf5daee91a4c25a317fcb815b0fc4a26aa7099629d619eb51b"
+checksum = "8f5735d9800f2e03b09ab38e7ca5934e8b83772d874bf6e0accecfe5fe00f48f"
 dependencies = [
  "alloy",
  "futures-util",
@@ -11048,9 +11049,9 @@ dependencies = [
 
 [[package]]
 name = "signet-types"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10dff727bb17387f043999bca9dafef6c0ba8e10e8d7c5f5fd8e53b708ea959"
+checksum = "d3fa53bcfd58d863ef7fe209138228ec3d9aa63e856e2fc70a7a3b03881fbc82"
 dependencies = [
  "alloy",
  "chrono",
@@ -11062,9 +11063,9 @@ dependencies = [
 
 [[package]]
 name = "signet-zenith"
-version = "0.16.0-rc.16"
+version = "0.16.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7c96ff57c3b9d32a452d96cbf0bd852c987688721c84877ec6218e1ceed87ed"
+checksum = "a7110722fbf7e006b48cd22db11338958af1afb0b5373027de8d3a4b6b1ff3e5"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -12106,9 +12107,9 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.12.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+checksum = "da36089a805484bcccfffe0739803392c8298778a2d2f09febf76fac5ad9025b"
 
 [[package]]
 name = "unicode-truncate"
@@ -12908,16 +12909,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a90e88e4667264a994d34e6d1ab2d26d398dcdca8b7f52bec8668957517fc7d8"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "winreg"
-version = "0.55.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
-dependencies = [
- "cfg-if",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
