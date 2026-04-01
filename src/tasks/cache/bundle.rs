@@ -71,24 +71,30 @@ impl BundlePoller {
             }
 
             counter!("signet.builder.cache.bundle_poll_count").increment(1);
-            if let Ok(bundles) =
+            let Ok(bundles) =
                 self.check_bundle_cache().instrument(span.clone()).await.inspect_err(|error| {
-                    if matches!(error, BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot)) {
-                        trace!("Not our slot to fetch bundles");
-                    } else {
-                        counter!("signet.builder.cache.bundle_poll_errors").increment(1);
-                        warn!(%error, "Failed to fetch bundles from tx-cache");
+                    match error {
+                        BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                            trace!("Not our slot to fetch bundles");
+                        }
+                        _ => {
+                            counter!("signet.builder.cache.bundle_poll_errors").increment(1);
+                            warn!(%error, "Failed to fetch bundles from tx-cache");
+                        }
                     }
                 })
-            {
-                let _guard = span.enter();
-                histogram!("signet.builder.cache.bundles_fetched").record(bundles.len() as f64);
-                trace!(count = bundles.len(), "fetched bundles from tx-cache");
-                for bundle in bundles.into_iter() {
-                    if let Err(err) = outbound.send(bundle) {
-                        span_debug!(span, ?err, "Failed to send bundle - channel is dropped");
-                        break;
-                    }
+            else {
+                time::sleep(self.poll_duration()).await;
+                continue;
+            };
+
+            let _guard = span.enter();
+            histogram!("signet.builder.cache.bundles_fetched").record(bundles.len() as f64);
+            trace!(count = bundles.len(), "fetched bundles from tx-cache");
+            for bundle in bundles {
+                if let Err(err) = outbound.send(bundle) {
+                    span_debug!(span, ?err, "Failed to send bundle - channel is dropped");
+                    break;
                 }
             }
 
