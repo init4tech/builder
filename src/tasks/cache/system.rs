@@ -23,7 +23,7 @@ impl CacheTasks {
     /// [`CacheTask`], [`TxPoller`], and [`BundlePoller`] internally and yields their [`JoinHandle`]s.
     pub fn spawn(&self) -> CacheSystem {
         // Tx Poller pulls transactions from the cache
-        let tx_poller = TxPoller::new();
+        let tx_poller = TxPoller::new(self.block_env.clone());
         let (tx_receiver, tx_poller) = tx_poller.spawn();
 
         // Bundle Poller pulls bundles from the cache
