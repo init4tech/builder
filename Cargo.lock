@@ -3702,6 +3702,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "eventsource-stream"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74fef4569247a5f429d9156b9d0a2599914385dd189c539334c625d8099d90ab"
+dependencies = [
+ "futures-core",
+ "nom",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4835,9 +4846,9 @@ dependencies = [
 
 [[package]]
 name = "init4-bin-base"
-version = "0.18.0-rc.13"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054d4b927194b1e73c85945a93254b19772fee2c627b190c9ae7c72da0b40eaf"
+checksum = "f94c64278d765503d752783c7a1f1052f0d41cff51cd1fd258958d94a9a03010"
 dependencies = [
  "alloy",
  "async-trait",
@@ -10888,9 +10899,9 @@ dependencies = [
 
 [[package]]
 name = "signet-bundle"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e9bd62b011781950089d31f742d90b3d62ba00f374db0dfe0d3ba1f1358b45c"
+checksum = "9d4800df338d00c21ada5e79bb68c3a4dc092410339954a9fab5b40efefd4f38"
 dependencies = [
  "alloy",
  "serde",
@@ -10904,9 +10915,9 @@ dependencies = [
 
 [[package]]
 name = "signet-constants"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf9a4bb305179fc7461eb5cbee914344067ef03dccc267b20dfc1eaea9db1459"
+checksum = "39cc8ae6e3190db31ba9b9124c82981228a60b7702694b6b01d165f93e75a6f3"
 dependencies = [
  "alloy",
  "serde",
@@ -10940,9 +10951,9 @@ dependencies = [
 
 [[package]]
 name = "signet-evm"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55caa1277f82e8854b9daf275d20deb8a78d57fa1babdcdeed8dd2976dfca18c"
+checksum = "8073dfb7077dee75e9a42cd0cc368530e211f749af7d43d55cfd73ddbf3e0d08"
 dependencies = [
  "alloy",
  "bitflags 2.11.0",
@@ -10957,9 +10968,9 @@ dependencies = [
 
 [[package]]
 name = "signet-extract"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a1e5c76e9c86d5e3cc8d321e41022cf2a6658e6346119fd4c29f894d8513a1c"
+checksum = "829cc061f00fd022db2a894d0eab480a9d9964fe0baa4a5fde644664b1155cfb"
 dependencies = [
  "alloy",
  "signet-types",
@@ -10982,9 +10993,9 @@ dependencies = [
 
 [[package]]
 name = "signet-journal"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89519bce0c6d3143593cdab0501852741f66b641d048d65ec87cb095a803bd0a"
+checksum = "01aff7a1ddad90c45fd01c803ad67df8a425000ea3ac3c3376aab456571c519d"
 dependencies = [
  "alloy",
  "futures-util",
@@ -11010,9 +11021,9 @@ dependencies = [
 
 [[package]]
 name = "signet-sim"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f6fe279a15c70233025257536f405c1f4c502525ef533c852f918933e0b5084"
+checksum = "12996e1a9fb1c9922bba5295fe8a864eab720bb07506b652c892d0ec137b04dc"
 dependencies = [
  "alloy",
  "lru",
@@ -11029,14 +11040,16 @@ dependencies = [
 
 [[package]]
 name = "signet-tx-cache"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d95529a7f5a351bf5daee91a4c25a317fcb815b0fc4a26aa7099629d619eb51b"
+checksum = "d5e69dbf74a07824c91899c67c2ef51547095a310b44732b908899eb4b28c3e8"
 dependencies = [
  "alloy",
+ "eventsource-stream",
  "futures-util",
  "reqwest",
  "serde",
+ "serde_json",
  "signet-bundle",
  "signet-constants",
  "signet-types",
@@ -11048,9 +11061,9 @@ dependencies = [
 
 [[package]]
 name = "signet-types"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10dff727bb17387f043999bca9dafef6c0ba8e10e8d7c5f5fd8e53b708ea959"
+checksum = "81933b0d48c5e2f5d4b7a669b20cfa170535e25b854a28ce842f81e24d4e426b"
 dependencies = [
  "alloy",
  "chrono",
@@ -11062,9 +11075,9 @@ dependencies = [
 
 [[package]]
 name = "signet-zenith"
-version = "0.16.0-rc.16"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7c96ff57c3b9d32a452d96cbf0bd852c987688721c84877ec6218e1ceed87ed"
+checksum = "23da99308da387b30d16e3fd62d6aef5ead4d961a72b65962a30b0f9658cbba7"
 dependencies = [
  "alloy",
  "alloy-core",
