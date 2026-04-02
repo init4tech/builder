@@ -53,8 +53,8 @@ pub type HostProvider = FillProvider<
     RootProvider,
 >;
 
-/// The provider type used to submit bundles to a Flashbots relay.
-pub type FlashbotsProvider = FillProvider<
+/// The provider type used to submit bundles to an MEV relay.
+pub type RelayProvider = FillProvider<
     JoinFill<
         JoinFill<
             Identity,
@@ -91,14 +91,18 @@ pub struct BuilderConfig {
     #[from_env(var = "TX_POOL_URL", desc = "URL of the tx pool to poll for incoming transactions")]
     pub tx_pool_url: url::Url,
 
-    /// Configuration for the Flashbots provider to submit
-    /// SignetBundles and Rollup blocks to the Host chain
-    /// as private MEV bundles via Flashbots.
+    /// Comma-separated list of MEV relay/builder endpoints for bundle
+    /// submission. The builder fans out each bundle to all endpoints
+    /// concurrently for maximum inclusion probability.
+    ///
+    /// At least one endpoint must be configured. Parsed from raw strings
+    /// into [`url::Url`] during [`sanitize`](Self::sanitize).
     #[from_env(
-        var = "FLASHBOTS_ENDPOINT",
-        desc = "Flashbots endpoint for privately submitting Signet bundles"
+        var = "SUBMIT_ENDPOINTS",
+        desc = "Comma-separated list of MEV relay/builder RPC endpoints for bundle submission (at least one required)",
+        infallible
     )]
-    pub flashbots_endpoint: url::Url,
+    pub submit_endpoints: Vec<String>,
 
     /// URL for remote Quincey Sequencer server to sign blocks.
     /// NB: Disregarded if a sequencer_signer is configured.
@@ -220,6 +224,19 @@ impl BuilderConfig {
         if !self.tx_pool_url.path().ends_with('/') {
             self.tx_pool_url.set_path(&format!("{}/", self.tx_pool_url.path()));
         }
+
+        assert!(
+            !self.submit_endpoints.is_empty(),
+            "SUBMIT_ENDPOINTS must contain at least one URL"
+        );
+
+        // Validate that every submit endpoint is a parseable URL. Fail fast
+        // on startup rather than at first block submission.
+        for raw in &self.submit_endpoints {
+            url::Url::parse(raw)
+                .unwrap_or_else(|e| panic!("invalid URL in SUBMIT_ENDPOINTS \"{raw}\": {e}"));
+        }
+
         self
     }
 
@@ -274,11 +291,22 @@ impl BuilderConfig {
             .connect_provider(provider?))
     }
 
-    /// Connect to a Flashbots bundle provider.
-    pub async fn connect_flashbots(&self) -> Result<FlashbotsProvider> {
-        self.connect_builder_signer().await.map(|signer| {
-            ProviderBuilder::new().wallet(signer).connect_http(self.flashbots_endpoint.clone())
-        })
+    /// Connect to all configured MEV relay/builder endpoints.
+    ///
+    /// Returns one [`RelayProvider`] per URL in `submit_endpoints`.
+    /// URLs were already validated during [`sanitize`](Self::sanitize).
+    pub async fn connect_relays(&self) -> Result<Vec<(url::Url, RelayProvider)>> {
+        let signer = self.connect_builder_signer().await?;
+        Ok(self
+            .submit_endpoints
+            .iter()
+            .map(|raw| {
+                let url: url::Url = raw.parse().expect("validated in sanitize");
+                let provider =
+                    ProviderBuilder::new().wallet(signer.clone()).connect_http(url.clone());
+                (url, provider)
+            })
+            .collect())
     }
 
     /// Connect to the Zenith instance, using the specified provider.

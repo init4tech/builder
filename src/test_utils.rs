@@ -37,7 +37,7 @@ pub fn setup_test_config() -> &'static BuilderConfig {
                     .unwrap()
                     .try_into()
                     .unwrap(),
-                flashbots_endpoint: "https://relay-sepolia.flashbots.net:443".parse().unwrap(),
+                submit_endpoints: vec!["https://relay-sepolia.flashbots.net:443".to_string()],
                 quincey_url: "http://localhost:8080".into(),
                 sequencer_key: None,
                 builder_key: env::var("SEPOLIA_ETH_PRIV_KEY")
