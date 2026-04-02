@@ -4,7 +4,7 @@ use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     providers::Provider,
 };
-use futures_util::TryStreamExt;
+use futures_util::{TryFutureExt, TryStreamExt};
 use init4_bin_base::deps::metrics::{counter, histogram};
 use signet_tx_cache::{TxCache, TxCacheError};
 use std::time::Duration;
@@ -108,16 +108,19 @@ impl TxPoller {
             // Check this here to avoid making the web request if we know
             // we don't need the results.
             if outbound.is_closed() {
-                trace!("No receivers left, shutting down");
+                span.in_scope(|| trace!("No receivers left, shutting down"));
                 break;
             }
 
             counter!("signet.builder.cache.tx_poll_count").increment(1);
-            if let Ok(transactions) =
-                self.check_tx_cache().instrument(span.clone()).await.inspect_err(|error| {
+            if let Ok(transactions) = self
+                .check_tx_cache()
+                .inspect_err(|error| {
                     counter!("signet.builder.cache.tx_poll_errors").increment(1);
                     debug!(%error, "Error fetching transactions");
                 })
+                .instrument(span.clone())
+                .await
             {
                 let _guard = span.entered();
                 histogram!("signet.builder.cache.txs_fetched").record(transactions.len() as f64);
