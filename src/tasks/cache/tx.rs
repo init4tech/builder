@@ -8,7 +8,11 @@ use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use init4_bin_base::deps::metrics::{counter, histogram};
 use signet_tx_cache::{TxCache, TxCacheError};
 use std::{pin::Pin, time::Duration};
-use tokio::{sync::{mpsc, watch}, task::JoinHandle, time};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+    time,
+};
 use tracing::{Instrument, debug, debug_span, trace, trace_span, warn};
 
 type SseStream = Pin<Box<dyn Stream<Item = Result<TxEnvelope, TxCacheError>> + Send>>;
@@ -83,7 +87,7 @@ impl TxPoller {
     }
 
     /// Fetches all transactions from the cache, forwarding each to nonce
-    /// checking before it reaches the [`CacheTask`].
+    /// checking before it reaches the cache task.
     async fn full_fetch(&self, outbound: &mpsc::UnboundedSender<ReceivedTx>) {
         let span = trace_span!("TxPoller::full_fetch", url = %self.config.tx_pool_url);
 
