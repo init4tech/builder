@@ -1,6 +1,6 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use futures_util::TryStreamExt;
+use futures_util::{TryFutureExt, TryStreamExt};
 use init4_bin_base::{
     deps::metrics::{counter, histogram},
     perms::tx_cache::{BuilderTxCache, BuilderTxCacheError},
@@ -11,7 +11,7 @@ use tokio::{
     task::JoinHandle,
     time::{self, Duration},
 };
-use tracing::{Instrument, trace, trace_span, warn};
+use tracing::{Instrument, debug, trace, trace_span, warn};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -66,35 +66,38 @@ impl BundlePoller {
             // Check this here to avoid making the web request if we know
             // we don't need the results.
             if outbound.is_closed() {
-                trace!("No receivers left, shutting down");
+                span.in_scope(|| trace!("No receivers left, shutting down"));
                 break;
             }
 
             counter!("signet.builder.cache.bundle_poll_count").increment(1);
-            let Ok(bundles) =
-                self.check_bundle_cache().instrument(span.clone()).await.inspect_err(|error| {
-                    match error {
-                        BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
-                            trace!("Not our slot to fetch bundles");
-                        }
-                        _ => {
-                            counter!("signet.builder.cache.bundle_poll_errors").increment(1);
-                            warn!(%error, "Failed to fetch bundles from tx-cache");
-                        }
+            let Ok(bundles) = self
+                .check_bundle_cache()
+                .inspect_err(|error| match error {
+                    BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                        trace!("Not our slot to fetch bundles");
+                    }
+                    _ => {
+                        counter!("signet.builder.cache.bundle_poll_errors").increment(1);
+                        warn!(%error, "Failed to fetch bundles from tx-cache");
                     }
                 })
+                .instrument(span.clone())
+                .await
             else {
                 time::sleep(self.poll_duration()).await;
                 continue;
             };
 
-            let _guard = span.enter();
-            histogram!("signet.builder.cache.bundles_fetched").record(bundles.len() as f64);
-            trace!(count = bundles.len(), "fetched bundles from tx-cache");
-            for bundle in bundles {
-                if let Err(err) = outbound.send(bundle) {
-                    span_debug!(span, ?err, "Failed to send bundle - channel is dropped");
-                    break;
+            {
+                let _guard = span.entered();
+                histogram!("signet.builder.cache.bundles_fetched").record(bundles.len() as f64);
+                trace!(count = bundles.len(), "fetched bundles from tx-cache");
+                for bundle in bundles {
+                    if let Err(err) = outbound.send(bundle) {
+                        debug!(?err, "Failed to send bundle - channel is dropped");
+                        break;
+                    }
                 }
             }
 
