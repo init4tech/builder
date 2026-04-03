@@ -23,8 +23,8 @@ use crate::{
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
-    consensus::TxEnvelope, eips::Encodable2718, primitives::TxHash, providers::ext::MevApi,
-    rpc::types::mev::EthSendBundle,
+    consensus::TxEnvelope, eips::Encodable2718, primitives::{Bytes, TxHash},
+    providers::ext::MevApi, rpc::types::mev::EthSendBundle,
 };
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
 use std::{
@@ -40,7 +40,7 @@ use tracing::{Instrument, debug, debug_span, error, info, instrument, warn};
 /// Fans out each prepared bundle to all relays concurrently and submits
 /// the blob sidecar to Pylon regardless of relay outcome.
 #[derive(Debug)]
-pub struct FlashbotsTask {
+pub struct SubmitTask {
     /// Builder configuration for the task.
     config: &'static BuilderConfig,
     /// Quincey instance for block signing.
@@ -58,10 +58,10 @@ pub struct FlashbotsTask {
     pylon: PylonClient,
 }
 
-impl FlashbotsTask {
-    /// Returns a new `FlashbotsTask` instance that receives `SimResult` types from the given
+impl SubmitTask {
+    /// Returns a new `SubmitTask` instance that receives `SimResult` types from the given
     /// channel and handles their preparation and submission to MEV relay/builder endpoints.
-    pub async fn new(outbound: mpsc::UnboundedSender<TxHash>) -> eyre::Result<FlashbotsTask> {
+    pub async fn new(outbound: mpsc::UnboundedSender<TxHash>) -> eyre::Result<SubmitTask> {
         let config = crate::config();
 
         let (quincey, host_provider, relays, builder_key) = tokio::try_join!(
@@ -190,8 +190,7 @@ impl FlashbotsTask {
             }
             span_debug!(span, "submit task received block");
 
-            let result = self.prepare(&sim_result).instrument(span.clone()).await;
-            let bundle = match result {
+            let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {
                 Ok(bundle) => bundle,
                 Err(error) => {
                     counter!("signet.builder.submit.bundle_prep_failures").increment(1);
@@ -203,105 +202,18 @@ impl FlashbotsTask {
             // The block transaction is always last in the bundle.
             let block_tx = bundle.txs.last().unwrap().clone();
 
+            let submission = Submission {
+                bundle,
+                block_tx,
+                relays: Arc::clone(&self.relays),
+                signer: self.signer.clone(),
+                pylon: self.pylon.clone(),
+                deadline,
+            };
+
             let _guard = span.enter();
-            let submit_span = debug_span!("submit.fan_out",).or_current();
-
-            let relays = Arc::clone(&self.relays);
-            let signer = self.signer.clone();
-            let pylon = self.pylon.clone();
-
-            tokio::spawn(
-                async move {
-                    let n_relays = relays.len();
-
-                    // Build one future per relay
-                    let futs: Vec<_> = relays
-                        .iter()
-                        .map(|(url, provider)| {
-                            let bundle = bundle.clone();
-                            let signer = signer.clone();
-                            let url = url.clone();
-                            async move {
-                                let result = provider
-                                    .send_bundle(bundle)
-                                    .with_auth(signer)
-                                    .into_future()
-                                    .await;
-                                (url, result)
-                            }
-                        })
-                        .collect();
-
-                    // Apply deadline timeout to the fan-out
-                    let deadline_dur = deadline
-                        .saturating_duration_since(Instant::now())
-                        .max(Duration::from_secs(1));
-
-                    let (mut successes, mut failures) = (0u32, 0u32);
-
-                    match tokio::time::timeout(deadline_dur, futures_util::future::join_all(futs))
-                        .await
-                    {
-                        Ok(relay_results) => {
-                            for (url, result) in &relay_results {
-                                let host = url.host_str().unwrap_or("unknown");
-                                counter!("signet.builder.submit.relay_submissions").increment(1);
-                                match result {
-                                    Ok(_) => {
-                                        counter!("signet.builder.submit.relay_successes")
-                                            .increment(1);
-                                        debug!(relay = host, "bundle accepted");
-                                        successes += 1;
-                                    }
-                                    Err(err) => {
-                                        counter!("signet.builder.submit.relay_failures")
-                                            .increment(1);
-                                        warn!(relay = host, %err, "bundle rejected");
-                                        failures += 1;
-                                    }
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            counter!("signet.builder.submit.deadline_missed").increment(1);
-                            warn!("relay fan-out timed out - some relays may not have responded");
-                        }
-                    }
-
-                    if successes == 0 {
-                        counter!("signet.builder.submit.all_relays_failed").increment(1);
-                        error!(
-                            failures,
-                            n_relays, "all relay submissions failed - bundle may not land"
-                        );
-                    } else {
-                        counter!("signet.builder.submit.bundles_submitted").increment(1);
-                        if Instant::now() > deadline {
-                            counter!("signet.builder.submit.deadline_missed").increment(1);
-                            warn!(successes, failures, "bundle submitted to relays AFTER deadline");
-                        } else {
-                            counter!("signet.builder.submit.deadline_met").increment(1);
-                            info!(
-                                successes,
-                                failures, n_relays, "bundle submitted to relays within deadline"
-                            );
-                        }
-                    }
-
-                    // Always submit sidecar to Pylon, regardless of relay
-                    // outcome. The sidecar must be available on the host chain
-                    // even if relay submission failed or timed out.
-                    if let Err(err) = pylon.post_blob_tx(block_tx).await {
-                        counter!("signet.builder.pylon.submission_failures").increment(1);
-                        warn!(%err, "pylon submission failed");
-                        return;
-                    }
-
-                    counter!("signet.builder.pylon.sidecars_submitted").increment(1);
-                    debug!("posted sidecar to pylon");
-                }
-                .instrument(submit_span.clone()),
-            );
+            let submit_span = debug_span!("submit.fan_out").or_current();
+            tokio::spawn(submission.run().instrument(submit_span));
         }
     }
 
@@ -336,5 +248,124 @@ impl FlashbotsTask {
         let (sender, inbound) = mpsc::unbounded_channel::<SimResult>();
         let handle = tokio::spawn(self.task_future(inbound));
         (sender, handle)
+    }
+}
+
+/// State for a single bundle submission attempt across all relays and Pylon.
+///
+/// Created per-block by [`SubmitTask::task_future`] and spawned as an
+/// independent tokio task so the main loop can immediately begin
+/// preparing the next block.
+struct Submission {
+    /// The MEV bundle to fan out to relays.
+    bundle: EthSendBundle,
+    /// The encoded block transaction (last entry in the bundle), sent to
+    /// Pylon as a blob sidecar.
+    block_tx: Bytes,
+    /// Relay endpoints for concurrent submission.
+    relays: Arc<Vec<(url::Url, RelayProvider)>>,
+    /// Signing key for relay authentication.
+    signer: LocalOrAws,
+    /// Pylon client for blob sidecar submission.
+    pylon: PylonClient,
+    /// Deadline by which relay responses should arrive.
+    deadline: Instant,
+}
+
+impl Submission {
+    /// Run the full submission pipeline: relay fan-out then Pylon sidecar.
+    async fn run(self) {
+        let (successes, failures) = self.submit_to_relays().await;
+        self.report_relay_metrics(successes, failures);
+        self.submit_to_pylon().await;
+    }
+
+    /// Fan out the bundle to all relays with a deadline timeout.
+    ///
+    /// Returns `(successes, failures)` counts. On timeout, returns
+    /// `(0, 0)` since individual relay outcomes are unknown.
+    async fn submit_to_relays(&self) -> (u32, u32) {
+        let futs: Vec<_> = self
+            .relays
+            .iter()
+            .map(|(url, provider)| {
+                let bundle = self.bundle.clone();
+                let signer = self.signer.clone();
+                let url = url.clone();
+                async move {
+                    let result =
+                        provider.send_bundle(bundle).with_auth(signer).into_future().await;
+                    (url, result)
+                }
+            })
+            .collect();
+
+        let deadline_dur = self
+            .deadline
+            .saturating_duration_since(Instant::now())
+            .max(Duration::from_secs(1));
+
+        let (mut successes, mut failures) = (0u32, 0u32);
+
+        match tokio::time::timeout(deadline_dur, futures_util::future::join_all(futs)).await {
+            Ok(relay_results) => {
+                for (url, result) in &relay_results {
+                    let host = url.host_str().unwrap_or("unknown");
+                    counter!("signet.builder.submit.relay_submissions").increment(1);
+                    match result {
+                        Ok(_) => {
+                            counter!("signet.builder.submit.relay_successes").increment(1);
+                            debug!(relay = host, "bundle accepted");
+                            successes += 1;
+                        }
+                        Err(err) => {
+                            counter!("signet.builder.submit.relay_failures").increment(1);
+                            warn!(relay = host, %err, "bundle rejected");
+                            failures += 1;
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                counter!("signet.builder.submit.deadline_missed").increment(1);
+                warn!("relay fan-out timed out - some relays may not have responded");
+            }
+        }
+
+        (successes, failures)
+    }
+
+    /// Report aggregate relay outcome and deadline metrics.
+    fn report_relay_metrics(&self, successes: u32, failures: u32) {
+        let n_relays = self.relays.len();
+
+        if successes == 0 {
+            counter!("signet.builder.submit.all_relays_failed").increment(1);
+            error!(failures, n_relays, "all relay submissions failed - bundle may not land");
+        } else {
+            counter!("signet.builder.submit.bundles_submitted").increment(1);
+            if Instant::now() > self.deadline {
+                counter!("signet.builder.submit.deadline_missed").increment(1);
+                warn!(successes, failures, "bundle submitted to relays AFTER deadline");
+            } else {
+                counter!("signet.builder.submit.deadline_met").increment(1);
+                info!(successes, failures, n_relays, "bundle submitted to relays within deadline");
+            }
+        }
+    }
+
+    /// Submit the blob sidecar to Pylon unconditionally.
+    ///
+    /// The sidecar must be available on the host chain even if relay
+    /// submission failed or timed out.
+    async fn submit_to_pylon(&self) {
+        if let Err(err) = self.pylon.post_blob_tx(self.block_tx.clone()).await {
+            counter!("signet.builder.pylon.submission_failures").increment(1);
+            warn!(%err, "pylon submission failed");
+            return;
+        }
+
+        counter!("signet.builder.pylon.sidecars_submitted").increment(1);
+        debug!("posted sidecar to pylon");
     }
 }

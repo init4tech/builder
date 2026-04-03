@@ -5,7 +5,7 @@
 
 The Builder simulates bundles and transactions against the latest chain state to create valid Signet rollup blocks and submits them to the configured host chain as an [EIP-4844 transaction](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4844.md).
 
-Bundles are treated as Flashbots-style bundles, meaning that the Builder should respect transaction ordering, bundle atomicity, and the specified revertability.
+Bundles are treated as MEV-style bundles, meaning that the Builder should respect transaction ordering, bundle atomicity, and the specified revertability.
 
 --------------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ The Builder orchestrates a series of asynchronous actors that work together to b
 1. **Env** - watches the latest host and rollup blocks to monitor gas rates and block updates.
 2. **Cache** - polls bundle and transaction caches and adds them to the cache.
 3. **Simulator** - simulates transactions and bundles against rollup state and block environment to build them into a cohesive block.
-4. **FlashbotsSubmit** - handles preparing and submitting the simulated block to a private Flashbots relay.
+4. **Submit** - handles preparing and submitting the simulated block to all configured MEV relay/builder endpoints concurrently.
 5. **Metrics** - records block and tx data over time.
 
 ```mermaid
@@ -36,12 +36,12 @@ flowchart TD
       Cache["🪏 Cache Task"]
       Simulator["💾 Simulator Task"]
       Metrics["📏 Metrics Task"]
-      FlashbotsSubmit["📥 Flashbots Submit Task"]
+      SubmitTask["📥 Submit Task"]
    end
 
    %% Signing
-   FlashbotsSubmit --hash--> Quincey
-   Quincey -- signature --> FlashbotsSubmit
+   SubmitTask --hash--> Quincey
+   Quincey -- signature --> SubmitTask
 
    %% Config wiring
    Config -.rollup rpc.-> Env
@@ -49,19 +49,19 @@ flowchart TD
    Config -.host rpc.-> Simulator
    Config -.rollup rpc.-> Simulator
    Config -.host rpc.-> Metrics
-   Config -.host rpc.-> FlashbotsSubmit
+   Config -.host rpc.-> SubmitTask
 
    %% Core flow
    Env ==block env==> Simulator
    Cache ==sim cache==> Simulator
-   Simulator ==built block==> FlashbotsSubmit
+   Simulator ==built block==> SubmitTask
 
    %% Network submission
-   FlashbotsSubmit ==>|"tx bundle"| FlashbotsRelay["🛡️ Flashbots Relay"]
-   FlashbotsRelay ==> Ethereum
+   SubmitTask ==>|"tx bundle"| Relays["🛡️ MEV Relays / Builders"]
+   Relays ==> Ethereum
 
    %% Metrics
-   FlashbotsSubmit ==rollup block tx hash==> Metrics
+   SubmitTask ==rollup block tx hash==> Metrics
 ```
 
 ### 💾 Simulation Task
@@ -76,11 +76,11 @@ When the deadline is reached, the simulator is stopped, and all open simulation 
 
 ### ✨ Submit Task
 
-The Flashbots submit task prepares a Flashbots bundle out of the Signet block and its host transactions and then submits that bundle to the Flashbots endpoint. It sends the hash of the rollup block transaction for to the Metrics task for further tracking.
+The submit task prepares a MEV bundle from the Signet block and its host transactions, then fans it out to all configured relay/builder endpoints concurrently (`SUBMIT_ENDPOINTS`). At least one successful relay acceptance is required; individual relay failures are tolerated and logged. The blob sidecar is always forwarded to Pylon regardless of relay outcome.
 
 If the block received from simulation is empty, the submit task will ignore it.
 
-Finally, if it's non-empty, the submit task attempts to get a signature for the block, and if it fails due to a 403 error, it will skip the current slot and begin waiting for the next block.
+If it's non-empty, the submit task attempts to get a signature for the block, and if it fails due to a 403 error, it will skip the current slot and begin waiting for the next block.
 
 --------------------------------------------------------------------------------
 
@@ -97,7 +97,7 @@ The Builder is configured via environment variables. The following values are su
 | `QUINCEY_URL` | Yes | Remote sequencer signing endpoint |
 | `SEQUENCER_KEY` | No | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing |
 | `TX_POOL_URL` | Yes | Transaction pool URL |
-| `FLASHBOTS_ENDPOINT` | No | Flashbots API to submit blocks to |
+| `SUBMIT_ENDPOINTS` | Yes | Comma-separated list of MEV relay/builder RPC endpoints for bundle submission (e.g. `https://rpc.flashbots.net,https://rpc.titanbuilder.xyz`) |
 | `ROLLUP_BLOCK_GAS_LIMIT` | No | Override for rollup block gas limit |
 | `MAX_HOST_GAS_COEFFICIENT` | No | Optional maximum host gas coefficient, as a percentage, to use when building blocks |
 | `BUILDER_KEY` | Yes | AWS KMS key ID _or_ local private key for builder signing |

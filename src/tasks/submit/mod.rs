@@ -1,6 +1,6 @@
-/// Submission logic for Flashbots
-pub mod flashbots;
-pub use flashbots::FlashbotsTask;
+/// Bundle submission to MEV relay/builder endpoints.
+pub mod task;
+pub use task::SubmitTask;
 
 mod prep;
 pub use prep::{Bumpable, SubmitPrep};

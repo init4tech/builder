@@ -21,9 +21,9 @@ use signet_zenith::Zenith;
 use tokio::try_join;
 use tracing::{Instrument, debug, error, instrument, warn};
 
-/// Preparation logic for transactions issued to the host chain by the [`FlashbotsTask`].
+/// Preparation logic for transactions issued to the host chain by the [`SubmitTask`].
 ///
-/// [`FlashbotsTask`]: crate::tasks::submit::FlashbotsTask
+/// [`SubmitTask`]: crate::tasks::submit::SubmitTask
 #[derive(Debug, Clone)]
 pub struct SubmitPrep<'a> {
     // The block we are preparing a transaction for
