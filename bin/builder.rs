@@ -5,7 +5,7 @@ use builder::{
     service::serve_builder,
     tasks::{
         block::sim::SimulatorTask, cache::CacheTasks, env::EnvTask, metrics::MetricsTask,
-        submit::FlashbotsTask,
+        submit::SubmitTask,
     },
 };
 use eyre::bail;
@@ -80,7 +80,7 @@ async fn main() -> eyre::Result<()> {
     // Set up the cache, submit, and simulator tasks
     let cache_tasks = CacheTasks::new(block_env.clone());
     let (submit_task, simulator_task) =
-        tokio::try_join!(FlashbotsTask::new(tx_channel.clone()), SimulatorTask::new(block_env),)?;
+        tokio::try_join!(SubmitTask::new(tx_channel.clone()), SimulatorTask::new(block_env),)?;
 
     // Spawn the cache, submit, and simulator tasks
     let cache_system = cache_tasks.spawn();
