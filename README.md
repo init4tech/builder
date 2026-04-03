@@ -166,6 +166,23 @@ The previous header's basefee is tracked through the build loop and used for gas
 
 ## ✅ Testing
 
+### Unit Tests
+
+```bash
+make test
+```
+
+### Integration Tests
+
+Integration tests require network access (RPC endpoints or Anvil) and are gated behind the `test-utils` Cargo feature. They are not compiled by default.
+
+```bash
+make test-all                                            # Run all tests (unit + integration)
+cargo test --features test-utils --test block_builder_test  # Run a specific integration test
+```
+
+### Deployment Verification
+
 1. Build the Docker image:
 
   ```bash

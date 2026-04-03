@@ -1,3 +1,4 @@
+#![cfg(feature = "test-utils")]
 #![recursion_limit = "256"]
 
 use builder::{
@@ -7,7 +8,6 @@ use builder::{
 use init4_bin_base::deps::tracing::warn;
 use std::time::Duration;
 
-#[ignore = "integration test. This test will take >12 seconds to run, and requires Authz configuration env vars."]
 #[tokio::test]
 async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     setup_logging();

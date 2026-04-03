@@ -31,7 +31,7 @@ pub mod tasks;
 /// Utilities.
 pub mod utils;
 
-/// Test utilitites
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 // Anonymous imports suppress warnings about unused crate dependencies.
