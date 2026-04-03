@@ -3,12 +3,10 @@
 //! for testing block simulation without requiring network access.
 
 use alloy::primitives::{Address, B256, U256};
-use signet_sim::{AcctInfo, InnerDb};
-use std::sync::Arc;
+use signet_sim::{AcctInfo, StateSource};
 use trevm::revm::{
     database::{CacheDB, EmptyDB},
     database_interface::DatabaseRef,
-    primitives::KECCAK_EMPTY,
     state::AccountInfo,
 };
 
@@ -18,37 +16,33 @@ use trevm::revm::{
 /// with `RollupEnv` and `HostEnv` for offline simulation testing.
 pub type TestDb = CacheDB<EmptyDB>;
 
-/// A [`StateSource`] backed by a [`TestDb`] for offline testing.
-///
-/// This wraps an in-memory database and implements [`signet_sim::StateSource`]
-/// so it can be used as the async state source parameter in [`BlockBuild::new`].
-///
-/// [`StateSource`]: signet_sim::StateSource
-/// [`BlockBuild::new`]: signet_sim::BlockBuild::new
+/// A [`StateSource`] for testing backed by an in-memory [`TestDb`].
+/// Returns actual account info (nonce, balance) from the database,
+/// which is required for preflight validity checks during simulation.
 #[derive(Debug, Clone)]
 pub struct TestStateSource {
-    db: InnerDb<TestDb>,
+    db: TestDb,
 }
 
 impl TestStateSource {
-    /// Create a new [`TestStateSource`] from a [`TestDb`].
-    pub fn new(db: TestDb) -> Self {
-        Self { db: Arc::new(CacheDB::new(db)) }
-    }
-
-    /// Create a new [`TestStateSource`] from an environment database handle.
-    pub const fn from_inner_db(db: InnerDb<TestDb>) -> Self {
+    /// Create a new `TestStateSource` backed by the given database.
+    pub const fn new(db: TestDb) -> Self {
         Self { db }
     }
 }
 
-impl signet_sim::StateSource for TestStateSource {
-    type Error = <TestDb as DatabaseRef>::Error;
+impl StateSource for TestStateSource {
+    type Error = std::convert::Infallible;
 
     async fn account_details(&self, address: &Address) -> Result<AcctInfo, Self::Error> {
-        let info = self.db.basic_ref(*address)?.unwrap_or_default();
-        let has_code = info.code_hash() != KECCAK_EMPTY;
-        Ok(AcctInfo { nonce: info.nonce, balance: info.balance, has_code })
+        match self.db.basic_ref(*address) {
+            Ok(Some(info)) => Ok(AcctInfo {
+                nonce: info.nonce,
+                balance: info.balance,
+                has_code: info.code_hash != trevm::revm::primitives::KECCAK_EMPTY,
+            }),
+            _ => Ok(AcctInfo { nonce: 0, balance: U256::ZERO, has_code: false }),
+        }
     }
 }
 
