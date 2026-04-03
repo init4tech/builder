@@ -24,8 +24,11 @@ use crate::{
     tasks::{block::sim::SimResult, submit::SubmitPrep},
 };
 use alloy::{
-    consensus::TxEnvelope, eips::Encodable2718, primitives::{Bytes, TxHash},
-    providers::ext::MevApi, rpc::types::mev::EthSendBundle,
+    consensus::TxEnvelope,
+    eips::Encodable2718,
+    primitives::{Bytes, TxHash},
+    providers::ext::MevApi,
+    rpc::types::mev::EthSendBundle,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
@@ -381,9 +384,7 @@ impl Submission {
             counter!("signet.builder.submit.all_relays_failed").increment(1);
             error!(
                 failures,
-                timeouts,
-                n_relays,
-                "all relay submissions failed - bundle may not land"
+                timeouts, n_relays, "all relay submissions failed - bundle may not land"
             );
         } else {
             counter!("signet.builder.submit.bundles_submitted").increment(1);
@@ -394,10 +395,7 @@ impl Submission {
                 counter!("signet.builder.submit.deadline_met").increment(1);
                 info!(
                     successes,
-                    failures,
-                    timeouts,
-                    n_relays,
-                    "bundle submitted to relays within deadline"
+                    failures, timeouts, n_relays, "bundle submitted to relays within deadline"
                 );
             }
         }
