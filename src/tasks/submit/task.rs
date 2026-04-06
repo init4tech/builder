@@ -36,7 +36,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{join, sync::mpsc, task::JoinHandle};
 use tracing::{Instrument, debug, debug_span, error, info, instrument, warn};
 
 /// Handles preparation and submission of simulated rollup blocks to
@@ -290,16 +290,15 @@ struct Submission {
 impl Submission {
     /// Run the full submission pipeline: relay fan-out then Pylon sidecar.
     async fn run(self) {
-        let outcomes = self.submit_to_relays().await;
+        let (outcomes, ()) = join!(self.submit_to_relays(), self.submit_to_pylon());
         self.report_relay_metrics(&outcomes);
-        self.submit_to_pylon().await;
     }
 
     /// Submit the bundle to a single relay with an individual deadline.
     async fn submit_to_relay(
         bundle: EthSendBundle,
         signer: LocalOrAws,
-        relay_url: url::Url,
+        relay_url: &url::Url,
         provider: &RelayProvider,
         timeout_dur: Duration,
     ) -> RelayOutcome {
@@ -343,7 +342,7 @@ impl Submission {
                 Self::submit_to_relay(
                     self.bundle.clone(),
                     self.signer.clone(),
-                    url.clone(),
+                    url,
                     provider,
                     timeout_dur,
                 )
