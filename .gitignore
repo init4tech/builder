@@ -24,5 +24,4 @@ target/
 .vscode/launch.json
 
 .claude/*.local.*
-.claude/settings.json
 CLAUDE.local.md
