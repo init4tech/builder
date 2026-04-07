@@ -266,6 +266,8 @@ enum RelayOutcome {
     Timeout,
 }
 
+const LATE_SUBMISSION_TIMEOUT: Duration = Duration::from_millis(1000);
+
 /// State for a single bundle submission attempt across all relays and Pylon.
 ///
 /// Created per-block by [`SubmitTask::task_future`] and spawned as an
@@ -333,7 +335,15 @@ impl Submission {
         let n_relays = self.relays.len();
         counter!("signet.builder.submit.relay_submissions").increment(n_relays as u64);
 
-        let timeout_dur = self.deadline.saturating_duration_since(Instant::now());
+        let now = Instant::now();
+        let timeout_dur = if now > self.deadline {
+            let late_by = now.duration_since(self.deadline);
+            warn!(?late_by, "submission started AFTER deadline; attempting anyway");
+            counter!("signet.builder.submit.deadline_missed_before_send").increment(1);
+            LATE_SUBMISSION_TIMEOUT
+        } else {
+            self.deadline.duration_since(now)
+        };
 
         let mut futs: FuturesUnordered<_> = self
             .relays
