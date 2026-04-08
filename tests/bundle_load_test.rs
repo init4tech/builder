@@ -223,7 +223,7 @@ async fn test_load_saturate_gas_limit() {
 /// Many bundles with a tight deadline. Verify block completes within time.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_load_deadline_pressure() {
-    let count = 100;
+    let count = 1000;
     let (signers, db_builder) = generate_funded_accounts(count);
     let recipient = Address::repeat_byte(0xDD);
 
@@ -246,6 +246,7 @@ async fn test_load_deadline_pressure() {
     let elapsed = start.elapsed();
 
     assert!(built.tx_count() > 0, "expected at least some txs under deadline pressure");
+    assert!(built.tx_count() < count, "expected fewer than {count} txs under deadline pressure, got {}", built.tx_count());
 
     // Should complete within a reasonable margin of the deadline.
     assert!(elapsed < deadline * 3, "block build took {elapsed:?}, expected within ~{deadline:?}");
