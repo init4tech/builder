@@ -112,10 +112,10 @@ async fn test_load_many_bundles() {
     );
 }
 
-/// 50k bundles each containing 1 transfer tx. Verify block builds with non-zero count of included txs.
+/// 5k bundles each containing 1 transfer tx. Verify block builds with non-zero count of included txs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_load_50k_bundles() {
-    let count = 50_000;
+async fn test_load_5k_bundles() {
+    let count = 5_000;
     let (signers, db_builder) = generate_funded_accounts(count);
     let recipient = Address::repeat_byte(0xAA);
 

@@ -41,7 +41,8 @@ impl StateSource for TestStateSource {
                 balance: info.balance,
                 has_code: info.code_hash != trevm::revm::primitives::KECCAK_EMPTY,
             }),
-            _ => Ok(AcctInfo { nonce: 0, balance: U256::ZERO, has_code: false }),
+            Ok(None) => Ok(AcctInfo { nonce: 0, balance: U256::ZERO, has_code: false }),
+            Err(_) => unreachable!("error type is infallible"),
         }
     }
 }
