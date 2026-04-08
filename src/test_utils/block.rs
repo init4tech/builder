@@ -115,16 +115,23 @@ impl TestBlockBuildBuilder {
     /// Build the test `BlockBuild` instance.
     /// This creates a `BlockBuild` ready for simulation.
     /// Call `.build().await` on the result to execute the simulation and get a `BuiltBlock`.
-    pub async fn into_block_build(self) -> BuiltBlock {
-        // Keep the async state sources aligned with whichever environment pair we use.
-        let (rollup_env, host_env, ru_source, host_source) = match self.env {
-            TestBlockBuildEnv::Builder(sim_env_builder) => sim_env_builder.build_with_sources(),
+    pub fn build(self) -> TestBlockBuild {
+        let (rollup_env, host_env, rollup_db, host_db) = match self.env {
+            TestBlockBuildEnv::Builder(builder) => {
+                let rollup_db = builder.rollup_db();
+                let host_db = builder.host_db();
+                let (rollup, host) = builder.build();
+                (rollup, host, rollup_db, host_db)
+            }
             TestBlockBuildEnv::Built { rollup, host } => {
-                let ru_source = TestStateSource::from_inner_db(rollup.db().clone());
-                let host_source = TestStateSource::from_inner_db(host.db().clone());
-                (rollup, host, ru_source, host_source)
+                let rollup_db = rollup.db().db.clone();
+                let host_db = host.db().db.clone();
+                (rollup, host, rollup_db, host_db)
             }
         };
+
+        let ru_state_source = TestStateSource::new(rollup_db);
+        let host_state_source = TestStateSource::new(host_db);
 
         // Convert the relative deadline into the absolute instant expected by `BlockBuild`.
         let finish_by = Instant::now() + self.deadline_duration;
@@ -137,11 +144,9 @@ impl TestBlockBuildBuilder {
             self.sim_cache,
             self.max_gas,
             self.max_host_gas,
-            ru_source,
-            host_source,
+            ru_state_source,
+            host_state_source,
         )
-        .build()
-        .await
     }
 }
 
@@ -149,7 +154,7 @@ impl TestBlockBuildBuilder {
 /// This is useful for simple test cases where you just want to simulate
 /// some transactions quickly.
 pub async fn quick_build_block(cache: SimCache, deadline: Duration) -> BuiltBlock {
-    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).into_block_build().await
+    TestBlockBuildBuilder::new().with_cache(cache).with_deadline(deadline).build().build().await
 }
 
 #[cfg(test)]
