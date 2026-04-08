@@ -25,5 +25,4 @@ target/
 
 # Claude configs
 .claude/*.local.*
-.claude/settings.json
 CLAUDE.local.md

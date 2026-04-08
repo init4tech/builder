@@ -18,6 +18,17 @@ make clippy       # Lint with warnings denied
 
 Always lint before committing. The Makefile provides shortcuts (`make fmt`, `make clippy`, `make test`)
 
+### Pre-push Checks (enforced by Claude hook)
+
+A Claude hook in `.claude/settings.json` runs `.claude/hooks/pre-push.sh`
+before every `git push`. The push is blocked if any check fails. The checks:
+
+- `make fmt`
+- `make clippy` (runs clippy with `-D warnings`)
+- `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`
+
+Clippy and doc warnings are hard failures.
+
 ### Running Individual Tests
 
 ```bash
