@@ -1,0 +1,141 @@
+//! Test utilities for testing builder tasks
+//!
+//! This module provides utilities for testing the block builder without
+//! requiring network access or full chain state setup.
+#![allow(dead_code, unreachable_pub, unused_imports)]
+
+mod block;
+mod db;
+mod env;
+mod scenarios;
+mod tx;
+
+// Re-export test harness components
+pub use block::{TestBlockBuild, TestBlockBuildBuilder, quick_build_block};
+pub use db::{TestDb, TestDbBuilder, TestStateSource};
+pub use env::{TestHostEnv, TestRollupEnv, TestSimEnvBuilder};
+pub use scenarios::{
+    DEFAULT_BALANCE, DEFAULT_BASEFEE, basic_scenario, custom_funded_scenario, funded_test_db,
+    gas_limit_scenario, priority_ordering_scenario, test_block_env as scenarios_test_block_env,
+};
+pub use tx::{TestAccounts, create_call_tx, create_transfer_tx};
+
+use crate::config::BuilderConfig;
+use alloy::{
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+    primitives::{Address, B256, TxKind, U256},
+    rpc::client::BuiltInConnectionString,
+    signers::{SignerSync, local::PrivateKeySigner},
+};
+use core::str::FromStr;
+use eyre::Result;
+use init4_bin_base::{
+    ConfigAndGuard,
+    deps::tracing_subscriber::{
+        EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
+    },
+    perms::OAuthConfig,
+    utils::{
+        calc::SlotCalculator, metrics::MetricsConfig, provider::ProviderConfig,
+        tracing::TracingConfig,
+    },
+};
+use signet_constants::SignetSystemConstants;
+use trevm::revm::{context::BlockEnv, context_interface::block::BlobExcessGasAndPrice};
+
+/// Set up a block builder with test values
+pub fn setup_test_config() -> &'static BuilderConfig {
+    &crate::CONFIG_AND_GUARD
+        .get_or_init(|| {
+            let config = BuilderConfig {
+                host_rpc: "ws://host-rpc.pecorino.signet.sh"
+                    .parse::<BuiltInConnectionString>()
+                    .map(ProviderConfig::new)
+                    .unwrap(),
+                ru_rpc: "ws://rpc.pecorino.signet.sh"
+                    .parse::<BuiltInConnectionString>()
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+                submit_endpoints: vec!["https://relay-sepolia.flashbots.net:443".to_string()],
+                quincey_url: "http://localhost:8080".into(),
+                sequencer_key: None,
+                builder_key: std::env::var("SEPOLIA_ETH_PRIV_KEY")
+                    .unwrap_or_else(|_| B256::repeat_byte(0x42).to_string()),
+                builder_port: 8080,
+                builder_rewards_address: Address::default(),
+                rollup_block_gas_limit: 3_000_000_000,
+                tx_pool_url: "http://localhost:9000/".parse().unwrap(),
+                oauth: OAuthConfig {
+                    oauth_client_id: "some_client_id".into(),
+                    oauth_client_secret: "some_client_secret".into(),
+                    oauth_authenticate_url: "http://localhost:8080".parse().unwrap(),
+                    oauth_token_url: "http://localhost:8080".parse().unwrap(),
+                    oauth_token_refresh_interval: 300, // 5 minutes
+                },
+                concurrency_limit: None, // NB: Defaults to available parallelism
+                slot_calculator: SlotCalculator::new(
+                    1740681556, // pecorino start timestamp as sane default
+                    0, 1,
+                ),
+                block_query_cutoff_buffer: Default::default(),
+                submit_deadline_buffer: Default::default(),
+                max_host_gas_coefficient: Default::default(),
+                constants: SignetSystemConstants::parmigiana(),
+                pylon_url: "http://localhost:8081".parse().unwrap(),
+                tracing: TracingConfig::default(),
+                metrics: MetricsConfig::default(),
+            };
+            ConfigAndGuard { config, guard: None }
+        })
+        .config
+}
+
+/// Returns a new signed test transaction with the provided nonce, value, and mpfpg.
+pub fn new_signed_tx(
+    wallet: &PrivateKeySigner,
+    nonce: u64,
+    value: U256,
+    mpfpg: u128,
+) -> Result<TxEnvelope> {
+    let tx = TxEip1559 {
+        chain_id: 11155111,
+        nonce,
+        max_fee_per_gas: 10_000_000,
+        max_priority_fee_per_gas: mpfpg,
+        to: TxKind::Call(Address::from_str("0x0000000000000000000000000000000000000000").unwrap()),
+        value,
+        gas_limit: 50_000,
+        ..Default::default()
+    };
+    let signature = wallet.sign_hash_sync(&tx.signature_hash())?;
+    Ok(TxEnvelope::Eip1559(tx.into_signed(signature)))
+}
+
+/// Initializes a logger that prints during testing
+pub fn setup_logging() {
+    // Initialize logging
+    let filter = EnvFilter::from_default_env();
+    let fmt = fmt::layer().with_filter(filter);
+    let registry = registry().with(fmt);
+    let _ = registry.try_init();
+}
+
+/// Returns a Pecorino block environment for simulation with the timestamp set to `finish_by`,
+/// the block number set to latest + 1, system gas configs, and a beneficiary address.
+pub fn test_block_env(number: u64, basefee: u64, timestamp: u64) -> BlockEnv {
+    let config = setup_test_config();
+    BlockEnv {
+        number: U256::from(number),
+        beneficiary: Address::repeat_byte(1),
+        timestamp: U256::from(timestamp),
+        gas_limit: config.rollup_block_gas_limit,
+        basefee,
+        difficulty: U256::ZERO,
+        prevrandao: Some(B256::random()),
+        blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
+            excess_blob_gas: 0,
+            blob_gasprice: 0,
+        }),
+    }
+}

@@ -1,12 +1,12 @@
-//! Transaction service responsible for fetching and sending trasnsactions to the simulator.
+//! Transaction service responsible for fetching and sending transactions to the simulator.
 use crate::config::BuilderConfig;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     providers::Provider,
 };
-use eyre::Error;
-use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
+use futures_util::{TryFutureExt, TryStreamExt};
+use init4_bin_base::deps::metrics::{counter, histogram};
+use signet_tx_cache::{TxCache, TxCacheError};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 use tracing::{Instrument, debug, debug_span, trace, trace_span};
@@ -14,21 +14,14 @@ use tracing::{Instrument, debug, debug_span, trace, trace_span};
 /// Poll interval for the transaction poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
 
-/// Models a response from the transaction pool.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TxPoolResponse {
-    /// Holds the transactions property as a list on the response.
-    transactions: Vec<TxEnvelope>,
-}
-
 /// Implements a poller for the block builder to pull transactions from the
 /// transaction pool.
 #[derive(Debug, Clone)]
 pub struct TxPoller {
     /// Config values from the Builder.
     config: &'static BuilderConfig,
-    /// Reqwest Client for fetching transactions from the cache.
-    client: Client,
+    /// Client for the tx cache.
+    tx_cache: TxCache,
     /// Defines the interval at which the service should poll the cache.
     poll_interval_ms: u64,
 }
@@ -51,7 +44,8 @@ impl TxPoller {
     /// Returns a new [`TxPoller`] with the given config and cache polling interval in milliseconds.
     pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
         let config = crate::config();
-        Self { config, client: Client::new(), poll_interval_ms }
+        let tx_cache = TxCache::new(config.tx_pool_url.clone());
+        Self { config, tx_cache, poll_interval_ms }
     }
 
     /// Returns the poll duration as a [`Duration`].
@@ -61,7 +55,7 @@ impl TxPoller {
 
     // Spawn a tokio task to check the nonce of a transaction before sending
     // it to the cachetask via the outbound channel.
-    fn spawn_check_nonce(&self, tx: TxEnvelope, outbound: mpsc::UnboundedSender<TxEnvelope>) {
+    fn spawn_check_nonce(&self, tx: TxEnvelope, outbound: mpsc::UnboundedSender<ReceivedTx>) {
         tokio::spawn(async move {
             let span = debug_span!("check_nonce", tx_id = %tx.tx_hash());
 
@@ -88,48 +82,49 @@ impl TxPoller {
             };
 
             if tx.nonce() < tx_count {
+                counter!("signet.builder.cache.tx_nonce_stale").increment(1);
+                if outbound.send(ReceivedTx::StaleNonce).is_err() {
+                    span_warn!(span, "Outbound channel closed, stopping NonceChecker task.");
+                }
                 span_debug!(span, %sender, tx_nonce = %tx.nonce(), ru_nonce = %tx_count, "Dropping transaction with stale nonce");
                 return;
             }
 
-            if outbound.send(tx).is_err() {
+            if outbound.send(ReceivedTx::Tx(tx)).is_err() {
                 span_warn!(span, "Outbound channel closed, stopping NonceChecker task.");
             }
         });
     }
 
-    /// Polls the transaction cache for transactions.
-    pub async fn check_tx_cache(&mut self) -> Result<Vec<TxEnvelope>, Error> {
-        let url: Url = self.config.tx_pool_url.join("transactions")?;
-        self.client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-            .map(|resp: TxPoolResponse| resp.transactions)
-            .map_err(Into::into)
+    /// Polls the transaction cache for transactions, paginating through all available pages.
+    pub async fn check_tx_cache(&self) -> Result<Vec<TxEnvelope>, TxCacheError> {
+        self.tx_cache.stream_transactions().try_collect().await
     }
 
-    async fn task_future(mut self, outbound: mpsc::UnboundedSender<TxEnvelope>) {
+    async fn task_future(self, outbound: mpsc::UnboundedSender<ReceivedTx>) {
         loop {
             let span = trace_span!("TxPoller::loop", url = %self.config.tx_pool_url);
 
             // Check this here to avoid making the web request if we know
             // we don't need the results.
             if outbound.is_closed() {
-                trace!("No receivers left, shutting down");
+                span.in_scope(|| trace!("No receivers left, shutting down"));
                 break;
             }
 
-            if let Ok(transactions) =
-                self.check_tx_cache().instrument(span.clone()).await.inspect_err(|err| {
-                    debug!(%err, "Error fetching transactions");
+            counter!("signet.builder.cache.tx_poll_count").increment(1);
+            if let Ok(transactions) = self
+                .check_tx_cache()
+                .inspect_err(|error| {
+                    counter!("signet.builder.cache.tx_poll_errors").increment(1);
+                    debug!(%error, "Error fetching transactions");
                 })
+                .instrument(span.clone())
+                .await
             {
                 let _guard = span.entered();
-                trace!(count = ?transactions.len(), "found transactions");
+                histogram!("signet.builder.cache.txs_fetched").record(transactions.len() as f64);
+                trace!(count = transactions.len(), "found transactions");
                 for tx in transactions.into_iter() {
                     self.spawn_check_nonce(tx, outbound.clone());
                 }
@@ -139,10 +134,21 @@ impl TxPoller {
         }
     }
 
-    /// Spawns a task that continuously polls the cache for transactions and sends any it finds to its sender.
-    pub fn spawn(self) -> (mpsc::UnboundedReceiver<TxEnvelope>, JoinHandle<()>) {
+    /// Spawns a task that continuously polls the cache for transactions and sends any it finds to
+    /// its sender.
+    pub fn spawn(self) -> (mpsc::UnboundedReceiver<ReceivedTx>, JoinHandle<()>) {
         let (outbound, inbound) = mpsc::unbounded_channel();
         let jh = tokio::spawn(self.task_future(outbound));
         (inbound, jh)
     }
+}
+
+#[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "only sent through an mpsc channel, which heap-allocates each message"
+)]
+pub enum ReceivedTx {
+    Tx(TxEnvelope),
+    StaleNonce,
 }

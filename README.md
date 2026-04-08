@@ -1,8 +1,11 @@
+[![Rust CI](https://github.com/init4tech/builder/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/init4tech/builder/actions/workflows/rust-ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 # The Signet Block Builder
 
 The Builder simulates bundles and transactions against the latest chain state to create valid Signet rollup blocks and submits them to the configured host chain as an [EIP-4844 transaction](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4844.md).
 
-Bundles are treated as Flashbots-style bundles, meaning that the Builder should respect transaction ordering, bundle atomicity, and the specified revertability.
+Bundles are treated as MEV-style bundles, meaning that the Builder should respect transaction ordering, bundle atomicity, and the specified revertability.
 
 --------------------------------------------------------------------------------
 
@@ -13,7 +16,7 @@ The Builder orchestrates a series of asynchronous actors that work together to b
 1. **Env** - watches the latest host and rollup blocks to monitor gas rates and block updates.
 2. **Cache** - polls bundle and transaction caches and adds them to the cache.
 3. **Simulator** - simulates transactions and bundles against rollup state and block environment to build them into a cohesive block.
-4. **FlashbotsSubmit** - handles preparing and submitting the simulated block to a private Flashbots relay.
+4. **Submit** - handles preparing and submitting the simulated block to all configured MEV relay/builder endpoints concurrently.
 5. **Metrics** - records block and tx data over time.
 
 ```mermaid
@@ -33,12 +36,12 @@ flowchart TD
       Cache["🪏 Cache Task"]
       Simulator["💾 Simulator Task"]
       Metrics["📏 Metrics Task"]
-      FlashbotsSubmit["📥 Flashbots Submit Task"]
+      SubmitTask["📥 Submit Task"]
    end
 
    %% Signing
-   FlashbotsSubmit --hash--> Quincey
-   Quincey -- signature --> FlashbotsSubmit
+   SubmitTask --hash--> Quincey
+   Quincey -- signature --> SubmitTask
 
    %% Config wiring
    Config -.rollup rpc.-> Env
@@ -46,19 +49,19 @@ flowchart TD
    Config -.host rpc.-> Simulator
    Config -.rollup rpc.-> Simulator
    Config -.host rpc.-> Metrics
-   Config -.host rpc.-> FlashbotsSubmit
+   Config -.host rpc.-> SubmitTask
 
    %% Core flow
    Env ==block env==> Simulator
    Cache ==sim cache==> Simulator
-   Simulator ==built block==> FlashbotsSubmit
+   Simulator ==built block==> SubmitTask
 
    %% Network submission
-   FlashbotsSubmit ==>|"tx bundle"| FlashbotsRelay["🛡️ Flashbots Relay"]
-   FlashbotsRelay ==> Ethereum
+   SubmitTask ==>|"tx bundle"| Relays["🛡️ MEV Relays / Builders"]
+   Relays ==> Ethereum
 
    %% Metrics
-   FlashbotsSubmit ==rollup block tx hash==> Metrics
+   SubmitTask ==rollup block tx hash==> Metrics
 ```
 
 ### 💾 Simulation Task
@@ -73,11 +76,11 @@ When the deadline is reached, the simulator is stopped, and all open simulation 
 
 ### ✨ Submit Task
 
-The Flashbots submit task prepares a Flashbots bundle out of the Signet block and its host transactions and then submits that bundle to the Flashbots endpoint. It sends the hash of the rollup block transaction for to the Metrics task for further tracking.
+The submit task prepares a MEV bundle from the Signet block and its host transactions, then fans it out to all configured relay/builder endpoints concurrently (`SUBMIT_ENDPOINTS`). At least one successful relay acceptance is required; individual relay failures are tolerated and logged. The blob sidecar is always forwarded to Pylon regardless of relay outcome.
 
 If the block received from simulation is empty, the submit task will ignore it.
 
-Finally, if it's non-empty, the submit task attempts to get a signature for the block, and if it fails due to a 403 error, it will skip the current slot and begin waiting for the next block.
+If it's non-empty, the submit task attempts to get a signature for the block, and if it fails due to a 403 error, it will skip the current slot and begin waiting for the next block.
 
 --------------------------------------------------------------------------------
 
@@ -85,31 +88,31 @@ Finally, if it's non-empty, the submit task attempts to get a signature for the 
 
 The Builder is configured via environment variables. The following values are supported for configuration.
 
-Key                           | Required | Description
------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------
-`RUST_LOG`                    | No       | The log level of the builder
-`CHAIN_NAME`                  | No       | The chain name ("pecorino", or the corresponding name)
-`HOST_RPC_URL`                | Yes      | RPC endpoint for the host chain
-`ROLLUP_RPC_URL`              | Yes      | RPC endpoint for the rollup chain
-`QUINCEY_URL`                 | Yes      | Remote sequencer signing endpoint
-`SEQUENCER_KEY`               | No       | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing
-`TX_POOL_URL`                 | Yes      | Transaction pool URL
-`FLASHBOTS_ENDPOINT`          | No       | Flashbots API to submit blocks to
-`ROLLUP_BLOCK_GAS_LIMIT`      | No       | Override for rollup block gas limit
-`MAX_HOST_GAS_COEFFICIENT`    | No       | Optional maximum host gas coefficient, as a percentage, to use when building blocks
-`BUILDER_KEY`                 | Yes      | AWS KMS key ID _or_ local private key for builder signin
-`BLOCK_QUERY_CUTOFF_BUFFER`   | Yes      | Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process
-`AWS_ACCESS_KEY_ID`           | No       | AWS secret access key ID (required if not using `BUILDER_KEY`)
-`AWS_SECRET_ACCESS_KEY`       | No       | AWS secret access key (required if not using `BUILDER_KEY`)
-`AWS_DEFAULT_REGION`          | No       | AWS region for the KMS key in question (required if not using `BUILDER_KEY`)
-`BUILDER_PORT`                | Yes      | HTTP port for the Builder (default: `8080`)
-`BUILDER_REWARDS_ADDRESS`     | Yes      | Address receiving builder rewards
-`CONCURRENCY_LIMIT`           | No       | Optional max number of concurrent tasks the simulator uses. Defaults to a system call to determine optimal parallelism
-`OAUTH_CLIENT_ID`             | Yes      | Oauth client ID for the builder
-`OAUTH_CLIENT_SECRET`         | Yes      | Oauth client secret for the builder
-`OAUTH_AUTHENTICATE_URL`      | Yes      | Oauth authenticate URL for the builder for performing OAuth logins
-`OAUTH_TOKEN_URL`             | Yes      | Oauth token URL for the builder to get an Oauth2 access token
-`AUTH_TOKEN_REFRESH_INTERVAL` | Yes      | The OAuth token refresh interval in seconds.
+| Key | Required | Description |
+| --- | --- | --- |
+| `RUST_LOG` | No | The log level of the builder |
+| `CHAIN_NAME` | No | The chain name ("pecorino", or the corresponding name) |
+| `HOST_RPC_URL` | Yes | RPC endpoint for the host chain |
+| `ROLLUP_RPC_URL` | Yes | RPC endpoint for the rollup chain |
+| `QUINCEY_URL` | Yes | Remote sequencer signing endpoint |
+| `SEQUENCER_KEY` | No | AWS Key ID _OR_ local private key for the Sequencer; set IFF using local Sequencer signing instead of remote (via `QUINCEY_URL`) Quincey signing |
+| `TX_POOL_URL` | Yes | Transaction pool URL |
+| `SUBMIT_ENDPOINTS` | Yes | Comma-separated list of MEV relay/builder RPC endpoints for bundle submission (e.g. `https://rpc.flashbots.net,https://rpc.titanbuilder.xyz`) |
+| `ROLLUP_BLOCK_GAS_LIMIT` | No | Override for rollup block gas limit |
+| `MAX_HOST_GAS_COEFFICIENT` | No | Optional maximum host gas coefficient, as a percentage, to use when building blocks |
+| `BUILDER_KEY` | Yes | AWS KMS key ID _or_ local private key for builder signing |
+| `BLOCK_QUERY_CUTOFF_BUFFER` | Yes | Number of milliseconds before the end of the slot to stop querying for new transactions and start the block signing and submission process |
+| `AWS_ACCESS_KEY_ID` | No | AWS secret access key ID (required if not using `BUILDER_KEY`) |
+| `AWS_SECRET_ACCESS_KEY` | No | AWS secret access key (required if not using `BUILDER_KEY`) |
+| `AWS_DEFAULT_REGION` | No | AWS region for the KMS key in question (required if not using `BUILDER_KEY`) |
+| `BUILDER_PORT` | Yes | HTTP port for the Builder (default: `8080`) |
+| `BUILDER_REWARDS_ADDRESS` | Yes | Address receiving builder rewards |
+| `CONCURRENCY_LIMIT` | No | Optional max number of concurrent tasks the simulator uses. Defaults to a system call to determine optimal parallelism |
+| `OAUTH_CLIENT_ID` | Yes | OAuth client ID for the builder |
+| `OAUTH_CLIENT_SECRET` | Yes | OAuth client secret for the builder |
+| `OAUTH_AUTHENTICATE_URL` | Yes | OAuth authenticate URL for the builder for performing OAuth logins |
+| `OAUTH_TOKEN_URL` | Yes | OAuth token URL for the builder to get an OAuth2 access token |
+| `AUTH_TOKEN_REFRESH_INTERVAL` | Yes | The OAuth token refresh interval in seconds |
 
 --------------------------------------------------------------------------------
 
@@ -162,6 +165,23 @@ The previous header's basefee is tracked through the build loop and used for gas
 --------------------------------------------------------------------------------
 
 ## ✅ Testing
+
+### Unit Tests
+
+```bash
+make test
+```
+
+### Integration Tests
+
+Integration tests require network access (RPC endpoints or Anvil) and are gated behind the `test-utils` Cargo feature. They are not compiled by default.
+
+```bash
+make test-all                                            # Run all tests (unit + integration)
+cargo test --features test-utils --test block_builder_test  # Run a specific integration test
+```
+
+### Deployment Verification
 
 1. Build the Docker image:
 
