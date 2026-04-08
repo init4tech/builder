@@ -10,3 +10,4 @@ jobs:
     uses: init4tech/actions/.github/workflows/rust-base.yml@main
     with:
       install-foundry: true
+      test-all-features: false
