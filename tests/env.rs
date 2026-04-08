@@ -1,3 +1,4 @@
+#![cfg(feature = "test-utils")]
 #![recursion_limit = "256"]
 
 use builder::{
@@ -5,7 +6,6 @@ use builder::{
     test_utils::{setup_logging, setup_test_config},
 };
 
-#[ignore = "integration test. This test will take between 0 and 12 seconds to run."]
 #[tokio::test]
 async fn test_bundle_poller_roundtrip() -> eyre::Result<()> {
     setup_logging();

@@ -10,6 +10,9 @@ license = "Apache-2.0 OR MIT"
 homepage = "https://github.com/init4tech/builder"
 repository = "https://github.com/init4tech/builder"
 
+[features]
+test-utils = []
+
 [lib]
 name = "builder"
 

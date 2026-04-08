@@ -1,3 +1,5 @@
+#![cfg(feature = "test-utils")]
+
 use alloy::{primitives::U256, signers::local::PrivateKeySigner};
 use builder::{
     tasks::cache::TxPoller,
@@ -5,7 +7,6 @@ use builder::{
 };
 use eyre::{Ok, Result};
 
-#[ignore = "integration test"]
 #[tokio::test]
 async fn test_tx_roundtrip() -> Result<()> {
     setup_logging();
