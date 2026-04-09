@@ -58,6 +58,7 @@ async fn main() -> eyre::Result<()> {
     }
 
     let config = builder::config_from_env();
+    builder::init_metrics();
     let init_span_guard = info_span!("builder initialization").entered();
 
     info!(pkg_version = PKG_VERSION, git_commit = GIT_COMMIT, "starting builder");

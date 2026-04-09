@@ -31,7 +31,7 @@ use alloy::{
     rpc::types::mev::EthSendBundle,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
-use init4_bin_base::{deps::metrics::counter, utils::signer::LocalOrAws};
+use init4_bin_base::utils::signer::LocalOrAws;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -159,7 +159,7 @@ impl SubmitTask {
 
     /// Tracks the outbound transaction hash and increments submission metrics.
     fn track_outbound_tx(&self, envelope: &TxEnvelope) {
-        counter!("signet.builder.submit.transactions_prepared").increment(1);
+        crate::metrics::inc_transactions_prepared();
         let hash = *envelope.tx_hash();
         if self.outbound.send(hash).is_err() {
             debug!("outbound channel closed, could not track tx hash");
@@ -189,7 +189,7 @@ impl SubmitTask {
             let deadline = self.calculate_submit_deadline();
 
             if sim_result.block.is_empty() {
-                counter!("signet.builder.submit.empty_blocks").increment(1);
+                crate::metrics::inc_empty_blocks();
                 span_debug!(span, "received empty block - skipping");
                 continue;
             }
@@ -198,7 +198,7 @@ impl SubmitTask {
             let bundle = match self.prepare(&sim_result).instrument(span.clone()).await {
                 Ok(bundle) => bundle,
                 Err(error) => {
-                    counter!("signet.builder.submit.bundle_prep_failures").increment(1);
+                    crate::metrics::inc_bundle_prep_failures();
                     span_debug!(span, %error, "bundle preparation failed");
                     continue;
                 }
@@ -333,13 +333,13 @@ impl Submission {
     /// results from faster relays.
     async fn submit_to_relays(&self) -> Vec<RelayOutcome> {
         let n_relays = self.relays.len();
-        counter!("signet.builder.submit.relay_submissions").increment(n_relays as u64);
+        crate::metrics::inc_relay_submissions(n_relays);
 
         let now = Instant::now();
         let timeout_dur = if now > self.deadline {
             let late_by = now.duration_since(self.deadline);
             warn!(?late_by, "submission started AFTER deadline; attempting anyway");
-            counter!("signet.builder.submit.deadline_missed_before_send").increment(1);
+            crate::metrics::inc_deadline_missed_before_send();
             LATE_SUBMISSION_TIMEOUT
         } else {
             self.deadline.duration_since(now)
@@ -375,33 +375,33 @@ impl Submission {
         for outcome in outcomes {
             match outcome {
                 RelayOutcome::Success => {
-                    counter!("signet.builder.submit.relay_successes").increment(1);
+                    crate::metrics::inc_relay_successes();
                     successes += 1;
                 }
                 RelayOutcome::Failure => {
-                    counter!("signet.builder.submit.relay_failures").increment(1);
+                    crate::metrics::inc_relay_failures();
                     failures += 1;
                 }
                 RelayOutcome::Timeout => {
-                    counter!("signet.builder.submit.relay_timeouts").increment(1);
+                    crate::metrics::inc_relay_timeouts();
                     timeouts += 1;
                 }
             }
         }
 
         if successes == 0 {
-            counter!("signet.builder.submit.all_relays_failed").increment(1);
+            crate::metrics::inc_all_relays_failed();
             error!(
                 failures,
                 timeouts, n_relays, "all relay submissions failed - bundle may not land"
             );
         } else {
-            counter!("signet.builder.submit.bundles_submitted").increment(1);
+            crate::metrics::inc_bundles_submitted();
             if Instant::now() > self.deadline {
-                counter!("signet.builder.submit.deadline_missed").increment(1);
+                crate::metrics::inc_deadline_missed();
                 warn!(successes, failures, timeouts, "bundle accepted by relays AFTER deadline");
             } else {
-                counter!("signet.builder.submit.deadline_met").increment(1);
+                crate::metrics::inc_deadline_met();
                 info!(
                     successes,
                     failures, timeouts, n_relays, "bundle submitted to relays within deadline"
@@ -416,12 +416,12 @@ impl Submission {
     /// submission failed or timed out.
     async fn submit_to_pylon(&self) {
         if let Err(err) = self.pylon.post_blob_tx(self.block_tx.clone()).await {
-            counter!("signet.builder.pylon.submission_failures").increment(1);
+            crate::metrics::inc_pylon_submission_failures();
             warn!(%err, "pylon submission failed");
             return;
         }
 
-        counter!("signet.builder.pylon.sidecars_submitted").increment(1);
+        crate::metrics::inc_pylon_sidecars_submitted();
         debug!("posted sidecar to pylon");
     }
 }

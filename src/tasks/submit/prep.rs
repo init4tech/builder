@@ -14,7 +14,6 @@ use alloy::{
     sol_types::SolCall,
 };
 use futures_util::FutureExt;
-use init4_bin_base::deps::metrics::counter;
 use signet_sim::BuiltBlock;
 use signet_types::{SignRequest, SignResponse};
 use signet_zenith::Zenith;
@@ -83,9 +82,9 @@ impl<'a> SubmitPrep<'a> {
                     self.quincey
                         .get_signature(sig_request)
                         .await
-                        .inspect(|_| counter!("signet.builder.quincey_signatures").increment(1))
+                        .inspect(|_| crate::metrics::inc_quincey_signatures())
                         .inspect_err(|err| {
-                            counter!("signet.builder.quincey_signature_failures").increment(1);
+                            crate::metrics::inc_quincey_signature_failures();
                             if let QuinceyError::NotOurSlot = err {
                                 warn!("Quincey indicated not our slot to sign");
                             } else {
