@@ -16,6 +16,9 @@
 #[macro_use]
 mod macros;
 
+/// Centralized metrics for the builder.
+pub(crate) mod metrics;
+
 /// Configuration for the Builder binary.
 pub mod config;
 
@@ -70,6 +73,12 @@ pub fn config_from_env() -> &'static config::BuilderConfig {
 /// Panics if the configuration has not been initialized.
 pub fn config() -> &'static config::BuilderConfig {
     &CONFIG_AND_GUARD.get().expect("Builder config not initialized").config
+}
+
+/// Register all metric descriptions. Call once at startup after the metrics
+/// recorder is installed.
+pub fn init_metrics() {
+    metrics::init();
 }
 
 /// Get a reference to the Signet system constants from the global Builder

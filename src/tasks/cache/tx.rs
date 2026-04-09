@@ -5,7 +5,6 @@ use alloy::{
     providers::Provider,
 };
 use futures_util::{TryFutureExt, TryStreamExt};
-use init4_bin_base::deps::metrics::{counter, histogram};
 use signet_tx_cache::{TxCache, TxCacheError};
 use std::time::Duration;
 use tokio::{sync::mpsc, task::JoinHandle, time};
@@ -82,7 +81,7 @@ impl TxPoller {
             };
 
             if tx.nonce() < tx_count {
-                counter!("signet.builder.cache.tx_nonce_stale").increment(1);
+                crate::metrics::inc_tx_nonce_stale();
                 if outbound.send(ReceivedTx::StaleNonce).is_err() {
                     span_warn!(span, "Outbound channel closed, stopping NonceChecker task.");
                 }
@@ -112,18 +111,18 @@ impl TxPoller {
                 break;
             }
 
-            counter!("signet.builder.cache.tx_poll_count").increment(1);
+            crate::metrics::inc_tx_poll_count();
             if let Ok(transactions) = self
                 .check_tx_cache()
                 .inspect_err(|error| {
-                    counter!("signet.builder.cache.tx_poll_errors").increment(1);
+                    crate::metrics::inc_tx_poll_errors();
                     debug!(%error, "Error fetching transactions");
                 })
                 .instrument(span.clone())
                 .await
             {
                 let _guard = span.entered();
-                histogram!("signet.builder.cache.txs_fetched").record(transactions.len() as f64);
+                crate::metrics::record_txs_fetched(transactions.len());
                 trace!(count = transactions.len(), "found transactions");
                 for tx in transactions.into_iter() {
                     self.spawn_check_nonce(tx, outbound.clone());

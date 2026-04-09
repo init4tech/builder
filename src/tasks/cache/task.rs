@@ -1,6 +1,5 @@
 use crate::tasks::{cache::tx::ReceivedTx, env::SimEnv};
 use alloy::consensus::transaction::SignerRecoverable;
-use init4_bin_base::deps::metrics::counter;
 use signet_sim::SimCache;
 use signet_tx_cache::types::CachedBundle;
 use tokio::{
@@ -65,7 +64,7 @@ impl CacheTask {
                         cache.clean(
                             sim_env.number.to(), sim_env.timestamp.to()
                         );
-                        counter!("signet.builder.cache.cache_cleans").increment(1);
+                        crate::metrics::inc_cache_cleans();
                     }
                 }
                 Some(bundle) = self.bundles.recv() => {
@@ -85,7 +84,7 @@ impl CacheTask {
                             %bundle.id,
                             "skipping bundle insert"
                         );
-                        counter!("signet.builder.cache.bundles_skipped").increment(1);
+                        crate::metrics::inc_bundles_skipped();
                         summary.bundles_skipped_stale += 1;
                         continue;
                     }
@@ -93,11 +92,11 @@ impl CacheTask {
                     let res = cache.add_bundle(bundle.bundle, basefee);
                     // Skip bundles that fail to be added to the cache
                     if let Err(e) = res {
-                        counter!("signet.builder.cache.bundle_add_errors").increment(1);
+                        crate::metrics::inc_bundle_add_errors();
                         debug!(?e, "Failed to add bundle to cache");
                         continue;
                     }
-                    counter!("signet.builder.cache.bundles_ingested").increment(1);
+                    crate::metrics::inc_bundles_ingested();
                     summary.bundles_accepted += 1;
                 }
                 Some(received_txn) = self.txns.recv() => {
@@ -110,11 +109,11 @@ impl CacheTask {
                     match txn.try_into_recovered() {
                         Ok(recovered_tx) => {
                             cache.add_tx(recovered_tx, basefee);
-                            counter!("signet.builder.cache.txs_ingested").increment(1);
+                            crate::metrics::inc_txs_ingested();
                             summary.txs_accepted += 1;
                         }
                         Err(_) => {
-                            counter!("signet.builder.cache.tx_recover_failures").increment(1);
+                            crate::metrics::inc_tx_recover_failures();
                             debug!("Failed to recover transaction signature");
                         }
                     }
