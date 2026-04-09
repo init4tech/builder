@@ -74,9 +74,16 @@ impl BundlePoller {
             };
 
             if recovered.host_txs().is_empty() {
-                if outbound.send(bundle).is_err() {
+                let _ = outbound.send(bundle).inspect_err(|_| {
                     span_debug!(span, "Outbound channel closed");
-                }
+                });
+                return;
+            }
+
+            // Check if the receiver is still alive before doing expensive nonce validation over
+            // the network.
+            if outbound.is_closed() {
+                span_debug!(span, "Outbound channel closed, skipping nonce validation");
                 return;
             }
 
@@ -88,11 +95,14 @@ impl BundlePoller {
             };
 
             let source = ProviderStateSource(host_provider);
-            match check_bundle_tx_list(recovered.host_tx_reqs(), &source).await {
+            match check_bundle_tx_list(recovered.host_tx_reqs(), &source)
+                .instrument(span.clone())
+                .await
+            {
                 Ok(SimItemValidity::Now) | Ok(SimItemValidity::Future) => {
-                    if outbound.send(bundle).is_err() {
+                    let _ = outbound.send(bundle).inspect_err(|_| {
                         span_debug!(span, "Outbound channel closed");
-                    }
+                    });
                 }
                 Ok(SimItemValidity::Never) => {
                     span_debug!(span, "Dropping bundle: host txs will never be valid");
