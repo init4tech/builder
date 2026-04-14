@@ -18,4 +18,9 @@ ignore = [
     # `lru` IterMut unsoundness; transitive dep via reth's `discv5` and `ratatui`.
     # Neither crate calls `iter_mut()` on the LruCache, so the affected code path is never hit.
     "RUSTSEC-2026-0002",
+
+    # `rand` 0.8.5 unsoundness when `log` + `thread_rng` features are both enabled and a custom
+    # logger calls `rand::rng()` during reseeding. Our 0.8.5 (transitive via alloy-consensus)
+    # has neither feature enabled; our 0.9.4 is already patched.
+    "RUSTSEC-2026-0097",
 ]
