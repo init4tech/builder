@@ -131,11 +131,16 @@ impl TxPoller {
     /// Reconnects the SSE stream with backoff. Performs a full refetch to
     /// cover any items missed while disconnected.
     async fn reconnect(
-        &self,
+        &mut self,
         outbound: &mpsc::UnboundedSender<ReceivedTx>,
         backoff: &mut Duration,
     ) -> SseStream {
-        time::sleep(*backoff).await;
+        tokio::select! {
+            _ = time::sleep(*backoff) => {}
+            // Break the sleep early on block env change or channel close —
+            // full_fetch below serves the same purpose the env arm would have.
+            _ = self.envs.changed() => {}
+        }
         *backoff = (*backoff * 2).min(Self::MAX_RECONNECT_BACKOFF);
         self.full_fetch(outbound).await;
         self.subscribe().await
@@ -152,22 +157,24 @@ impl TxPoller {
         loop {
             tokio::select! {
                 item = sse_stream.next() => {
-                    let Some(result) = item else {
-                        warn!("SSE transaction stream ended, reconnecting");
-                        sse_stream = self.reconnect(&outbound, &mut backoff).await;
-                        continue;
-                    };
-                    let Ok(tx) = result else {
-                        warn!(error = %result.unwrap_err(), "SSE transaction stream error, reconnecting");
-                        sse_stream = self.reconnect(&outbound, &mut backoff).await;
-                        continue;
-                    };
-                    backoff = Self::INITIAL_RECONNECT_BACKOFF;
-                    if outbound.is_closed() {
-                        trace!("No receivers left, shutting down");
-                        break;
+                    match item {
+                        Some(Ok(tx)) => {
+                            backoff = Self::INITIAL_RECONNECT_BACKOFF;
+                            if outbound.is_closed() {
+                                trace!("No receivers left, shutting down");
+                                break;
+                            }
+                            self.spawn_check_nonce(tx, outbound.clone());
+                        }
+                        Some(Err(error)) => {
+                            warn!(%error, "SSE transaction stream error, reconnecting");
+                            sse_stream = self.reconnect(&outbound, &mut backoff).await;
+                        }
+                        None => {
+                            warn!("SSE transaction stream ended, reconnecting");
+                            sse_stream = self.reconnect(&outbound, &mut backoff).await;
+                        }
                     }
-                    self.spawn_check_nonce(tx, outbound.clone());
                 }
                 res = self.envs.changed() => {
                     if res.is_err() {
