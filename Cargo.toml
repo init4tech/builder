@@ -21,13 +21,13 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.18.0-rc.13", features = ["perms", "aws", "pylon"] }
+init4-bin-base = { version = "0.18.0", features = ["perms", "aws", "pylon", "sse"] }
 
-signet-constants = { version = "0.16.0-rc.16" }
-signet-sim = { version = "0.16.0-rc.16" }
-signet-tx-cache = { version = "0.16.0-rc.16" }
-signet-types = { version = "0.16.0-rc.16" }
-signet-zenith = { version = "0.16.0-rc.16" }
+signet-constants = { version = "0.16.0" }
+signet-sim = { version = "0.16.0" }
+signet-tx-cache = { version = "0.16.0" }
+signet-types = { version = "0.16.0" }
+signet-zenith = { version = "0.16.0" }
 signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.10" }
 signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.10" }
 
