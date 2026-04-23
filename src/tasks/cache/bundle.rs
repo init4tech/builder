@@ -1,60 +1,72 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
-use crate::config::BuilderConfig;
-use futures_util::{TryFutureExt, TryStreamExt};
+use crate::{config::BuilderConfig, tasks::env::SimEnv};
+use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
 use signet_sim::{ProviderStateSource, SimItemValidity, check_bundle_tx_list};
 use signet_tx_cache::{TxCacheError, types::CachedBundle};
+use std::{ops::ControlFlow, pin::Pin, time::Duration};
 use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+    sync::{mpsc, watch},
     task::JoinHandle,
-    time::{self, Duration},
+    time,
 };
-use tracing::{Instrument, debug_span, trace, trace_span, warn};
+use tracing::{Instrument, debug, debug_span, trace, trace_span, warn};
 
-/// Poll interval for the bundle poller in milliseconds.
-const POLL_INTERVAL_MS: u64 = 1000;
+type SseStream = Pin<Box<dyn Stream<Item = Result<CachedBundle, BuilderTxCacheError>> + Send>>;
 
-/// The BundlePoller polls the tx-pool for bundles.
+const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(30);
+
+/// The BundlePoller fetches bundles from the tx-pool on startup and on each
+/// block environment change, and subscribes to an SSE stream for real-time
+/// delivery of new bundles in between.
 #[derive(Debug)]
 pub struct BundlePoller {
     /// The builder configuration values.
     config: &'static BuilderConfig,
-
     /// Client for the tx cache.
     tx_cache: BuilderTxCache,
-
-    /// Defines the interval at which the bundler polls the tx-pool for bundles.
-    poll_interval_ms: u64,
+    /// Receiver for block environment updates, used to trigger refetches.
+    envs: watch::Receiver<Option<SimEnv>>,
 }
 
-impl Default for BundlePoller {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Implements a poller for the block builder to pull bundles from the tx-pool.
 impl BundlePoller {
-    /// Creates a new BundlePoller from the provided builder config.
-    pub fn new() -> Self {
-        Self::new_with_poll_interval_ms(POLL_INTERVAL_MS)
-    }
-
-    /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.
-    pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
+    /// Returns a new [`BundlePoller`] with the given block environment receiver.
+    pub fn new(envs: watch::Receiver<Option<SimEnv>>) -> Self {
         let config = crate::config();
         let tx_cache = BuilderTxCache::new(config.tx_pool_url.clone(), config.oauth_token());
-        Self { config, tx_cache, poll_interval_ms }
+        Self { config, tx_cache, envs }
     }
 
-    /// Returns the poll duration as a [`Duration`].
-    const fn poll_duration(&self) -> Duration {
-        Duration::from_millis(self.poll_interval_ms)
-    }
+    async fn full_fetch(&self, outbound: &mpsc::UnboundedSender<CachedBundle>) {
+        let span = trace_span!("BundlePoller::full_fetch", url = %self.config.tx_pool_url);
 
-    /// Fetches all bundles from the tx-cache, paginating through all available pages.
-    pub async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BuilderTxCacheError> {
-        self.tx_cache.stream_bundles().try_collect().await
+        crate::metrics::inc_bundle_poll_count();
+        if let Ok(bundles) = self
+            .tx_cache
+            .stream_bundles()
+            .try_collect::<Vec<_>>()
+            // NotOurSlot is expected whenever the builder isn't slot-permissioned;
+            // don't bump the error counter or warn.
+            .inspect_err(|error| match error {
+                BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                    trace!("Not our slot to fetch bundles");
+                }
+                _ => {
+                    crate::metrics::inc_bundle_poll_errors();
+                    warn!(%error, "Failed to fetch bundles from tx-cache");
+                }
+            })
+            .instrument(span.clone())
+            .await
+        {
+            let _guard = span.entered();
+            crate::metrics::record_bundles_fetched(bundles.len());
+            trace!(count = bundles.len(), "found bundles");
+            for bundle in bundles {
+                Self::spawn_check_bundle_nonces(bundle, outbound.clone());
+            }
+        }
     }
 
     /// Spawns a tokio task to check the validity of all host transactions in a
@@ -62,7 +74,10 @@ impl BundlePoller {
     ///
     /// Uses [`check_bundle_tx_list`] from `signet-sim` to validate host tx nonces
     /// and balance against the host chain. Drops bundles that are not currently valid.
-    fn spawn_check_bundle_nonces(bundle: CachedBundle, outbound: UnboundedSender<CachedBundle>) {
+    fn spawn_check_bundle_nonces(
+        bundle: CachedBundle,
+        outbound: mpsc::UnboundedSender<CachedBundle>,
+    ) {
         let span = debug_span!("check_bundle_nonces", bundle_id = %bundle.id);
         tokio::spawn(async move {
             let recovered = match bundle.bundle.try_to_recovered() {
@@ -114,55 +129,107 @@ impl BundlePoller {
         });
     }
 
-    async fn task_future(self, outbound: UnboundedSender<CachedBundle>) {
-        loop {
-            let span = trace_span!("BundlePoller::loop", url = %self.config.tx_pool_url);
+    /// Returns an empty stream on connection failure so the caller can handle
+    /// reconnection uniformly.
+    async fn subscribe(&self) -> SseStream {
+        self.tx_cache
+            .subscribe_bundles()
+            .await
+            .inspect(
+                |_| debug!(url = %self.config.tx_pool_url, "SSE bundle subscription established"),
+            )
+            .inspect_err(|error| match error {
+                BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                    trace!("Not our slot to subscribe to bundles");
+                }
+                _ => warn!(%error, "Failed to open SSE bundle subscription"),
+            })
+            .map(|s| Box::pin(s) as SseStream)
+            .unwrap_or_else(|_| Box::pin(futures_util::stream::empty()))
+    }
 
-            // Check this here to avoid making the web request if we know
-            // we don't need the results.
-            if outbound.is_closed() {
-                span.in_scope(|| trace!("No receivers left, shutting down"));
-                break;
+    /// Runs a full refetch concurrently with re-subscribing, to cover any
+    /// items missed while disconnected.
+    async fn reconnect(
+        &mut self,
+        outbound: &mpsc::UnboundedSender<CachedBundle>,
+        backoff: &mut Duration,
+    ) -> SseStream {
+        tokio::select! {
+            // Biased: a block env change wins over the backoff sleep. An env
+            // change triggers a full refetch below anyway, which supersedes the
+            // sleep-then-reconnect path — so there's no point waiting out the
+            // backoff.
+            biased;
+            _ = self.envs.changed() => {}
+            _ = time::sleep(*backoff) => {}
+        }
+        *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
+        let (_, stream) = tokio::join!(self.full_fetch(outbound), self.subscribe());
+        stream
+    }
+
+    /// Returns `Break` when the outbound channel has closed and the task
+    /// should shut down.
+    async fn handle_sse_item(
+        &mut self,
+        item: Option<Result<CachedBundle, BuilderTxCacheError>>,
+        outbound: &mpsc::UnboundedSender<CachedBundle>,
+        backoff: &mut Duration,
+        stream: &mut SseStream,
+    ) -> ControlFlow<()> {
+        match item {
+            Some(Ok(bundle)) => {
+                *backoff = INITIAL_RECONNECT_BACKOFF;
+                if outbound.is_closed() {
+                    trace!("No receivers left, shutting down");
+                    return ControlFlow::Break(());
+                }
+                Self::spawn_check_bundle_nonces(bundle, outbound.clone());
             }
+            Some(Err(error)) => {
+                warn!(%error, "SSE bundle stream interrupted, reconnecting");
+                *stream = self.reconnect(outbound, backoff).await;
+            }
+            None => {
+                warn!("SSE bundle stream ended, reconnecting");
+                *stream = self.reconnect(outbound, backoff).await;
+            }
+        }
+        ControlFlow::Continue(())
+    }
 
-            crate::metrics::inc_bundle_poll_count();
-            let Ok(bundles) = self
-                .check_bundle_cache()
-                .inspect_err(|error| match error {
-                    BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
-                        trace!("Not our slot to fetch bundles");
-                    }
-                    _ => {
-                        crate::metrics::inc_bundle_poll_errors();
-                        warn!(%error, "Failed to fetch bundles from tx-cache");
-                    }
-                })
-                .instrument(span.clone())
-                .await
-            else {
-                time::sleep(self.poll_duration()).await;
-                continue;
-            };
+    async fn task_future(mut self, outbound: mpsc::UnboundedSender<CachedBundle>) {
+        let (_, mut sse_stream) = tokio::join!(self.full_fetch(&outbound), self.subscribe());
+        let mut backoff = INITIAL_RECONNECT_BACKOFF;
 
-            {
-                let _guard = span.entered();
-                crate::metrics::record_bundles_fetched(bundles.len());
-                trace!(count = bundles.len(), "fetched bundles from tx-cache");
-                for bundle in bundles {
-                    Self::spawn_check_bundle_nonces(bundle, outbound.clone());
+        loop {
+            tokio::select! {
+                item = sse_stream.next() => {
+                    if self
+                        .handle_sse_item(item, &outbound, &mut backoff, &mut sse_stream)
+                        .await
+                        .is_break()
+                    {
+                        break;
+                    }
+                }
+                res = self.envs.changed() => {
+                    if res.is_err() {
+                        debug!("Block env channel closed, shutting down");
+                        break;
+                    }
+                    trace!("Block env changed, refetching all bundles");
+                    self.full_fetch(&outbound).await;
                 }
             }
-
-            time::sleep(self.poll_duration()).await;
         }
     }
 
-    /// Spawns a task that sends bundles it finds to its channel sender.
-    pub fn spawn(self) -> (UnboundedReceiver<CachedBundle>, JoinHandle<()>) {
-        let (outbound, inbound) = unbounded_channel();
-
+    /// Spawns the task future and returns a receiver for bundles it finds.
+    pub fn spawn(self) -> (mpsc::UnboundedReceiver<CachedBundle>, JoinHandle<()>) {
+        let (outbound, inbound) = mpsc::unbounded_channel();
         let jh = tokio::spawn(self.task_future(outbound));
-
         (inbound, jh)
     }
 }
