@@ -5,9 +5,8 @@ use alloy::{
     providers::Provider,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
-use init4_bin_base::deps::metrics::{counter, histogram};
 use signet_tx_cache::{TxCache, TxCacheError};
-use std::{pin::Pin, time::Duration};
+use std::{ops::ControlFlow, pin::Pin, time::Duration};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
@@ -16,6 +15,9 @@ use tokio::{
 use tracing::{Instrument, debug, debug_span, trace, trace_span, warn};
 
 type SseStream = Pin<Box<dyn Stream<Item = Result<TxEnvelope, TxCacheError>> + Send>>;
+
+const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(30);
 
 /// Implements a poller for the block builder to pull transactions from the
 /// transaction pool.
@@ -33,9 +35,6 @@ pub struct TxPoller {
 /// and on each block environment change, and subscribes to an SSE stream
 /// for real-time delivery of new transactions in between.
 impl TxPoller {
-    const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
-    const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(30);
-
     /// Returns a new [`TxPoller`] with the given block environment receiver.
     pub fn new(envs: watch::Receiver<Option<SimEnv>>) -> Self {
         let config = crate::config();
@@ -91,20 +90,20 @@ impl TxPoller {
     async fn full_fetch(&self, outbound: &mpsc::UnboundedSender<ReceivedTx>) {
         let span = trace_span!("TxPoller::full_fetch", url = %self.config.tx_pool_url);
 
-        counter!("signet.builder.cache.tx_poll_count").increment(1);
+        crate::metrics::inc_tx_poll_count();
         if let Ok(transactions) = self
             .tx_cache
             .stream_transactions()
             .try_collect::<Vec<_>>()
             .inspect_err(|error| {
-                counter!("signet.builder.cache.tx_poll_errors").increment(1);
+                crate::metrics::inc_tx_poll_errors();
                 debug!(%error, "Error fetching transactions");
             })
             .instrument(span.clone())
             .await
         {
             let _guard = span.entered();
-            histogram!("signet.builder.cache.txs_fetched").record(transactions.len() as f64);
+            crate::metrics::record_txs_fetched(transactions.len());
             trace!(count = transactions.len(), "found transactions");
             for tx in transactions {
                 self.spawn_check_nonce(tx, outbound.clone());
@@ -116,16 +115,13 @@ impl TxPoller {
     /// stream on connection failure so the caller can handle reconnection
     /// uniformly.
     async fn subscribe(&self) -> SseStream {
-        match self.tx_cache.subscribe_transactions().await {
-            Ok(stream) => {
-                debug!(url = %self.config.tx_pool_url, "SSE transaction subscription established");
-                Box::pin(stream)
-            }
-            Err(error) => {
-                warn!(%error, "Failed to open SSE transaction subscription");
-                Box::pin(futures_util::stream::empty())
-            }
-        }
+        self.tx_cache
+            .subscribe_transactions()
+            .await
+            .inspect(|_| debug!(url = %self.config.tx_pool_url, "SSE transaction subscription established"))
+            .inspect_err(|error| warn!(%error, "Failed to open SSE transaction subscription"))
+            .map(|s| Box::pin(s) as SseStream)
+            .unwrap_or_else(|_| Box::pin(futures_util::stream::empty()))
     }
 
     /// Reconnects the SSE stream with backoff. Performs a full refetch to
@@ -136,14 +132,49 @@ impl TxPoller {
         backoff: &mut Duration,
     ) -> SseStream {
         tokio::select! {
-            _ = time::sleep(*backoff) => {}
-            // Break the sleep early on block env change or channel close —
-            // full_fetch below serves the same purpose the env arm would have.
+            // Biased: a block env change wins over the backoff sleep. An env
+            // change triggers a full refetch below anyway, which supersedes the
+            // sleep-then-reconnect path — so there's no point waiting out the
+            // backoff.
+            biased;
             _ = self.envs.changed() => {}
+            _ = time::sleep(*backoff) => {}
         }
-        *backoff = (*backoff * 2).min(Self::MAX_RECONNECT_BACKOFF);
-        self.full_fetch(outbound).await;
-        self.subscribe().await
+        *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
+        let (_, stream) = tokio::join!(self.full_fetch(outbound), self.subscribe());
+        stream
+    }
+
+    /// Processes a single item yielded by the SSE stream: dispatches the tx
+    /// for nonce checking on success, or reconnects on error / stream end.
+    /// Returns `Break` when the outbound channel has closed and the task
+    /// should shut down.
+    async fn handle_sse_item(
+        &mut self,
+        item: Option<Result<TxEnvelope, TxCacheError>>,
+        outbound: &mpsc::UnboundedSender<ReceivedTx>,
+        backoff: &mut Duration,
+        stream: &mut SseStream,
+    ) -> ControlFlow<()> {
+        match item {
+            Some(Ok(tx)) => {
+                *backoff = INITIAL_RECONNECT_BACKOFF;
+                if outbound.is_closed() {
+                    trace!("No receivers left, shutting down");
+                    return ControlFlow::Break(());
+                }
+                self.spawn_check_nonce(tx, outbound.clone());
+            }
+            Some(Err(error)) => {
+                warn!(%error, "SSE transaction stream error, reconnecting");
+                *stream = self.reconnect(outbound, backoff).await;
+            }
+            None => {
+                warn!("SSE transaction stream ended, reconnecting");
+                *stream = self.reconnect(outbound, backoff).await;
+            }
+        }
+        ControlFlow::Continue(())
     }
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<ReceivedTx>) {
@@ -152,28 +183,17 @@ impl TxPoller {
 
         // Open the SSE stream for real-time delivery of new transactions.
         let mut sse_stream = self.subscribe().await;
-        let mut backoff = Self::INITIAL_RECONNECT_BACKOFF;
+        let mut backoff = INITIAL_RECONNECT_BACKOFF;
 
         loop {
             tokio::select! {
                 item = sse_stream.next() => {
-                    match item {
-                        Some(Ok(tx)) => {
-                            backoff = Self::INITIAL_RECONNECT_BACKOFF;
-                            if outbound.is_closed() {
-                                trace!("No receivers left, shutting down");
-                                break;
-                            }
-                            self.spawn_check_nonce(tx, outbound.clone());
-                        }
-                        Some(Err(error)) => {
-                            warn!(%error, "SSE transaction stream error, reconnecting");
-                            sse_stream = self.reconnect(&outbound, &mut backoff).await;
-                        }
-                        None => {
-                            warn!("SSE transaction stream ended, reconnecting");
-                            sse_stream = self.reconnect(&outbound, &mut backoff).await;
-                        }
+                    if self
+                        .handle_sse_item(item, &outbound, &mut backoff, &mut sse_stream)
+                        .await
+                        .is_break()
+                    {
+                        break;
                     }
                 }
                 res = self.envs.changed() => {
