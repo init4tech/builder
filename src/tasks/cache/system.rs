@@ -27,7 +27,7 @@ impl CacheTasks {
         let (tx_receiver, tx_poller) = tx_poller.spawn();
 
         // Bundle Poller pulls bundles from the cache
-        let bundle_poller = BundlePoller::new();
+        let bundle_poller = BundlePoller::new(self.block_env.clone());
         let (bundle_receiver, bundle_poller) = bundle_poller.spawn();
 
         // Set up the cache task
