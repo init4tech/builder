@@ -85,29 +85,35 @@ impl TxPoller {
         });
     }
 
-    /// Fetches all transactions from the cache, forwarding each to nonce
-    /// checking before it reaches the cache task.
-    async fn full_fetch(&self, outbound: &mpsc::UnboundedSender<ReceivedTx>) {
-        let span = trace_span!("TxPoller::full_fetch", url = %self.config.tx_pool_url);
+    /// Pulls every transaction currently in the cache, paginating until the
+    /// stream is exhausted. Pure fetch — no metrics, no dispatch.
+    async fn check_tx_cache(&self) -> Result<Vec<TxEnvelope>, TxCacheError> {
+        self.tx_cache.stream_transactions().try_collect().await
+    }
+
+    /// Fetches all transactions from the cache and dispatches each one to
+    /// a nonce-check task. Records poll metrics around the fetch.
+    async fn fetch_and_dispatch(&self, outbound: &mpsc::UnboundedSender<ReceivedTx>) {
+        let span = trace_span!("TxPoller::fetch_and_dispatch", url = %self.config.tx_pool_url);
 
         crate::metrics::inc_tx_poll_count();
-        if let Ok(transactions) = self
-            .tx_cache
-            .stream_transactions()
-            .try_collect::<Vec<_>>()
+        let Ok(transactions) = self
+            .check_tx_cache()
             .inspect_err(|error| {
                 crate::metrics::inc_tx_poll_errors();
                 debug!(%error, "Error fetching transactions");
             })
             .instrument(span.clone())
             .await
-        {
-            let _guard = span.entered();
-            crate::metrics::record_txs_fetched(transactions.len());
-            trace!(count = transactions.len(), "found transactions");
-            for tx in transactions {
-                self.spawn_check_nonce(tx, outbound.clone());
-            }
+        else {
+            return;
+        };
+
+        let _guard = span.entered();
+        crate::metrics::record_txs_fetched(transactions.len());
+        trace!(count = transactions.len(), "found transactions");
+        for tx in transactions {
+            self.spawn_check_nonce(tx, outbound.clone());
         }
     }
 
@@ -141,7 +147,7 @@ impl TxPoller {
             _ = time::sleep(*backoff) => {}
         }
         *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
-        let (_, stream) = tokio::join!(self.full_fetch(outbound), self.subscribe());
+        let (_, stream) = tokio::join!(self.fetch_and_dispatch(outbound), self.subscribe());
         stream
     }
 
@@ -179,7 +185,7 @@ impl TxPoller {
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<ReceivedTx>) {
         // Initial full fetch of all transactions currently in the cache.
-        self.full_fetch(&outbound).await;
+        self.fetch_and_dispatch(&outbound).await;
 
         // Open the SSE stream for real-time delivery of new transactions.
         let mut sse_stream = self.subscribe().await;
@@ -202,7 +208,7 @@ impl TxPoller {
                         break;
                     }
                     trace!("Block env changed, refetching all transactions");
-                    self.full_fetch(&outbound).await;
+                    self.fetch_and_dispatch(&outbound).await;
                 }
             }
         }
