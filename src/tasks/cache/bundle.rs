@@ -38,16 +38,22 @@ impl BundlePoller {
         Self { config, tx_cache, envs }
     }
 
-    async fn full_fetch(&self, outbound: &mpsc::UnboundedSender<CachedBundle>) {
-        let span = trace_span!("BundlePoller::full_fetch", url = %self.config.tx_pool_url);
+    /// Pulls every bundle currently in the cache, paginating until the stream
+    /// is exhausted. Pure fetch — no metrics, no forwarding.
+    async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BuilderTxCacheError> {
+        self.tx_cache.stream_bundles().try_collect().await
+    }
+
+    /// Fetches all bundles from the cache and forwards each to the outbound
+    /// channel. Records poll metrics around the fetch.
+    async fn fetch_and_forward(&self, outbound: &mpsc::UnboundedSender<CachedBundle>) {
+        let span = trace_span!("BundlePoller::fetch_and_forward", url = %self.config.tx_pool_url);
 
         crate::metrics::inc_bundle_poll_count();
-        if let Ok(bundles) = self
-            .tx_cache
-            .stream_bundles()
-            .try_collect::<Vec<_>>()
-            // NotOurSlot is expected whenever the builder isn't slot-permissioned;
-            // don't bump the error counter or warn.
+        // NotOurSlot is expected whenever the builder isn't slot-permissioned;
+        // don't bump the error counter or warn.
+        let Ok(bundles) = self
+            .check_bundle_cache()
             .inspect_err(|error| match error {
                 BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
                     trace!("Not our slot to fetch bundles");
@@ -59,13 +65,15 @@ impl BundlePoller {
             })
             .instrument(span.clone())
             .await
-        {
-            let _guard = span.entered();
-            crate::metrics::record_bundles_fetched(bundles.len());
-            trace!(count = bundles.len(), "found bundles");
-            for bundle in bundles {
-                Self::spawn_check_bundle_nonces(bundle, outbound.clone());
-            }
+        else {
+            return;
+        };
+
+        let _guard = span.entered();
+        crate::metrics::record_bundles_fetched(bundles.len());
+        trace!(count = bundles.len(), "found bundles");
+        for bundle in bundles {
+            Self::spawn_check_bundle_nonces(bundle, outbound.clone());
         }
     }
 
@@ -165,7 +173,7 @@ impl BundlePoller {
             _ = time::sleep(*backoff) => {}
         }
         *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
-        let (_, stream) = tokio::join!(self.full_fetch(outbound), self.subscribe());
+        let (_, stream) = tokio::join!(self.fetch_and_forward(outbound), self.subscribe());
         stream
     }
 
@@ -200,7 +208,7 @@ impl BundlePoller {
     }
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<CachedBundle>) {
-        let (_, mut sse_stream) = tokio::join!(self.full_fetch(&outbound), self.subscribe());
+        let (_, mut sse_stream) = tokio::join!(self.fetch_and_forward(&outbound), self.subscribe());
         let mut backoff = INITIAL_RECONNECT_BACKOFF;
 
         loop {
@@ -220,7 +228,7 @@ impl BundlePoller {
                         break;
                     }
                     trace!("Block env changed, refetching all bundles");
-                    self.full_fetch(&outbound).await;
+                    self.fetch_and_forward(&outbound).await;
                 }
             }
         }
