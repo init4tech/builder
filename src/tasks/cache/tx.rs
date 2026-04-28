@@ -19,8 +19,9 @@ type SseStream = Pin<Box<dyn Stream<Item = Result<TxEnvelope, TxCacheError>> + S
 const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(30);
 
-/// Implements a poller for the block builder to pull transactions from the
-/// transaction pool.
+/// Fetches transactions from the transaction pool on startup and on each
+/// block environment change, and subscribes to an SSE stream for real-time
+/// delivery of new transactions in between.
 #[derive(Debug)]
 pub struct TxPoller {
     /// Config values from the Builder.
@@ -31,9 +32,6 @@ pub struct TxPoller {
     envs: watch::Receiver<Option<SimEnv>>,
 }
 
-/// [`TxPoller`] fetches transactions from the transaction pool on startup
-/// and on each block environment change, and subscribes to an SSE stream
-/// for real-time delivery of new transactions in between.
 impl TxPoller {
     /// Returns a new [`TxPoller`] with the given block environment receiver.
     pub fn new(envs: watch::Receiver<Option<SimEnv>>) -> Self {
@@ -137,6 +135,7 @@ impl TxPoller {
         outbound: &mpsc::UnboundedSender<ReceivedTx>,
         backoff: &mut Duration,
     ) -> SseStream {
+        crate::metrics::inc_sse_reconnect_attempts();
         tokio::select! {
             // Biased: a block env change wins over the backoff sleep. An env
             // change triggers a full refetch below anyway, which supersedes the
@@ -184,11 +183,11 @@ impl TxPoller {
     }
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<ReceivedTx>) {
-        // Initial full fetch of all transactions currently in the cache.
-        self.fetch_and_dispatch(&outbound).await;
-
-        // Open the SSE stream for real-time delivery of new transactions.
-        let mut sse_stream = self.subscribe().await;
+        // Initial full fetch of all currently-cached transactions, plus SSE
+        // subscription for real-time delivery, run concurrently — symmetric
+        // with the reconnect path.
+        let (_, mut sse_stream) =
+            tokio::join!(self.fetch_and_dispatch(&outbound), self.subscribe());
         let mut backoff = INITIAL_RECONNECT_BACKOFF;
 
         loop {
@@ -207,7 +206,7 @@ impl TxPoller {
                         debug!("Block env channel closed, shutting down");
                         break;
                     }
-                    trace!("Block env changed, refetching all transactions");
+                    debug!("Block env changed, refetching all transactions");
                     self.fetch_and_dispatch(&outbound).await;
                 }
             }
