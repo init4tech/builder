@@ -185,7 +185,6 @@ impl BundlePoller {
             if let Some(stream) = stream {
                 return Some(stream);
             }
-            // subscribe failed; loop with longer backoff (no extra warn).
         }
     }
 
@@ -209,17 +208,17 @@ impl BundlePoller {
             }
             Some(Err(error)) => {
                 warn!(%error, "SSE bundle stream interrupted, reconnecting");
-                match self.reconnect(outbound, backoff).await {
-                    Some(s) => *stream = s,
-                    None => return ControlFlow::Break(()),
-                }
+                let Some(s) = self.reconnect(outbound, backoff).await else {
+                    return ControlFlow::Break(());
+                };
+                *stream = s;
             }
             None => {
                 warn!("SSE bundle stream ended, reconnecting");
-                match self.reconnect(outbound, backoff).await {
-                    Some(s) => *stream = s,
-                    None => return ControlFlow::Break(()),
-                }
+                let Some(s) = self.reconnect(outbound, backoff).await else {
+                    return ControlFlow::Break(());
+                };
+                *stream = s;
             }
         }
         ControlFlow::Continue(())
@@ -230,7 +229,7 @@ impl BundlePoller {
         fields(url = %self.config.tx_pool_url, block_number = tracing::field::Empty),
     )]
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<CachedBundle>) {
-        record_block_number(&self.envs);
+        self.record_block_number();
 
         let (_, sub) = tokio::join!(self.fetch_and_forward(&outbound), self.subscribe());
         let mut backoff = INITIAL_RECONNECT_BACKOFF;
@@ -262,11 +261,17 @@ impl BundlePoller {
                         debug!("Block env channel closed, shutting down");
                         break;
                     }
-                    record_block_number(&self.envs);
+                    self.record_block_number();
                     debug!("Block env changed, refetching all bundles");
                     self.fetch_and_forward(&outbound).await;
                 }
             }
+        }
+    }
+
+    fn record_block_number(&self) {
+        if let Some(env) = self.envs.borrow().as_ref() {
+            Span::current().record("block_number", env.rollup_block_number());
         }
     }
 
@@ -275,11 +280,5 @@ impl BundlePoller {
         let (outbound, inbound) = mpsc::unbounded_channel();
         let jh = tokio::spawn(self.task_future(outbound));
         (inbound, jh)
-    }
-}
-
-fn record_block_number(envs: &watch::Receiver<Option<SimEnv>>) {
-    if let Some(env) = envs.borrow().as_ref() {
-        Span::current().record("block_number", env.rollup_env().number.to::<u64>());
     }
 }
