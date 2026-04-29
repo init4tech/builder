@@ -10,7 +10,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
-use tracing::{Instrument, debug, debug_span, trace, trace_span, warn};
+use tracing::{Instrument, Span, debug, debug_span, instrument, trace, warn};
 
 type SseStream = Pin<Box<dyn Stream<Item = Result<CachedBundle, BuilderTxCacheError>> + Send>>;
 
@@ -47,8 +47,6 @@ impl BundlePoller {
     /// Fetches all bundles from the cache and forwards each to the outbound
     /// channel. Records poll metrics around the fetch.
     async fn fetch_and_forward(&self, outbound: &mpsc::UnboundedSender<CachedBundle>) {
-        let span = trace_span!("BundlePoller::fetch_and_forward", url = %self.config.tx_pool_url);
-
         crate::metrics::inc_bundle_poll_count();
         // NotOurSlot is expected whenever the builder isn't slot-permissioned;
         // don't bump the error counter or warn.
@@ -63,13 +61,11 @@ impl BundlePoller {
                     warn!(%error, "Failed to fetch bundles from tx-cache");
                 }
             })
-            .instrument(span.clone())
             .await
         else {
             return;
         };
 
-        let _guard = span.entered();
         crate::metrics::record_bundles_fetched(bundles.len());
         trace!(count = bundles.len(), "found bundles");
         for bundle in bundles {
@@ -137,44 +133,60 @@ impl BundlePoller {
         });
     }
 
-    /// Returns an empty stream on connection failure so the caller can handle
-    /// reconnection uniformly.
-    async fn subscribe(&self) -> SseStream {
+    /// Returns `None` on connection failure; the caller is responsible for
+    /// scheduling a retry. Avoids the empty-stream sentinel pattern that
+    /// would double-log "stream ended" on a failure that never opened.
+    async fn subscribe(&self) -> Option<SseStream> {
         self.tx_cache
             .subscribe_bundles()
             .await
             .inspect(
                 |_| debug!(url = %self.config.tx_pool_url, "SSE bundle subscription established"),
             )
-            .inspect_err(|error| match error {
-                BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
-                    trace!("Not our slot to subscribe to bundles");
+            .inspect_err(|error| {
+                crate::metrics::inc_sse_subscribe_errors();
+                match error {
+                    BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                        trace!("Not our slot to subscribe to bundles");
+                    }
+                    _ => warn!(%error, "Failed to open SSE bundle subscription"),
                 }
-                _ => warn!(%error, "Failed to open SSE bundle subscription"),
             })
+            .ok()
             .map(|s| Box::pin(s) as SseStream)
-            .unwrap_or_else(|_| Box::pin(futures_util::stream::empty()))
     }
 
-    /// Runs a full refetch concurrently with re-subscribing, to cover any
-    /// items missed while disconnected.
+    /// Loops with exponential backoff until either a fresh SSE stream is
+    /// established (returned as `Some`) or the outbound channel is closed
+    /// (returned as `None`, signalling the task should shut down). Runs a
+    /// full refetch alongside each subscribe attempt to cover items missed
+    /// while disconnected.
     async fn reconnect(
         &mut self,
         outbound: &mpsc::UnboundedSender<CachedBundle>,
         backoff: &mut Duration,
-    ) -> SseStream {
-        tokio::select! {
-            // Biased: a block env change wins over the backoff sleep. An env
-            // change triggers a full refetch below anyway, which supersedes the
-            // sleep-then-reconnect path — so there's no point waiting out the
-            // backoff.
-            biased;
-            _ = self.envs.changed() => {}
-            _ = time::sleep(*backoff) => {}
+    ) -> Option<SseStream> {
+        loop {
+            if outbound.is_closed() {
+                return None;
+            }
+            crate::metrics::inc_sse_reconnect_attempts();
+            tokio::select! {
+                // Biased: a block env change wins over the backoff sleep. An env
+                // change triggers a full refetch below anyway, which supersedes the
+                // sleep-then-reconnect path — so there's no point waiting out the
+                // backoff.
+                biased;
+                _ = self.envs.changed() => {}
+                _ = time::sleep(*backoff) => {}
+            }
+            *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
+            let (_, stream) = tokio::join!(self.fetch_and_forward(outbound), self.subscribe());
+            if let Some(stream) = stream {
+                return Some(stream);
+            }
+            // subscribe failed; loop with longer backoff (no extra warn).
         }
-        *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
-        let (_, stream) = tokio::join!(self.fetch_and_forward(outbound), self.subscribe());
-        stream
     }
 
     /// Returns `Break` when the outbound channel has closed and the task
@@ -197,21 +209,44 @@ impl BundlePoller {
             }
             Some(Err(error)) => {
                 warn!(%error, "SSE bundle stream interrupted, reconnecting");
-                *stream = self.reconnect(outbound, backoff).await;
+                match self.reconnect(outbound, backoff).await {
+                    Some(s) => *stream = s,
+                    None => return ControlFlow::Break(()),
+                }
             }
             None => {
                 warn!("SSE bundle stream ended, reconnecting");
-                *stream = self.reconnect(outbound, backoff).await;
+                match self.reconnect(outbound, backoff).await {
+                    Some(s) => *stream = s,
+                    None => return ControlFlow::Break(()),
+                }
             }
         }
         ControlFlow::Continue(())
     }
 
+    #[instrument(
+        skip_all,
+        fields(url = %self.config.tx_pool_url, block_number = tracing::field::Empty),
+    )]
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<CachedBundle>) {
-        let (_, mut sse_stream) = tokio::join!(self.fetch_and_forward(&outbound), self.subscribe());
+        record_block_number(&self.envs);
+
+        let (_, sub) = tokio::join!(self.fetch_and_forward(&outbound), self.subscribe());
         let mut backoff = INITIAL_RECONNECT_BACKOFF;
+        let mut sse_stream = match sub {
+            Some(s) => s,
+            None => match self.reconnect(&outbound, &mut backoff).await {
+                Some(s) => s,
+                None => return,
+            },
+        };
 
         loop {
+            if outbound.is_closed() {
+                debug!("Outbound channel closed, shutting down");
+                break;
+            }
             tokio::select! {
                 item = sse_stream.next() => {
                     if self
@@ -227,7 +262,8 @@ impl BundlePoller {
                         debug!("Block env channel closed, shutting down");
                         break;
                     }
-                    trace!("Block env changed, refetching all bundles");
+                    record_block_number(&self.envs);
+                    debug!("Block env changed, refetching all bundles");
                     self.fetch_and_forward(&outbound).await;
                 }
             }
@@ -239,5 +275,11 @@ impl BundlePoller {
         let (outbound, inbound) = mpsc::unbounded_channel();
         let jh = tokio::spawn(self.task_future(outbound));
         (inbound, jh)
+    }
+}
+
+fn record_block_number(envs: &watch::Receiver<Option<SimEnv>>) {
+    if let Some(env) = envs.borrow().as_ref() {
+        Span::current().record("block_number", env.rollup_env().number.to::<u64>());
     }
 }
