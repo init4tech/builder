@@ -30,6 +30,10 @@ pub struct TxPoller {
     tx_cache: TxCache,
     /// Receiver for block environment updates, used to trigger refetches.
     envs: watch::Receiver<Option<SimEnv>>,
+    /// SSE reconnect backoff. Doubles on each reconnect (capped at
+    /// `MAX_RECONNECT_BACKOFF`) and resets to `INITIAL_RECONNECT_BACKOFF`
+    /// on each successfully received tx.
+    backoff: Duration,
 }
 
 impl TxPoller {
@@ -37,7 +41,7 @@ impl TxPoller {
     pub fn new(envs: watch::Receiver<Option<SimEnv>>) -> Self {
         let config = crate::config();
         let tx_cache = TxCache::new(config.tx_pool_url.clone());
-        Self { config, tx_cache, envs }
+        Self { config, tx_cache, envs, backoff: INITIAL_RECONNECT_BACKOFF }
     }
 
     /// Spawn a tokio task to check the nonce of a transaction before sending
@@ -130,11 +134,7 @@ impl TxPoller {
 
     /// Reconnects the SSE stream with backoff. Performs a full refetch to
     /// cover any items missed while disconnected.
-    async fn reconnect(
-        &mut self,
-        outbound: &mpsc::UnboundedSender<ReceivedTx>,
-        backoff: &mut Duration,
-    ) -> SseStream {
+    async fn reconnect(&mut self, outbound: &mpsc::UnboundedSender<ReceivedTx>) -> SseStream {
         crate::metrics::inc_sse_reconnect_attempts();
         tokio::select! {
             // Biased: a block env change wins over the backoff sleep. An env
@@ -143,9 +143,9 @@ impl TxPoller {
             // backoff.
             biased;
             _ = self.envs.changed() => {}
-            _ = time::sleep(*backoff) => {}
+            _ = time::sleep(self.backoff) => {}
         }
-        *backoff = (*backoff * 2).min(MAX_RECONNECT_BACKOFF);
+        self.backoff = (self.backoff * 2).min(MAX_RECONNECT_BACKOFF);
         let (_, stream) = tokio::join!(self.fetch_and_dispatch(outbound), self.subscribe());
         stream
     }
@@ -158,12 +158,11 @@ impl TxPoller {
         &mut self,
         item: Option<Result<TxEnvelope, TxCacheError>>,
         outbound: &mpsc::UnboundedSender<ReceivedTx>,
-        backoff: &mut Duration,
         stream: &mut SseStream,
     ) -> ControlFlow<()> {
         match item {
             Some(Ok(tx)) => {
-                *backoff = INITIAL_RECONNECT_BACKOFF;
+                self.backoff = INITIAL_RECONNECT_BACKOFF;
                 if outbound.is_closed() {
                     trace!("No receivers left, shutting down");
                     return ControlFlow::Break(());
@@ -172,11 +171,11 @@ impl TxPoller {
             }
             Some(Err(error)) => {
                 warn!(%error, "SSE transaction stream error, reconnecting");
-                *stream = self.reconnect(outbound, backoff).await;
+                *stream = self.reconnect(outbound).await;
             }
             None => {
                 warn!("SSE transaction stream ended, reconnecting");
-                *stream = self.reconnect(outbound, backoff).await;
+                *stream = self.reconnect(outbound).await;
             }
         }
         ControlFlow::Continue(())
@@ -188,13 +187,12 @@ impl TxPoller {
         // with the reconnect path.
         let (_, mut sse_stream) =
             tokio::join!(self.fetch_and_dispatch(&outbound), self.subscribe());
-        let mut backoff = INITIAL_RECONNECT_BACKOFF;
 
         loop {
             tokio::select! {
                 item = sse_stream.next() => {
                     if self
-                        .handle_sse_item(item, &outbound, &mut backoff, &mut sse_stream)
+                        .handle_sse_item(item, &outbound, &mut sse_stream)
                         .await
                         .is_break()
                     {
