@@ -10,7 +10,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
-use tracing::{Instrument, Span, debug, debug_span, instrument, trace, warn};
+use tracing::{Instrument, debug, debug_span, trace, warn};
 
 type SseStream = Pin<Box<dyn Stream<Item = Result<CachedBundle, BuilderTxCacheError>> + Send>>;
 
@@ -224,13 +224,7 @@ impl BundlePoller {
         ControlFlow::Continue(())
     }
 
-    #[instrument(
-        skip_all,
-        fields(url = %self.config.tx_pool_url, block_number = tracing::field::Empty),
-    )]
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<CachedBundle>) {
-        self.record_block_number();
-
         let (_, sub) = tokio::join!(self.fetch_and_forward(&outbound), self.subscribe());
         let mut backoff = INITIAL_RECONNECT_BACKOFF;
         let mut sse_stream = match sub {
@@ -261,17 +255,22 @@ impl BundlePoller {
                         debug!("Block env channel closed, shutting down");
                         break;
                     }
-                    self.record_block_number();
-                    debug!("Block env changed, refetching all bundles");
-                    self.fetch_and_forward(&outbound).await;
+                    // Run the refetch under the BlockConstruction span built by
+                    // EnvTask, so its sim.ru.number / sim.host.number fields
+                    // attach to anything the refetch logs.
+                    let span = self
+                        .envs
+                        .borrow()
+                        .as_ref()
+                        .map_or_else(tracing::Span::none, |env| env.clone_span());
+                    async {
+                        debug!("Block env changed, refetching all bundles");
+                        self.fetch_and_forward(&outbound).await;
+                    }
+                    .instrument(span)
+                    .await;
                 }
             }
-        }
-    }
-
-    fn record_block_number(&self) {
-        if let Some(env) = self.envs.borrow().as_ref() {
-            Span::current().record("block_number", env.rollup_block_number());
         }
     }
 
