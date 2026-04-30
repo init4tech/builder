@@ -143,13 +143,13 @@ impl BundlePoller {
             .inspect(
                 |_| debug!(url = %self.config.tx_pool_url, "SSE bundle subscription established"),
             )
-            .inspect_err(|error| {
-                crate::metrics::inc_sse_subscribe_errors();
-                match error {
-                    BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
-                        trace!("Not our slot to subscribe to bundles");
-                    }
-                    _ => warn!(%error, "Failed to open SSE bundle subscription"),
+            .inspect_err(|error| match error {
+                BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                    trace!("Not our slot to subscribe to bundles");
+                }
+                _ => {
+                    crate::metrics::inc_sse_subscribe_errors();
+                    warn!(%error, "Failed to open SSE bundle subscription");
                 }
             })
             .ok()
@@ -188,6 +188,23 @@ impl BundlePoller {
         }
     }
 
+    /// Reconnects and swaps in the fresh stream, or returns `Break` if the
+    /// outbound channel closed during the reconnect loop.
+    async fn try_reconnect(
+        &mut self,
+        outbound: &mpsc::UnboundedSender<CachedBundle>,
+        backoff: &mut Duration,
+        stream: &mut SseStream,
+    ) -> ControlFlow<()> {
+        match self.reconnect(outbound, backoff).await {
+            Some(s) => {
+                *stream = s;
+                ControlFlow::Continue(())
+            }
+            None => ControlFlow::Break(()),
+        }
+    }
+
     /// Returns `Break` when the outbound channel has closed and the task
     /// should shut down.
     async fn handle_sse_item(
@@ -205,23 +222,17 @@ impl BundlePoller {
                     return ControlFlow::Break(());
                 }
                 Self::spawn_check_bundle_nonces(bundle, outbound.clone());
+                ControlFlow::Continue(())
             }
             Some(Err(error)) => {
                 warn!(%error, "SSE bundle stream interrupted, reconnecting");
-                let Some(s) = self.reconnect(outbound, backoff).await else {
-                    return ControlFlow::Break(());
-                };
-                *stream = s;
+                self.try_reconnect(outbound, backoff, stream).await
             }
             None => {
                 warn!("SSE bundle stream ended, reconnecting");
-                let Some(s) = self.reconnect(outbound, backoff).await else {
-                    return ControlFlow::Break(());
-                };
-                *stream = s;
+                self.try_reconnect(outbound, backoff, stream).await
             }
         }
-        ControlFlow::Continue(())
     }
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<CachedBundle>) {
