@@ -23,4 +23,15 @@ ignore = [
     # logger calls `rand::rng()` during reseeding. Our 0.8.5 (transitive via alloy-consensus)
     # has neither feature enabled; our 0.9.4 is already patched.
     "RUSTSEC-2026-0097",
+
+    # `hickory-proto` 0.25.2 NSEC3 closest-encloser proof validation unbounded loop on cross-zone
+    # responses. No fixed upgrade is available. Transitive dep via reth's `reth-dns-discovery` ->
+    # `hickory-resolver`. Builder does not perform DNSSEC validation, so this code path is unused.
+    "RUSTSEC-2026-0118",
+
+    # `hickory-proto` 0.25.2 O(n²) name-compression CPU exhaustion during message encoding. Fix is
+    # in 0.26.1, but `hickory-resolver` 0.25.2 (pinned by reth's `reth-dns-discovery`) requires
+    # `hickory-proto ^0.25`, so we can't upgrade until reth bumps. Builder does not encode DNS
+    # messages.
+    "RUSTSEC-2026-0119",
 ]
