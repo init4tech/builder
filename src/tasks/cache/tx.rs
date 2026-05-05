@@ -4,6 +4,7 @@ use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     providers::Provider,
 };
+use backon::{BackoffBuilder, ExponentialBackoff, ExponentialBuilder};
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use signet_tx_cache::{TxCache, TxCacheError};
 use std::{ops::ControlFlow, pin::Pin, time::Duration};
@@ -19,6 +20,15 @@ type SseStream = Pin<Box<dyn Stream<Item = Result<TxEnvelope, TxCacheError>> + S
 const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(30);
 
+fn reconnect_backoff() -> ExponentialBackoff {
+    ExponentialBuilder::default()
+        .with_factor(2.0)
+        .with_min_delay(INITIAL_RECONNECT_BACKOFF)
+        .with_max_delay(MAX_RECONNECT_BACKOFF)
+        .without_max_times()
+        .build()
+}
+
 /// Fetches transactions from the transaction pool on startup and on each
 /// block environment change, and subscribes to an SSE stream for real-time
 /// delivery of new transactions in between.
@@ -30,10 +40,10 @@ pub struct TxPoller {
     tx_cache: TxCache,
     /// Receiver for block environment updates, used to trigger refetches.
     envs: watch::Receiver<Option<SimEnv>>,
-    /// SSE reconnect backoff. Doubles on each reconnect (capped at
-    /// `MAX_RECONNECT_BACKOFF`) and resets to `INITIAL_RECONNECT_BACKOFF`
-    /// on each successfully received tx.
-    backoff: Duration,
+    /// SSE reconnect backoff. Reconnect attempts are intentionally unbounded:
+    /// this poller is a long-lived subscriber, so tx-cache outages should
+    /// degrade delivery until recovery rather than permanently disabling it.
+    reconnect_backoff: ExponentialBackoff,
 }
 
 impl TxPoller {
@@ -41,7 +51,7 @@ impl TxPoller {
     pub fn new(envs: watch::Receiver<Option<SimEnv>>) -> Self {
         let config = crate::config();
         let tx_cache = TxCache::new(config.tx_pool_url.clone());
-        Self { config, tx_cache, envs, backoff: INITIAL_RECONNECT_BACKOFF }
+        Self { config, tx_cache, envs, reconnect_backoff: reconnect_backoff() }
     }
 
     /// Spawn a tokio task to check the nonce of a transaction before sending
@@ -136,6 +146,7 @@ impl TxPoller {
     /// cover any items missed while disconnected.
     async fn reconnect(&mut self, outbound: &mpsc::UnboundedSender<ReceivedTx>) -> SseStream {
         crate::metrics::inc_sse_reconnect_attempts();
+        let delay = self.reconnect_backoff.next().expect("backoff is unbounded");
         tokio::select! {
             // Biased: a block env change wins over the backoff sleep. An env
             // change triggers a full refetch below anyway, which supersedes the
@@ -143,9 +154,8 @@ impl TxPoller {
             // backoff.
             biased;
             _ = self.envs.changed() => {}
-            _ = time::sleep(self.backoff) => {}
+            _ = time::sleep(delay) => {}
         }
-        self.backoff = (self.backoff * 2).min(MAX_RECONNECT_BACKOFF);
         let (_, stream) = tokio::join!(self.fetch_and_dispatch(outbound), self.subscribe());
         stream
     }
@@ -162,7 +172,7 @@ impl TxPoller {
     ) -> ControlFlow<()> {
         match item {
             Some(Ok(tx)) => {
-                self.backoff = INITIAL_RECONNECT_BACKOFF;
+                self.reconnect_backoff = reconnect_backoff();
                 if outbound.is_closed() {
                     trace!("No receivers left, shutting down");
                     return ControlFlow::Break(());
@@ -183,8 +193,7 @@ impl TxPoller {
 
     async fn task_future(mut self, outbound: mpsc::UnboundedSender<ReceivedTx>) {
         // Initial full fetch of all currently-cached transactions, plus SSE
-        // subscription for real-time delivery, run concurrently — symmetric
-        // with the reconnect path.
+        // subscription for real-time delivery.
         let (_, mut sse_stream) =
             tokio::join!(self.fetch_and_dispatch(&outbound), self.subscribe());
 
