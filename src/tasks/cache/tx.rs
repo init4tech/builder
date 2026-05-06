@@ -17,9 +17,16 @@ use tracing::{Instrument, debug, debug_span, trace, trace_span, warn};
 
 type SseStream = Pin<Box<dyn Stream<Item = Result<TxEnvelope, TxCacheError>> + Send>>;
 
-const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
+const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_millis(250);
 const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(30);
 
+/// Builds the SSE reconnect backoff iterator.
+///
+/// Yields delays of 250ms, 500ms, 1s, 2s, 4s, 8s, 16s, 30s, 30s, … — doubling
+/// each step, capped at [`MAX_RECONNECT_BACKOFF`] and unbounded in count.
+/// Retries are intentionally unbounded: the per-block-env full refetch in
+/// [`TxPoller::task_future`] is the floor on correctness, so SSE is a
+/// best-effort latency optimization on top of it.
 fn reconnect_backoff() -> ExponentialBackoff {
     ExponentialBuilder::default()
         .with_factor(2.0)
@@ -172,11 +179,11 @@ impl TxPoller {
     ) -> ControlFlow<()> {
         match item {
             Some(Ok(tx)) => {
-                self.reconnect_backoff = reconnect_backoff();
                 if outbound.is_closed() {
                     trace!("No receivers left, shutting down");
                     return ControlFlow::Break(());
                 }
+                self.reconnect_backoff = reconnect_backoff();
                 self.spawn_check_nonce(tx, outbound.clone());
             }
             Some(Err(error)) => {
