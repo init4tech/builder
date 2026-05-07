@@ -18,15 +18,15 @@ use std::{
 
 // -- Chain ingress --
 
-const HOST_BLOCKS_SEEN: &str = "signet.builder.host_blocks_seen";
-const HOST_BLOCKS_SEEN_HELP: &str =
-    "Host-chain blocks observed by the builder. Advances even when no block is built.";
+const ROLLUP_BLOCKS_SEEN: &str = "signet.builder.rollup_blocks_seen";
+const ROLLUP_BLOCKS_SEEN_HELP: &str =
+    "Rollup-chain blocks observed by the builder. Advances even when no block is built.";
 
-const LAST_HOST_BLOCK_SEEN_TIMESTAMP: &str = "signet.builder.last_host_block_seen_timestamp";
-const LAST_HOST_BLOCK_SEEN_TIMESTAMP_HELP: &str =
-    "Unix seconds (wall clock) at which the builder most recently observed a host block.";
+const LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP: &str = "signet.builder.last_rollup_block_seen_timestamp";
+const LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP_HELP: &str =
+    "Unix seconds (wall clock) at which the builder most recently observed a rollup block.";
 
-const HOST_CHAIN_ID_LABEL: &str = "host_chain_id";
+const ROLLUP_CHAIN_ID_LABEL: &str = "rollup_chain_id";
 
 // -- Block building --
 
@@ -163,8 +163,8 @@ const PYLON_SIDECARS_SUBMITTED_HELP: &str = "Successful Pylon sidecar submission
 
 static DESCRIPTIONS: LazyLock<()> = LazyLock::new(|| {
     // Chain ingress
-    describe_counter!(HOST_BLOCKS_SEEN, HOST_BLOCKS_SEEN_HELP);
-    describe_gauge!(LAST_HOST_BLOCK_SEEN_TIMESTAMP, LAST_HOST_BLOCK_SEEN_TIMESTAMP_HELP);
+    describe_counter!(ROLLUP_BLOCKS_SEEN, ROLLUP_BLOCKS_SEEN_HELP);
+    describe_gauge!(LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP, LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP_HELP);
 
     // Block building
     describe_counter!(BUILT_BLOCKS, BUILT_BLOCKS_HELP);
@@ -229,15 +229,15 @@ pub(crate) fn init() {
 // Public API -- Chain ingress
 // ---------------------------------------------------------------------------
 
-/// Record that the builder has observed a new host-chain block, labeled by
-/// `host_chain_id`.
-pub(crate) fn record_host_block_seen(host_chain_id: u64) {
-    counter!(HOST_BLOCKS_SEEN, HOST_CHAIN_ID_LABEL => host_chain_id.to_string()).increment(1);
+/// Record that the builder has observed a new rollup-chain block, labeled by
+/// `rollup_chain_id`.
+pub(crate) fn record_rollup_block_seen(rollup_chain_id: u64) {
+    counter!(ROLLUP_BLOCKS_SEEN, ROLLUP_CHAIN_ID_LABEL => rollup_chain_id.to_string()).increment(1);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_secs_f64();
-    gauge!(LAST_HOST_BLOCK_SEEN_TIMESTAMP, HOST_CHAIN_ID_LABEL => host_chain_id.to_string())
+    gauge!(LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP, ROLLUP_CHAIN_ID_LABEL => rollup_chain_id.to_string())
         .set(now);
 }
 
@@ -462,8 +462,8 @@ pub(crate) fn inc_pylon_sidecars_submitted() {
 #[cfg(test)]
 mod tests {
     use super::{
-        HOST_BLOCKS_SEEN, HOST_CHAIN_ID_LABEL, LAST_HOST_BLOCK_SEEN_TIMESTAMP,
-        record_host_block_seen,
+        LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP, ROLLUP_BLOCKS_SEEN, ROLLUP_CHAIN_ID_LABEL,
+        record_rollup_block_seen,
     };
     use init4_bin_base::deps::metrics::{Label, with_local_recorder};
     use metrics_util::{
@@ -472,12 +472,12 @@ mod tests {
     };
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    /// Verify that each call to `record_host_block_seen` advances the
-    /// `host_blocks_seen` counter by one and sets the
-    /// `last_host_block_seen_timestamp` gauge to (approximately) the current
+    /// Verify that each call to `record_rollup_block_seen` advances the
+    /// `rollup_blocks_seen` counter by one and sets the
+    /// `last_rollup_block_seen_timestamp` gauge to (approximately) the current
     /// wall-clock Unix time, with the chain id attached as a label.
     #[test]
-    fn record_host_block_seen_advances_counter_and_gauge() {
+    fn record_rollup_block_seen_advances_counter_and_gauge() {
         const CHAIN_ID: u64 = 17_001;
         const OBSERVATIONS: u64 = 3;
 
@@ -487,12 +487,12 @@ mod tests {
         let before = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
         with_local_recorder(&recorder, || {
             for _ in 0..OBSERVATIONS {
-                record_host_block_seen(CHAIN_ID);
+                record_rollup_block_seen(CHAIN_ID);
             }
         });
         let after = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
 
-        let expected_label = Label::new(HOST_CHAIN_ID_LABEL, CHAIN_ID.to_string());
+        let expected_label = Label::new(ROLLUP_CHAIN_ID_LABEL, CHAIN_ID.to_string());
 
         let mut counter_value = None;
         let mut gauge_value = None;
@@ -500,12 +500,12 @@ mod tests {
             let labels: Vec<_> = key.key().labels().cloned().collect();
             assert!(
                 labels.contains(&expected_label),
-                "metric {} missing host_chain_id label, found: {labels:?}",
+                "metric {} missing rollup_chain_id label, found: {labels:?}",
                 key.key().name()
             );
             match (key.kind(), key.key().name()) {
-                (MetricKind::Counter, HOST_BLOCKS_SEEN) => counter_value = Some(value),
-                (MetricKind::Gauge, LAST_HOST_BLOCK_SEEN_TIMESTAMP) => gauge_value = Some(value),
+                (MetricKind::Counter, ROLLUP_BLOCKS_SEEN) => counter_value = Some(value),
+                (MetricKind::Gauge, LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP) => gauge_value = Some(value),
                 _ => {}
             }
         }
