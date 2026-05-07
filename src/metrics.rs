@@ -4,12 +4,29 @@
 //! use bare `counter!` / `histogram!` macros directly. This prevents
 //! metric-name typos and provides a single place to survey every metric the
 //! builder emits.
-use init4_bin_base::deps::metrics::{counter, describe_counter, describe_histogram, histogram};
-use std::sync::LazyLock;
+use init4_bin_base::deps::metrics::{
+    counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram,
+};
+use std::{
+    sync::LazyLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 // ---------------------------------------------------------------------------
 // Metric names and help text
 // ---------------------------------------------------------------------------
+
+// -- Chain ingress --
+
+const HOST_BLOCKS_SEEN: &str = "signet.builder.host_blocks_seen";
+const HOST_BLOCKS_SEEN_HELP: &str =
+    "Host-chain blocks observed by the builder. Advances even when no block is built.";
+
+const LAST_HOST_BLOCK_SEEN_TIMESTAMP: &str = "signet.builder.last_host_block_seen_timestamp";
+const LAST_HOST_BLOCK_SEEN_TIMESTAMP_HELP: &str =
+    "Unix seconds (wall clock) at which the builder most recently observed a host block.";
+
+const HOST_CHAIN_ID_LABEL: &str = "host_chain_id";
 
 // -- Block building --
 
@@ -145,6 +162,10 @@ const PYLON_SIDECARS_SUBMITTED_HELP: &str = "Successful Pylon sidecar submission
 // ---------------------------------------------------------------------------
 
 static DESCRIPTIONS: LazyLock<()> = LazyLock::new(|| {
+    // Chain ingress
+    describe_counter!(HOST_BLOCKS_SEEN, HOST_BLOCKS_SEEN_HELP);
+    describe_gauge!(LAST_HOST_BLOCK_SEEN_TIMESTAMP, LAST_HOST_BLOCK_SEEN_TIMESTAMP_HELP);
+
     // Block building
     describe_counter!(BUILT_BLOCKS, BUILT_BLOCKS_HELP);
     describe_histogram!(BUILT_BLOCKS_TX_COUNT, BUILT_BLOCKS_TX_COUNT_HELP);
@@ -202,6 +223,22 @@ static DESCRIPTIONS: LazyLock<()> = LazyLock::new(|| {
 /// initializing the metrics recorder).
 pub(crate) fn init() {
     LazyLock::force(&DESCRIPTIONS);
+}
+
+// ---------------------------------------------------------------------------
+// Public API -- Chain ingress
+// ---------------------------------------------------------------------------
+
+/// Record that the builder has observed a new host-chain block, labeled by
+/// `host_chain_id`.
+pub(crate) fn record_host_block_seen(host_chain_id: u64) {
+    counter!(HOST_BLOCKS_SEEN, HOST_CHAIN_ID_LABEL => host_chain_id.to_string()).increment(1);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_secs_f64();
+    gauge!(LAST_HOST_BLOCK_SEEN_TIMESTAMP, HOST_CHAIN_ID_LABEL => host_chain_id.to_string())
+        .set(now);
 }
 
 // ---------------------------------------------------------------------------
@@ -420,4 +457,67 @@ pub(crate) fn inc_pylon_submission_failures() {
 /// Increment the Pylon sidecars-submitted counter.
 pub(crate) fn inc_pylon_sidecars_submitted() {
     counter!(PYLON_SIDECARS_SUBMITTED).increment(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        HOST_BLOCKS_SEEN, HOST_CHAIN_ID_LABEL, LAST_HOST_BLOCK_SEEN_TIMESTAMP,
+        record_host_block_seen,
+    };
+    use init4_bin_base::deps::metrics::{Label, with_local_recorder};
+    use metrics_util::{
+        MetricKind,
+        debugging::{DebugValue, DebuggingRecorder},
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Verify that each call to `record_host_block_seen` advances the
+    /// `host_blocks_seen` counter by one and sets the
+    /// `last_host_block_seen_timestamp` gauge to (approximately) the current
+    /// wall-clock Unix time, with the chain id attached as a label.
+    #[test]
+    fn record_host_block_seen_advances_counter_and_gauge() {
+        const CHAIN_ID: u64 = 17_001;
+        const OBSERVATIONS: u64 = 3;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        let before = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
+        with_local_recorder(&recorder, || {
+            for _ in 0..OBSERVATIONS {
+                record_host_block_seen(CHAIN_ID);
+            }
+        });
+        let after = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
+
+        let expected_label = Label::new(HOST_CHAIN_ID_LABEL, CHAIN_ID.to_string());
+
+        let mut counter_value = None;
+        let mut gauge_value = None;
+        for (key, _, _, value) in snapshotter.snapshot().into_vec() {
+            let labels: Vec<_> = key.key().labels().cloned().collect();
+            assert!(
+                labels.contains(&expected_label),
+                "metric {} missing host_chain_id label, found: {labels:?}",
+                key.key().name()
+            );
+            match (key.kind(), key.key().name()) {
+                (MetricKind::Counter, HOST_BLOCKS_SEEN) => counter_value = Some(value),
+                (MetricKind::Gauge, LAST_HOST_BLOCK_SEEN_TIMESTAMP) => gauge_value = Some(value),
+                _ => {}
+            }
+        }
+
+        assert_eq!(counter_value, Some(DebugValue::Counter(OBSERVATIONS)));
+        let Some(DebugValue::Gauge(ts)) = gauge_value else {
+            panic!("expected gauge value, got {gauge_value:?}");
+        };
+        let ts: f64 = ts.into();
+        assert!(
+            ts >= before && ts <= after,
+            "gauge timestamp {ts} not in observed window [{before}, {after}]"
+        );
+    }
 }

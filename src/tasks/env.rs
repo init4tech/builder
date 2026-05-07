@@ -280,6 +280,8 @@ impl EnvTask {
         drop(span);
 
         while let Some(rollup_header) = rollup_headers.next().await {
+            crate::metrics::record_host_block_seen(self.config.constants.host_chain_id());
+
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
             let rollup_block_number = rollup_header.number;
