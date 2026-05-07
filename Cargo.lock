@@ -3775,6 +3775,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "eventsource-stream"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74fef4569247a5f429d9156b9d0a2599914385dd189c539334c625d8099d90ab"
+dependencies = [
+ "futures-core",
+ "nom",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "evmap"
 version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11236,9 +11247,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba06dc92c72b877f042ba141c7ee553c68aab1c6e077a3ba1adb2eae17fdaff4"
 dependencies = [
  "alloy",
+ "eventsource-stream",
  "futures-util",
  "reqwest",
  "serde",
+ "serde_json",
  "signet-bundle",
  "signet-constants",
  "signet-types",

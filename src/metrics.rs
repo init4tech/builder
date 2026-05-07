@@ -33,6 +33,9 @@ const TX_POLL_ERRORS_HELP: &str = "Transaction cache poll errors.";
 const TXS_FETCHED: &str = "signet.builder.cache.txs_fetched";
 const TXS_FETCHED_HELP: &str = "Transactions fetched per poll cycle.";
 
+const SSE_RECONNECT_ATTEMPTS: &str = "signet.builder.cache.sse_reconnect_attempts";
+const SSE_RECONNECT_ATTEMPTS_HELP: &str = "SSE transaction stream reconnect attempts.";
+
 const BUNDLE_POLL_COUNT: &str = "signet.builder.cache.bundle_poll_count";
 const BUNDLE_POLL_COUNT_HELP: &str = "Bundle cache poll attempts.";
 
@@ -148,6 +151,7 @@ static DESCRIPTIONS: LazyLock<()> = LazyLock::new(|| {
     describe_counter!(TX_POLL_COUNT, TX_POLL_COUNT_HELP);
     describe_counter!(TX_POLL_ERRORS, TX_POLL_ERRORS_HELP);
     describe_histogram!(TXS_FETCHED, TXS_FETCHED_HELP);
+    describe_counter!(SSE_RECONNECT_ATTEMPTS, SSE_RECONNECT_ATTEMPTS_HELP);
     describe_counter!(BUNDLE_POLL_COUNT, BUNDLE_POLL_COUNT_HELP);
     describe_counter!(BUNDLE_POLL_ERRORS, BUNDLE_POLL_ERRORS_HELP);
     describe_histogram!(BUNDLES_FETCHED, BUNDLES_FETCHED_HELP);
@@ -232,6 +236,11 @@ pub(crate) fn inc_tx_poll_errors() {
 /// Record the number of transactions fetched in a poll cycle.
 pub(crate) fn record_txs_fetched(count: usize) {
     histogram!(TXS_FETCHED).record(count as f64);
+}
+
+/// Increment the SSE reconnect attempts counter.
+pub(crate) fn inc_sse_reconnect_attempts() {
+    counter!(SSE_RECONNECT_ATTEMPTS).increment(1);
 }
 
 /// Increment the bundle poll attempt counter.
