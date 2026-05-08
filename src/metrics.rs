@@ -506,7 +506,7 @@ mod tests {
             match (key.kind(), key.key().name()) {
                 (MetricKind::Counter, ROLLUP_BLOCKS_SEEN) => counter_value = Some(value),
                 (MetricKind::Gauge, LAST_ROLLUP_BLOCK_SEEN_TIMESTAMP) => gauge_value = Some(value),
-                _ => {}
+                (kind, name) => panic!("unexpected metric in test scope: {name} ({kind:?})"),
             }
         }
 
