@@ -21,7 +21,7 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.18.0", features = ["perms", "aws", "pylon", "sse"] }
+init4-bin-base = { version = "0.20.0", features = ["perms", "aws", "pylon", "sse"] }
 
 signet-constants = { version = "0.17.0" }
 signet-sim = { version = "0.17.0" }

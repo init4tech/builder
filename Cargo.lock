@@ -2379,18 +2379,18 @@ dependencies = [
  "eyre",
  "futures-util",
  "git-version",
- "init4-bin-base",
+ "init4-bin-base 0.20.0",
  "itertools 0.14.0",
  "metrics-util",
  "openssl",
  "reqwest",
  "reth-chainspec",
  "signet-block-processor",
- "signet-bundle 0.17.1",
+ "signet-bundle",
  "signet-constants 0.17.1",
  "signet-genesis",
  "signet-sim",
- "signet-tx-cache 0.17.1",
+ "signet-tx-cache",
  "signet-types 0.17.1",
  "signet-zenith 0.17.1",
  "thiserror 2.0.18",
@@ -4978,6 +4978,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f94c64278d765503d752783c7a1f1052f0d41cff51cd1fd258958d94a9a03010"
 dependencies = [
  "alloy",
+ "axum 0.8.9",
+ "chrono",
+ "init4-from-env-derive",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "opentelemetry 0.30.0",
+ "opentelemetry-http 0.30.0",
+ "opentelemetry-otlp 0.30.0",
+ "opentelemetry-semantic-conventions 0.30.0",
+ "opentelemetry_sdk 0.30.0",
+ "rustls",
+ "serde",
+ "signet-constants 0.16.2",
+ "thiserror 2.0.18",
+ "tower",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry 0.31.0",
+ "tracing-subscriber 0.3.23",
+ "url",
+]
+
+[[package]]
+name = "init4-bin-base"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be68d63952fda7f0f360ffcfe4a9a854729827893d7b88c86ed6bacaaa9245c"
+dependencies = [
+ "alloy",
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
@@ -4997,8 +5026,8 @@ dependencies = [
  "reqwest",
  "rustls",
  "serde",
- "signet-constants 0.16.2",
- "signet-tx-cache 0.16.2",
+ "signet-constants 0.17.1",
+ "signet-tx-cache",
  "thiserror 2.0.18",
  "tokio",
  "tower",
@@ -11099,7 +11128,7 @@ source = "git+https://github.com/init4tech/node-components?tag=v0.16.0-rc.10#b6b
 dependencies = [
  "alloy",
  "foundry-blob-explorers",
- "init4-bin-base",
+ "init4-bin-base 0.18.0",
  "reqwest",
  "reth",
  "reth-chainspec",
@@ -11120,7 +11149,7 @@ source = "git+https://github.com/init4tech/node-components?tag=v0.16.0-rc.10#b6b
 dependencies = [
  "alloy",
  "eyre",
- "init4-bin-base",
+ "init4-bin-base 0.18.0",
  "metrics",
  "reth",
  "reth-chainspec",
@@ -11134,22 +11163,6 @@ dependencies = [
  "signet-journal 0.16.2",
  "signet-node-types",
  "signet-types 0.16.2",
- "tracing",
- "trevm",
-]
-
-[[package]]
-name = "signet-bundle"
-version = "0.16.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dafb04a643cee29180ce8ae2067c81691417bc6ca6ac350146652a3f84576685"
-dependencies = [
- "alloy",
- "serde",
- "signet-evm 0.16.2",
- "signet-types 0.16.2",
- "thiserror 2.0.18",
- "tokio",
  "tracing",
  "trevm",
 ]
@@ -11282,7 +11295,7 @@ version = "0.16.0-rc.10"
 source = "git+https://github.com/init4tech/node-components?tag=v0.16.0-rc.10#b6b8cb929da7c5ba32ce0794aacb00a3c4fa5f1b"
 dependencies = [
  "alloy",
- "init4-bin-base",
+ "init4-bin-base 0.18.0",
  "serde",
  "serde_json",
  "signet-constants 0.16.2",
@@ -11338,7 +11351,7 @@ dependencies = [
  "alloy",
  "lru",
  "parking_lot",
- "signet-bundle 0.17.1",
+ "signet-bundle",
  "signet-evm 0.17.1",
  "signet-types 0.17.1",
  "signet-zenith 0.17.1",
@@ -11350,9 +11363,9 @@ dependencies = [
 
 [[package]]
 name = "signet-tx-cache"
-version = "0.16.2"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba06dc92c72b877f042ba141c7ee553c68aab1c6e077a3ba1adb2eae17fdaff4"
+checksum = "938beefdd1b1ac069e82400967aea723711b9380b493bc2b503ca036596af330"
 dependencies = [
  "alloy",
  "eventsource-stream",
@@ -11360,26 +11373,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "signet-bundle 0.16.2",
- "signet-constants 0.16.2",
- "signet-types 0.16.2",
- "thiserror 2.0.18",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "signet-tx-cache"
-version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "938beefdd1b1ac069e82400967aea723711b9380b493bc2b503ca036596af330"
-dependencies = [
- "alloy",
- "futures-util",
- "reqwest",
- "serde",
- "signet-bundle 0.17.1",
+ "signet-bundle",
  "signet-constants 0.17.1",
  "signet-types 0.17.1",
  "thiserror 2.0.18",
