@@ -21,15 +21,15 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.20.0", features = ["perms", "aws", "pylon", "sse"] }
+init4-bin-base = { version = "0.21.0", features = ["perms", "aws", "pylon", "sse"] }
 
-signet-constants = { version = "0.17.0" }
-signet-sim = { version = "0.17.0" }
-signet-tx-cache = { version = "0.17.0" }
-signet-types = { version = "0.17.0" }
-signet-zenith = { version = "0.17.0" }
-signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.10" }
-signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.10" }
+signet-constants = { version = "0.18.0" }
+signet-evm = { version = "0.18.0" }
+signet-sim = { version = "0.18.0" }
+signet-tx-cache = { version = "0.18.0" }
+signet-types = { version = "0.18.0" }
+signet-zenith = { version = "0.18.0" }
+signet-genesis = { version = "0.18.0" }
 
 trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils", "asyncdb"] }
 
@@ -68,7 +68,7 @@ alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
 metrics-util = "0.20"
-signet-bundle = "0.17.0"
+signet-bundle = "0.18.0"
 
 [[bench]]
 name = "sim"
