@@ -149,8 +149,13 @@ impl<'a> SubmitPrep<'a> {
     pub async fn prep_transaction(self, prev_host: &Header) -> eyre::Result<Bumpable> {
         let req = self.new_tx_request().in_current_span().await?;
 
+        let next_block_number = prev_host.number + 1;
         let next_timestamp = prev_host.timestamp + self.config.slot_calculator.slot_duration();
-        let cfg = SignetCfgEnv::new(self.config.constants.host_chain_id(), next_timestamp);
+        let cfg = SignetCfgEnv::new(
+            self.config.constants.host_chain_id(),
+            next_block_number,
+            next_timestamp,
+        );
         let blob_params = cfg.blob_params().expect("blobs are active on host chain");
 
         Ok(Bumpable::new(req, prev_host, blob_params))
