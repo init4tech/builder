@@ -24,7 +24,7 @@ use tracing::{Instrument, debug_span, instrument, trace, trace_span, warn};
 
 /// Errors that can occur when using the [`BundleClient`].
 #[derive(Debug, Error)]
-pub(crate) enum BundleCacheError {
+pub enum BundleCacheError {
     /// The background auth task has stopped.
     #[error("auth token unavailable (background auth task stopped): {0}")]
     TokenRetrieval(#[from] watch::error::RecvError),
@@ -140,7 +140,7 @@ impl BundlePoller {
     }
 
     /// Fetches all bundles from the tx-cache, paginating through all available pages.
-    pub(crate) async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BundleCacheError> {
+    pub async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BundleCacheError> {
         self.tx_cache.stream_bundles().try_collect().await
     }
 
