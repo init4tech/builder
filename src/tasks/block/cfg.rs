@@ -1,7 +1,6 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
 use alloy::eips::eip7840::BlobParams;
-use reth_chainspec::{ChainSpec, EthChainSpec};
-use signet_block_processor::revm_spec;
+use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardforks};
 use signet_constants::{mainnet, parmigiana};
 use signet_genesis::{
     MAINNET_GENESIS, MAINNET_HOST_GENESIS, PARMIGIANA_GENESIS, PARMIGIANA_HOST_GENESIS,
@@ -52,7 +51,8 @@ impl SignetCfgEnv {
     }
 
     fn spec_id(&self) -> SpecId {
-        revm_spec(self.chainspec(), self.timestamp)
+        let cs = self.chainspec();
+        if cs.is_osaka_active_at_timestamp(self.timestamp) { SpecId::OSAKA } else { SpecId::PRAGUE }
     }
 }
 
