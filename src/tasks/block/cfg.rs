@@ -1,9 +1,10 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
 use alloy::eips::eip7840::BlobParams;
 use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardforks};
-use signet_constants::{mainnet, parmigiana};
+use signet_constants::{gouda, mainnet, parmigiana};
 use signet_genesis::{
-    MAINNET_GENESIS, MAINNET_HOST_GENESIS, PARMIGIANA_GENESIS, PARMIGIANA_HOST_GENESIS,
+    GOUDA_GENESIS, MAINNET_GENESIS, MAINNET_HOST_GENESIS, PARMIGIANA_GENESIS,
+    PARMIGIANA_HOST_GENESIS,
 };
 use std::sync::OnceLock;
 use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
@@ -32,7 +33,7 @@ impl SignetCfgEnv {
     /// Returns a reference to the [`ChainSpec`] for the configured chain.
     fn chainspec(&self) -> &ChainSpec {
         match self.chain_id {
-            parmigiana::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => {
+            parmigiana::RU_CHAIN_ID | gouda::RU_CHAIN_ID | mainnet::RU_CHAIN_ID => {
                 RU_CHAINSPEC.get_or_init(|| initialize_ru_chainspec(self.chain_id))
             }
             parmigiana::HOST_CHAIN_ID | mainnet::HOST_CHAIN_ID => {
@@ -66,6 +67,7 @@ impl trevm::Cfg for SignetCfgEnv {
 fn initialize_ru_chainspec(chain_id: u64) -> ChainSpec {
     match chain_id {
         parmigiana::RU_CHAIN_ID => ChainSpec::from_genesis(PARMIGIANA_GENESIS.to_owned()),
+        gouda::RU_CHAIN_ID => ChainSpec::from_genesis(GOUDA_GENESIS.to_owned()),
         mainnet::RU_CHAIN_ID => ChainSpec::from_genesis(MAINNET_GENESIS.to_owned()),
         _ => unimplemented!("Unknown rollup chain ID: {}", chain_id),
     }
@@ -92,5 +94,15 @@ mod tests {
 
         let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
+    }
+
+    #[test]
+    fn gouda_cfg_env_does_not_panic() {
+        // Regression: gouda rollup chain id 792669 was missing from the chainspec
+        // match arm, causing `unimplemented!("Unknown chain ID: 792669")` at
+        // simulator startup. Confirm a SignetCfgEnv built with the gouda rollup
+        // chain id resolves to a real SpecId.
+        let cfg = SignetCfgEnv::new(gouda::RU_CHAIN_ID, MAINNET_OSAKA_TIMESTAMP);
+        let _ = cfg.spec_id();
     }
 }
