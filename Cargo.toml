@@ -21,15 +21,15 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.18.0-rc.13", features = ["perms", "aws", "pylon"] }
+init4-bin-base = { git = "https://github.com/init4tech/bin-base", rev = "b2f92e4", features = ["perms", "aws", "pylon"] }
 
-signet-constants = { version = "0.16.0-rc.17" }
-signet-sim = { version = "0.16.0-rc.17" }
-signet-tx-cache = { version = "0.16.0-rc.17" }
-signet-types = { version = "0.16.0-rc.17" }
-signet-zenith = { version = "0.16.0-rc.17" }
-signet-block-processor = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.10" }
-signet-genesis = { git = "https://github.com/init4tech/node-components", tag = "v0.16.0-rc.10" }
+signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a4" }
+signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a4" }
+signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a4" }
+signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a4" }
+signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a4" }
+signet-block-processor = { git = "https://github.com/init4tech/node-components", rev = "752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8" }
+signet-genesis = { git = "https://github.com/init4tech/node-components", rev = "752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8" }
 
 trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils", "asyncdb"] }
 
@@ -67,7 +67,7 @@ url = "2.5.4"
 alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
-signet-bundle = "0.16.0-rc.11"
+signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a4" }
 
 [[bench]]
 name = "sim"
