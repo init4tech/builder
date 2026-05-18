@@ -59,7 +59,7 @@ impl BundleClient {
     }
 
     /// Fetch one page of bundles, optionally resuming from a cursor.
-    #[instrument(skip_all)]
+    #[instrument(skip(self))]
     async fn get_bundles(
         &self,
         query: Option<BundleKey>,

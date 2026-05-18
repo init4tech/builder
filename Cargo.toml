@@ -87,6 +87,12 @@ required-features = ["test-utils"]
 # signet-bundle = { path = "../signet-sdk/crates/bundle" }
 # init4-bin-base = { path = "../bin-base" }
 
+# Required to prevent type duplication: init4-bin-base's transitive deps pull
+# signet-{evm,extract,journal,etc.} from crates.io 0.18; this redirects our
+# direct-dep resolution to the 0.19 git rev. Does not fix init4-bin-base's
+# own internal 0.18 sub-graph (Cargo [patch] does not reach into git dep
+# sub-graphs) — that residue is handled by the local BundleClient shim in
+# src/tasks/cache/bundle.rs.
 [patch.crates-io]
 signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
 signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
