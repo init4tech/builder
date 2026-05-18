@@ -9,7 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
- "getrandom 0.3.4",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -1971,14 +1970,13 @@ dependencies = [
  "openssl",
  "reqwest",
  "reth-chainspec",
- "signet-block-processor",
  "signet-bundle 0.19.0",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
+ "signet-constants 0.19.0",
  "signet-genesis",
  "signet-sim",
  "signet-tx-cache 0.19.0",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
+ "signet-types 0.19.0",
+ "signet-zenith 0.19.0",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -1998,12 +1996,6 @@ name = "byte-slice-cast"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7575182f7272186991736b70173b0ea045398f984bf5ebbb3804736ce1330c9d"
-
-[[package]]
-name = "bytemuck"
-version = "1.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 
 [[package]]
 name = "byteorder"
@@ -2862,22 +2854,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "foundry-blob-explorers"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5dbb066bec0d5519fbfb40b0547818675207ae44861cb1e120cdce21f17e2be"
-dependencies = [
- "alloy-chains",
- "alloy-eips",
- "alloy-primitives",
- "alloy-rpc-types-eth",
- "alloy-serde",
- "chrono",
- "reqwest",
- "serde",
-]
-
-[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3139,12 +3115,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-
-[[package]]
-name = "hashbrown"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
 
 [[package]]
 name = "hashbrown"
@@ -3583,7 +3553,7 @@ dependencies = [
  "reqwest",
  "rustls",
  "serde",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
+ "signet-constants 0.19.0",
  "signet-tx-cache 0.18.0",
  "thiserror 2.0.18",
  "tokio",
@@ -5417,16 +5387,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "roaring"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ba9ce64a8f45d7fc86358410bb1a82e8c987504c0d4900e9141d69a9f26c885"
-dependencies = [
- "bytemuck",
- "byteorder",
-]
-
-[[package]]
 name = "ruint"
 version = "1.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5618,17 +5578,6 @@ dependencies = [
  "ref-cast",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "schnellru"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "356285bbf17bea63d9e52e96bd18f039672ac92b55b8cb997d6162a2a37d1649"
-dependencies = [
- "ahash",
- "cfg-if",
- "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -5938,47 +5887,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "signet-blobber"
-version = "0.18.0"
-source = "git+https://github.com/init4tech/node-components?rev=752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8#752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8"
-dependencies = [
- "alloy",
- "foundry-blob-explorers",
- "futures-util",
- "init4-bin-base",
- "reqwest",
- "schnellru",
- "serde",
- "signet-extract 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "signet-block-processor"
-version = "0.18.0"
-source = "git+https://github.com/init4tech/node-components?rev=752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8#752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8"
-dependencies = [
- "alloy",
- "eyre",
- "init4-bin-base",
- "metrics",
- "signet-blobber",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-evm 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-extract 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-hot",
- "signet-storage-types",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "thiserror 2.0.18",
- "tracing",
- "trevm",
-]
-
-[[package]]
 name = "signet-bundle"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5997,12 +5905,12 @@ dependencies = [
 [[package]]
 name = "signet-bundle"
 version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
+source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "serde",
- "signet-evm 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
+ "signet-evm 0.19.0",
+ "signet-types 0.19.0",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -6014,17 +5922,6 @@ name = "signet-constants"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d0cc668a4c95c16a6400b669224ffda7dd2ede0a35a26621152f40ae4eaa7e5"
-dependencies = [
- "alloy",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "signet-constants"
-version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "serde",
@@ -6063,30 +5960,14 @@ dependencies = [
 [[package]]
 name = "signet-evm"
 version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
-dependencies = [
- "alloy",
- "bitflags",
- "signet-extract 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-journal 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "thiserror 2.0.18",
- "tracing",
- "trevm",
-]
-
-[[package]]
-name = "signet-evm"
-version = "0.19.0"
 source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "bitflags",
- "signet-extract 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-journal 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
+ "signet-extract 0.19.0",
+ "signet-journal 0.19.0",
+ "signet-types 0.19.0",
+ "signet-zenith 0.19.0",
  "thiserror 2.0.18",
  "tracing",
  "trevm",
@@ -6107,22 +5988,11 @@ dependencies = [
 [[package]]
 name = "signet-extract"
 version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
-dependencies = [
- "alloy",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "tracing",
-]
-
-[[package]]
-name = "signet-extract"
-version = "0.19.0"
 source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
+ "signet-types 0.19.0",
+ "signet-zenith 0.19.0",
  "tracing",
 ]
 
@@ -6135,26 +6005,9 @@ dependencies = [
  "init4-bin-base",
  "serde",
  "serde_json",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-evm 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
+ "signet-constants 0.19.0",
+ "signet-evm 0.19.0",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "signet-hot"
-version = "0.9.0"
-source = "git+https://github.com/init4tech/storage?rev=d5bf6fa#d5bf6fa5b1e09b4f295650a606148fdb307cbbf9"
-dependencies = [
- "ahash",
- "alloy",
- "auto_impl",
- "bytes",
- "itertools 0.14.0",
- "rayon",
- "signet-storage-types",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "thiserror 2.0.18",
- "trevm",
 ]
 
 [[package]]
@@ -6162,17 +6015,6 @@ name = "signet-journal"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "790304d2a99fd4e8baef20a452c52e835a790173cd02f18ba5bb2674cb1f01f2"
-dependencies = [
- "alloy",
- "futures-util",
- "thiserror 2.0.18",
- "trevm",
-]
-
-[[package]]
-name = "signet-journal"
-version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "futures-util",
@@ -6194,34 +6036,18 @@ dependencies = [
 [[package]]
 name = "signet-sim"
 version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
+source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "lru",
  "parking_lot",
  "signet-bundle 0.19.0",
- "signet-evm 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
+ "signet-evm 0.19.0",
+ "signet-types 0.19.0",
+ "signet-zenith 0.19.0",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "trevm",
-]
-
-[[package]]
-name = "signet-storage-types"
-version = "0.9.0"
-source = "git+https://github.com/init4tech/storage?rev=d5bf6fa#d5bf6fa5b1e09b4f295650a606148fdb307cbbf9"
-dependencies = [
- "alloy",
- "bytes",
- "roaring",
- "serde",
- "signet-evm 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "thiserror 2.0.18",
  "trevm",
 ]
 
@@ -6247,15 +6073,15 @@ dependencies = [
 [[package]]
 name = "signet-tx-cache"
 version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
+source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "futures-util",
  "reqwest",
  "serde",
  "signet-bundle 0.19.0",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-types 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
+ "signet-constants 0.19.0",
+ "signet-types 0.19.0",
  "thiserror 2.0.18",
  "tracing",
  "url",
@@ -6279,26 +6105,13 @@ dependencies = [
 [[package]]
 name = "signet-types"
 version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
-dependencies = [
- "alloy",
- "chrono",
- "serde",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a4)",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "signet-types"
-version = "0.19.0"
 source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "chrono",
  "serde",
- "signet-constants 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
- "signet-zenith 0.19.0 (git+https://github.com/init4tech/signet-sdk?rev=ecce6a48a6af81c5f668c142b3a63452de02a146)",
+ "signet-constants 0.19.0",
+ "signet-zenith 0.19.0",
  "thiserror 2.0.18",
 ]
 
@@ -6307,17 +6120,6 @@ name = "signet-zenith"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8dbe24b7cabf762735fad690d913886ebf3ddcf679f3d680be08e582825ca6bc"
-dependencies = [
- "alloy",
- "alloy-core",
- "serde",
- "trevm",
-]
-
-[[package]]
-name = "signet-zenith"
-version = "0.19.0"
-source = "git+https://github.com/init4tech/signet-sdk?rev=ecce6a4#ecce6a48a6af81c5f668c142b3a63452de02a146"
 dependencies = [
  "alloy",
  "alloy-core",
