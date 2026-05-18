@@ -1,13 +1,16 @@
 //! This file implements the [`trevm::Cfg`] and [`trevm::Block`] traits for Signet and host networks.
 use alloy::eips::eip7840::BlobParams;
 use reth_chainspec::{ChainSpec, EthChainSpec};
-use signet_block_processor::revm_spec;
 use signet_constants::{mainnet, parmigiana};
+use signet_evm::EthereumHardfork;
 use signet_genesis::{
     MAINNET_GENESIS, MAINNET_HOST_GENESIS, PARMIGIANA_GENESIS, PARMIGIANA_HOST_GENESIS,
 };
 use std::sync::OnceLock;
-use trevm::revm::{context::CfgEnv, primitives::hardfork::SpecId};
+use trevm::revm::{
+    context::{BlockEnv, CfgEnv},
+    primitives::hardfork::SpecId,
+};
 
 /// The RU [`ChainSpec`].
 static RU_CHAINSPEC: OnceLock<ChainSpec> = OnceLock::new();
@@ -20,14 +23,22 @@ static HOST_CHAINSPEC: OnceLock<ChainSpec> = OnceLock::new();
 pub struct SignetCfgEnv {
     /// The chain ID.
     pub chain_id: u64,
+    /// The block number.
+    pub block_number: u64,
     /// The block timestamp.
     pub timestamp: u64,
 }
 
 impl SignetCfgEnv {
     /// Creates a new [`SignetCfgEnv`].
-    pub const fn new(chain_id: u64, timestamp: u64) -> Self {
-        Self { chain_id, timestamp }
+    pub const fn new(chain_id: u64, block_number: u64, timestamp: u64) -> Self {
+        Self { chain_id, block_number, timestamp }
+    }
+
+    /// Creates a [`SignetCfgEnv`] from a [`BlockEnv`], pulling the block number
+    /// and timestamp out of it.
+    pub fn from_block_env(chain_id: u64, block_env: &BlockEnv) -> Self {
+        Self::new(chain_id, block_env.number.to::<u64>(), block_env.timestamp.to::<u64>())
     }
 
     /// Returns a reference to the [`ChainSpec`] for the configured chain.
@@ -52,7 +63,12 @@ impl SignetCfgEnv {
     }
 
     fn spec_id(&self) -> SpecId {
-        revm_spec(self.chainspec(), self.timestamp)
+        EthereumHardfork::active_hardforks(
+            &self.chainspec().genesis().config,
+            self.block_number,
+            self.timestamp,
+        )
+        .spec_id()
     }
 }
 
@@ -87,10 +103,10 @@ mod tests {
 
     #[test]
     fn mainnet_cfg_env() {
-        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP - 1);
+        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, 0, MAINNET_OSAKA_TIMESTAMP - 1);
         assert_eq!(cfg.spec_id(), SpecId::PRAGUE);
 
-        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, MAINNET_OSAKA_TIMESTAMP);
+        let cfg = SignetCfgEnv::new(NamedChain::Mainnet as u64, 0, MAINNET_OSAKA_TIMESTAMP);
         assert_eq!(cfg.spec_id(), SpecId::OSAKA);
     }
 }

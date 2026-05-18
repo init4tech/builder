@@ -111,15 +111,15 @@ impl TestSimEnvBuilder {
 
     /// Build the test RollupEnv.
     pub fn build_rollup_env(&self) -> TestRollupEnv {
-        let timestamp = self.rollup_block_env.timestamp.to::<u64>();
-        let cfg = SignetCfgEnv::new(self.constants.ru_chain_id(), timestamp);
+        let cfg =
+            SignetCfgEnv::from_block_env(self.constants.ru_chain_id(), &self.rollup_block_env);
         RollupEnv::new(self.rollup_db.clone(), self.constants.clone(), &cfg, &self.rollup_block_env)
     }
 
     /// Build the test HostEnv.
     pub fn build_host_env(&self) -> TestHostEnv {
-        let timestamp = self.host_block_env.timestamp.to::<u64>();
-        let cfg = SignetCfgEnv::new(self.constants.host_chain_id(), timestamp);
+        let cfg =
+            SignetCfgEnv::from_block_env(self.constants.host_chain_id(), &self.host_block_env);
         HostEnv::new(self.host_db.clone(), self.constants.clone(), &cfg, &self.host_block_env)
     }
 
