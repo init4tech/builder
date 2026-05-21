@@ -1,102 +1,15 @@
 //! Bundler service responsible for fetching bundles and sending them to the simulator.
 use crate::config::BuilderConfig;
-use futures_util::{
-    TryFutureExt, TryStreamExt,
-    future::Either,
-    stream::{self, Stream, StreamExt},
-};
-use init4_bin_base::perms::SharedToken;
+use futures_util::{TryFutureExt, TryStreamExt};
+use init4_bin_base::perms::tx_cache::{BuilderTxCache, BuilderTxCacheError};
 use signet_sim::{ProviderStateSource, SimItemValidity, check_bundle_tx_list};
-use signet_tx_cache::{
-    TxCache, TxCacheError,
-    types::{BundleKey, BundleList, CacheResponse, CachedBundle},
-};
-use thiserror::Error;
+use signet_tx_cache::{TxCacheError, types::CachedBundle};
 use tokio::{
-    sync::{
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-        watch,
-    },
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
     time::{self, Duration},
 };
-use tracing::{Instrument, debug_span, instrument, trace, trace_span, warn};
-
-/// Errors that can occur when using the [`BundleClient`].
-#[derive(Debug, Error)]
-pub enum BundleCacheError {
-    /// The background auth task has stopped.
-    #[error("auth token unavailable (background auth task stopped): {0}")]
-    TokenRetrieval(#[from] watch::error::RecvError),
-
-    /// An error occurred during a TxCache operation.
-    #[error(transparent)]
-    TxCache(#[from] TxCacheError),
-}
-
-impl From<reqwest::Error> for BundleCacheError {
-    fn from(err: reqwest::Error) -> Self {
-        BundleCacheError::TxCache(TxCacheError::from(err))
-    }
-}
-
-impl From<url::ParseError> for BundleCacheError {
-    fn from(err: url::ParseError) -> Self {
-        BundleCacheError::TxCache(TxCacheError::Url(err))
-    }
-}
-
-/// Authenticated bundle client: wraps [`TxCache`] with a [`SharedToken`] for bearer auth.
-#[derive(Debug, Clone)]
-struct BundleClient {
-    tx_cache: TxCache,
-    token: SharedToken,
-}
-
-impl BundleClient {
-    fn new(url: reqwest::Url, token: SharedToken) -> Self {
-        Self { tx_cache: TxCache::new(url), token }
-    }
-
-    /// Fetch one page of bundles, optionally resuming from a cursor.
-    #[instrument(skip(self))]
-    async fn get_bundles(
-        &self,
-        query: Option<BundleKey>,
-    ) -> Result<CacheResponse<BundleList>, BundleCacheError> {
-        let url = self.tx_cache.url().join("bundles")?;
-        let secret = self.token.secret().await?;
-        self.tx_cache
-            .client()
-            .get(url)
-            .query(&query)
-            .bearer_auth(secret)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<CacheResponse<BundleList>>()
-            .await
-            .map_err(Into::into)
-    }
-
-    /// Stream all bundles, paginating automatically.
-    fn stream_bundles(
-        &self,
-    ) -> impl Stream<Item = Result<CachedBundle, BundleCacheError>> + Send + '_ {
-        stream::unfold(Some(None), move |cursor| async move {
-            let cursor = cursor?;
-            match self.get_bundles(cursor).await {
-                Ok(response) => {
-                    let (inner, next_cursor) = response.into_parts();
-                    let bundles = stream::iter(inner.bundles).map(Ok);
-                    Some((Either::Left(bundles), next_cursor.map(Some)))
-                }
-                Err(error) => Some((Either::Right(stream::once(async { Err(error) })), None)),
-            }
-        })
-        .flatten()
-    }
-}
+use tracing::{Instrument, debug_span, trace, trace_span, warn};
 
 /// Poll interval for the bundle poller in milliseconds.
 const POLL_INTERVAL_MS: u64 = 1000;
@@ -108,7 +21,7 @@ pub struct BundlePoller {
     config: &'static BuilderConfig,
 
     /// Client for the tx cache.
-    tx_cache: BundleClient,
+    tx_cache: BuilderTxCache,
 
     /// Defines the interval at which the bundler polls the tx-pool for bundles.
     poll_interval_ms: u64,
@@ -130,7 +43,7 @@ impl BundlePoller {
     /// Creates a new BundlePoller from the provided builder config and with the specified poll interval in ms.
     pub fn new_with_poll_interval_ms(poll_interval_ms: u64) -> Self {
         let config = crate::config();
-        let tx_cache = BundleClient::new(config.tx_pool_url.clone(), config.oauth_token());
+        let tx_cache = BuilderTxCache::new(config.tx_pool_url.clone(), config.oauth_token());
         Self { config, tx_cache, poll_interval_ms }
     }
 
@@ -140,7 +53,7 @@ impl BundlePoller {
     }
 
     /// Fetches all bundles from the tx-cache, paginating through all available pages.
-    pub async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BundleCacheError> {
+    pub async fn check_bundle_cache(&self) -> Result<Vec<CachedBundle>, BuilderTxCacheError> {
         self.tx_cache.stream_bundles().try_collect().await
     }
 
@@ -216,7 +129,7 @@ impl BundlePoller {
             let Ok(bundles) = self
                 .check_bundle_cache()
                 .inspect_err(|error| match error {
-                    BundleCacheError::TxCache(TxCacheError::NotOurSlot) => {
+                    BuilderTxCacheError::TxCache(TxCacheError::NotOurSlot) => {
                         trace!("Not our slot to fetch bundles");
                     }
                     _ => {
