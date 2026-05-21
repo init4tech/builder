@@ -1,11 +1,10 @@
 #![cfg(feature = "test-utils")]
 
 use alloy::{primitives::U256, signers::local::PrivateKeySigner};
-use builder::{
-    tasks::cache::TxPoller,
-    test_utils::{new_signed_tx, setup_logging, setup_test_config},
-};
+use builder::test_utils::{new_signed_tx, setup_logging, setup_test_config};
 use eyre::{Ok, Result};
+use futures_util::TryStreamExt;
+use signet_tx_cache::TxCache;
 
 #[tokio::test]
 async fn test_tx_roundtrip() -> Result<()> {
@@ -15,11 +14,9 @@ async fn test_tx_roundtrip() -> Result<()> {
     // Post a transaction to the cache
     post_tx().await?;
 
-    // Create a new poller
-    let poller = TxPoller::new();
-
     // Fetch transactions from the pool
-    let transactions = poller.check_tx_cache().await?;
+    let tx_cache = TxCache::new(builder::config().tx_pool_url.clone());
+    let transactions: Vec<_> = tx_cache.stream_transactions().try_collect().await?;
 
     // Ensure at least one transaction exists
     assert!(!transactions.is_empty());

@@ -168,9 +168,9 @@ impl SimEnv {
         constants: &SignetSystemConstants,
         provider: RuProvider,
     ) -> SimRollupEnv {
-        let timestamp = self.rollup_env().timestamp.to::<u64>();
-        let rollup_cfg = SignetCfgEnv::new(constants.ru_chain_id(), timestamp);
-        RollupEnv::new(self.rollup_db(provider), constants.clone(), &rollup_cfg, self.rollup_env())
+        let rollup_env = self.rollup_env();
+        let rollup_cfg = SignetCfgEnv::from_block_env(constants.ru_chain_id(), rollup_env);
+        RollupEnv::new(self.rollup_db(provider), constants.clone(), &rollup_cfg, rollup_env)
     }
 
     /// Create a simulated host environment using the given provider,
@@ -184,9 +184,9 @@ impl SimEnv {
         constants: &SignetSystemConstants,
         provider: HostProvider,
     ) -> SimHostEnv {
-        let timestamp = self.host_env().timestamp.to::<u64>();
-        let host_cfg = SignetCfgEnv::new(constants.host_chain_id(), timestamp);
-        HostEnv::new(self.host_db(provider), constants.clone(), &host_cfg, self.host_env())
+        let host_env = self.host_env();
+        let host_cfg = SignetCfgEnv::from_block_env(constants.host_chain_id(), host_env);
+        HostEnv::new(self.host_db(provider), constants.clone(), &host_cfg, host_env)
     }
 }
 
@@ -280,6 +280,8 @@ impl EnvTask {
         drop(span);
 
         while let Some(rollup_header) = rollup_headers.next().await {
+            crate::metrics::record_rollup_block_seen(self.config.constants.ru_chain_id());
+
             let host_block_number =
                 self.config.constants.rollup_block_to_host_block_num(rollup_header.number);
             let rollup_block_number = rollup_header.number;

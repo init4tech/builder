@@ -21,9 +21,10 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.23.1", features = ["perms", "aws", "pylon"] }
+init4-bin-base = { version = "0.23.1", features = ["perms", "aws", "pylon", "sse"] }
 
 signet-constants = "0.19.0"
+signet-evm = "0.19.0"
 signet-sim = "0.19.0"
 signet-tx-cache = "0.19.0"
 signet-types = "0.19.0"
@@ -66,6 +67,7 @@ url = "2.5.4"
 alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
+metrics-util = "0.20"
 signet-bundle = "0.19.0"
 
 [[bench]]
