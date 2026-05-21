@@ -1,6 +1,6 @@
 [package]
 name = "builder"
-version = "1.0.0"
+version = "1.3.0"
 description = "signet builder example"
 
 edition = "2024"
@@ -21,14 +21,14 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { git = "https://github.com/init4tech/bin-base", rev = "b2f92e4", features = ["perms", "aws", "pylon"] }
+init4-bin-base = { version = "0.23.1", features = ["perms", "aws", "pylon"] }
 
-signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-sim = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-genesis = { git = "https://github.com/init4tech/node-components", rev = "752fa4ad0956cf3a0b0d040402f40fc9b41b0fe8" }
+signet-constants = "0.19.0"
+signet-sim = "0.19.0"
+signet-tx-cache = "0.19.0"
+signet-types = "0.19.0"
+signet-zenith = "0.19.0"
+signet-genesis = "0.19.0"
 
 trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils", "asyncdb"] }
 
@@ -66,7 +66,7 @@ url = "2.5.4"
 alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
-signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
+signet-bundle = "0.19.0"
 
 [[bench]]
 name = "sim"
@@ -87,18 +87,3 @@ required-features = ["test-utils"]
 # signet-bundle = { path = "../signet-sdk/crates/bundle" }
 # init4-bin-base = { path = "../bin-base" }
 
-# Required to prevent type duplication: init4-bin-base's transitive deps pull
-# signet-{evm,extract,journal,etc.} from crates.io 0.18; this redirects our
-# direct-dep resolution to the 0.19 git rev. Does not fix init4-bin-base's
-# own internal 0.18 sub-graph (Cargo [patch] does not reach into git dep
-# sub-graphs) — that residue is handled by the local BundleClient shim in
-# src/tasks/cache/bundle.rs.
-[patch.crates-io]
-signet-bundle = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-constants = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-evm = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-extract = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-journal = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-tx-cache = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-types = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
-signet-zenith = { git = "https://github.com/init4tech/signet-sdk", rev = "ecce6a48a6af81c5f668c142b3a63452de02a146" }
