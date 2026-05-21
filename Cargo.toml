@@ -21,14 +21,14 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.21.0", features = ["perms", "aws", "pylon", "sse"] }
+init4-bin-base = { version = "0.22.0", features = ["perms", "aws", "pylon", "sse"] }
 
-signet-constants = { version = "0.18.0" }
-signet-evm = { version = "0.18.0" }
-signet-sim = { version = "0.18.0" }
-signet-tx-cache = { version = "0.18.0" }
-signet-types = { version = "0.18.0" }
-signet-zenith = { version = "0.18.0" }
+signet-constants = { version = "0.19.0" }
+signet-evm = { version = "0.19.0" }
+signet-sim = { version = "0.19.0" }
+signet-tx-cache = { version = "0.19.0" }
+signet-types = { version = "0.19.0" }
+signet-zenith = { version = "0.19.0" }
 signet-genesis = { version = "0.18.0" }
 
 trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils", "asyncdb"] }
