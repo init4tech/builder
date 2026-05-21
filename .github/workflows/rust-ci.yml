@@ -9,5 +9,5 @@ jobs:
   rust-base:
     uses: init4tech/actions/.github/workflows/rust-base.yml@main
     with:
-      install-foundry: true
+      install-foundry: false
       test-all-features: false
