@@ -2,7 +2,7 @@
 
 ## Crate Summary
 
-Single-crate Rust application (not a workspace) that builds Signet rollup blocks. Actor-based async task system: watches host/rollup chains, ingests transactions and bundles, simulates them against rollup state, then submits valid blocks to Ethereum as EIP-4844 blob transactions via Flashbots. Built on alloy, trevm, tokio, and the `signet-*` SDK crates. Binary: `zenith-builder-example`. Minimum Rust 1.88, Edition 2024.
+Single-crate Rust application (not a workspace) that builds Signet rollup blocks. Actor-based async task system: watches host/rollup chains, ingests transactions and bundles, simulates them against rollup state, then submits valid blocks to Ethereum as EIP-4844 blob transactions via Flashbots. Built on alloy, trevm, tokio, and the `signet-*` SDK crates. Binary: `zenith-builder-example`. Minimum Rust 1.92, Edition 2024.
 
 ## Build Commands
 

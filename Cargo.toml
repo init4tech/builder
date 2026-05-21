@@ -1,10 +1,10 @@
 [package]
 name = "builder"
-version = "1.2.0"
+version = "2.0.0"
 description = "signet builder example"
 
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.92"
 authors = ["init4"]
 license = "Apache-2.0 OR MIT"
 homepage = "https://github.com/init4tech/builder"
@@ -21,15 +21,15 @@ name = "zenith-builder-example"
 path = "bin/builder.rs"
 
 [dependencies]
-init4-bin-base = { version = "0.21.0", features = ["perms", "aws", "pylon", "sse"] }
+init4-bin-base = { version = "0.23.1", features = ["perms", "aws", "pylon", "sse"] }
 
-signet-constants = { version = "0.18.0" }
-signet-evm = { version = "0.18.0" }
-signet-sim = { version = "0.18.0" }
-signet-tx-cache = { version = "0.18.0" }
-signet-types = { version = "0.18.0" }
-signet-zenith = { version = "0.18.0" }
-signet-genesis = { version = "0.18.0" }
+signet-constants = "0.19.0"
+signet-evm = "0.19.0"
+signet-sim = "0.19.0"
+signet-tx-cache = "0.19.0"
+signet-types = "0.19.0"
+signet-zenith = "0.19.0"
+signet-genesis = "0.19.0"
 
 trevm = { version = "0.34.0", features = ["concurrent-db", "test-utils", "asyncdb"] }
 
@@ -68,7 +68,7 @@ alloy-hardforks = "0.4.0"
 alloy-chains = "0.2"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
 metrics-util = "0.20"
-signet-bundle = "0.18.0"
+signet-bundle = "0.19.0"
 
 [[bench]]
 name = "sim"
@@ -88,3 +88,4 @@ required-features = ["test-utils"]
 # signet-tx-cache = { path = "../signet-sdk/crates/tx-cache" }
 # signet-bundle = { path = "../signet-sdk/crates/bundle" }
 # init4-bin-base = { path = "../bin-base" }
+
