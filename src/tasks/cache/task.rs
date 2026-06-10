@@ -240,9 +240,9 @@ mod tests {
 
         let (cache, _jh) = CacheTask::new(env_rx, bundle_rx, txn_rx).spawn();
 
-        // A tx whose effective tip depends on the basefee: with max_fee 100 gwei
-        // and tip 50 gwei, the tip is min(50, 100-60)=40 gwei at BASEFEE vs
-        // 50 gwei at basefee 0, so the two ranks differ.
+        // A tx whose rank depends on the basefee: rank is effective_gas_price
+        // (min(max_fee, basefee + tip)) * gas_limit, i.e. min(100, 60+50)=100 gwei
+        // per gas at BASEFEE vs min(100, 0+50)=50 gwei at basefee 0.
         let signer = PrivateKeySigner::random();
         let recovered =
             create_transfer_tx(&signer, signer.address(), U256::from(1u64), 0, 1, PRIORITY)
